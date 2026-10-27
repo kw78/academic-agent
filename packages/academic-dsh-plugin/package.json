@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "description": "DSH bundle exposing Academic Agent query and task tools to the model.",
-  "main": "lib/index.js",
+  "main": "lib/host.js",
   "exports": {
-    ".": "./lib/index.js",
+    ".": "./lib/host.js",
+    "./host": "./lib/host.js",
+    "./tools": "./lib/tools.js",
+    "./planner": "./lib/planner.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -38,7 +41,8 @@
   },
   "devDependencies": {
     "@academic/agent-tools": "0.1.0",
-    "@academic/cli": "0.1.0"
+    "@academic/cli": "0.1.0",
+    "@deepseek-ai/cordis": "4.0.5"
   },
   "scripts": {
     "build": "node build.mjs"

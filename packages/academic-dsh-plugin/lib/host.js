@@ -1,14 +1,19 @@
 var __defProp = Object.defineProperty;
 var __export = (target, all) => {
-  for (var name2 in all)
-    __defProp(target, name2, { get: all[name2], enumerable: true });
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// packages/academic-dsh-plugin/src/index.ts
+// packages/academic-dsh-plugin/src/host.ts
 import { homedir } from "node:os";
 import { join as join2 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
-import { defineTool as defineTool2 } from "@deepseek-ai/dsh-tools";
+import { Service } from "@deepseek-ai/cordis";
+
+// apps/academic-cli/src/composition.ts
+import { createHash as createHash5, randomUUID as randomUUID3 } from "node:crypto";
+import { mkdirSync as mkdirSync2 } from "node:fs";
+import { dirname as dirname2 } from "node:path";
 
 // node_modules/zod/v4/classic/external.js
 var external_exports = {};
@@ -1129,12 +1134,12 @@ function merge(a, b) {
   });
   return clone(a, def);
 }
-function partial(Class2, schema, mask, name2 = "partial") {
+function partial(Class2, schema, mask, name = "partial") {
   const currDef = schema._zod.def;
   const checks = currDef.checks;
   const hasChecks = checks && checks.length > 0;
   if (hasChecks) {
-    throw new Error(`.${name2}() cannot be used on object schemas containing refinements`);
+    throw new Error(`.${name}() cannot be used on object schemas containing refinements`);
   }
   const selected = mask ? new Set(maskedKeys(schema, mask)) : void 0;
   const newShape = {};
@@ -1474,7 +1479,7 @@ function newError(Definition) {
   return new Definition();
 }
 // @__NO_SIDE_EFFECTS__
-function $constructor(name2, initializer3, proto, params) {
+function $constructor(name, initializer3, proto, params) {
   const zodProto = {};
   function Internals(def) {
     this.def = def;
@@ -1492,10 +1497,10 @@ function $constructor(name2, initializer3, proto, params) {
       } finally {
         _zodDesc.value = void 0;
       }
-    } else if (inst._zod.traits.has(name2)) {
+    } else if (inst._zod.traits.has(name)) {
       return;
     }
-    inst._zod.traits.add(name2);
+    inst._zod.traits.add(name);
     initializer3(inst, def);
     if (initialized) {
       const own2 = Object.getPrototypeOf(inst);
@@ -1521,7 +1526,7 @@ function $constructor(name2, initializer3, proto, params) {
   const Parent = params?.Parent ?? Object;
   class Definition extends Parent {
   }
-  Object.defineProperty(Definition, "name", { value: name2 });
+  Object.defineProperty(Definition, "name", { value: name });
   function _(def) {
     const inst = params?.Parent ? newError(Definition) : this;
     init(inst, def);
@@ -1542,10 +1547,10 @@ function $constructor(name2, initializer3, proto, params) {
     value: (inst) => {
       if (params?.Parent && inst instanceof params.Parent)
         return true;
-      return inst?._zod?.traits?.has(name2);
+      return inst?._zod?.traits?.has(name);
     }
   });
-  Object.defineProperty(_, "name", { value: name2 });
+  Object.defineProperty(_, "name", { value: name });
   return _;
 }
 var $brand = /* @__PURE__ */ Symbol("zod_brand");
@@ -1555,8 +1560,8 @@ var $ZodAsyncError = class extends Error {
   }
 };
 var $ZodEncodeError = class extends Error {
-  constructor(name2) {
-    super(`Encountered unidirectional transform during encode: ${name2}`);
+  constructor(name) {
+    super(`Encountered unidirectional transform during encode: ${name}`);
     this.name = "ZodEncodeError";
   }
 };
@@ -13083,13 +13088,13 @@ ${code}
   return fn;
 }
 function addConstant(ctx, value) {
-  for (const [name3, v] of ctx.constants) {
+  for (const [name2, v] of ctx.constants) {
     if (v === value)
-      return name3;
+      return name2;
   }
-  const name2 = `c${ctx.constantCounter++}`;
-  ctx.constants.set(name2, value);
-  return name2;
+  const name = `c${ctx.constantCounter++}`;
+  ctx.constants.set(name, value);
+  return name;
 }
 function addUserConstant(ctx, fn) {
   ctx.definite = false;
@@ -20128,6 +20133,123 @@ var CapabilityRegistry = class {
   }
 };
 
+// adapters/fixture-lms/src/index.ts
+import { createHash as createHash2 } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+var fixtureCourseSchema = external_exports.object({
+  externalCourseId: external_exports.string().min(1),
+  termId: external_exports.string().min(1),
+  code: external_exports.string().min(1),
+  title: external_exports.string().min(1)
+});
+var fixtureItemSchema = external_exports.object({
+  externalItemId: external_exports.string().min(1),
+  courseExternalId: external_exports.string().min(1).optional(),
+  kind: external_exports.enum(["assignment", "exam", "quiz"]),
+  title: external_exports.string().min(1),
+  description: external_exports.string().optional(),
+  due: dueSchema,
+  sourceUrl: external_exports.string().url().optional(),
+  sourceUpdatedAt: isoDateTimeSchema.optional()
+});
+var fixtureSnapshotSchema = external_exports.object({
+  sourceId: external_exports.string().min(1).default("fixture-lms"),
+  fetchedAt: isoDateTimeSchema,
+  completeness: external_exports.enum(["full", "partial", "unknown"]).default("full"),
+  warnings: external_exports.array(external_exports.string()).default([]),
+  courses: external_exports.array(fixtureCourseSchema).default([]),
+  items: external_exports.array(fixtureItemSchema).default([]),
+  error: external_exports.object({
+    kind: external_exports.enum(["auth", "transient"]),
+    message: external_exports.string().min(1)
+  }).optional()
+});
+var defaultFixturePath = fileURLToPath(
+  new URL("../../../fixtures/fixture-lms/snapshot.json", import.meta.url)
+);
+var DEFAULT_FIXTURE_COURSE = {
+  sourceId: "fixture-lms",
+  externalCourseId: "CS101",
+  termId: "2026-fall",
+  code: "CS101",
+  title: "Introduction to Computer Science"
+};
+function canonicalize2(value) {
+  if (Array.isArray(value)) return value.map(canonicalize2);
+  if (value !== null && typeof value === "object") {
+    const record2 = value;
+    const result = {};
+    for (const key of Object.keys(record2).sort()) {
+      const entry = record2[key];
+      if (entry !== void 0) result[key] = canonicalize2(entry);
+    }
+    return result;
+  }
+  return value;
+}
+function contentHashForItem(sourceId, item) {
+  const content = canonicalize2({
+    sourceId,
+    courseExternalId: item.courseExternalId ?? null,
+    kind: item.kind,
+    title: item.title,
+    description: item.description ?? null,
+    due: item.due,
+    sourceUrl: item.sourceUrl ?? null,
+    sourceUpdatedAt: item.sourceUpdatedAt ?? null
+  });
+  return createHash2("sha256").update(JSON.stringify(content)).digest("hex");
+}
+function normalizeFixtureSnapshot(snapshot) {
+  const items = snapshot.items.map((item) => ({
+    sourceId: snapshot.sourceId,
+    externalItemId: item.externalItemId,
+    courseExternalId: item.courseExternalId,
+    kind: item.kind,
+    title: item.title,
+    description: item.description,
+    due: item.due,
+    sourceUrl: item.sourceUrl,
+    sourceUpdatedAt: item.sourceUpdatedAt,
+    contentHash: contentHashForItem(snapshot.sourceId, item)
+  }));
+  return {
+    items,
+    completeness: snapshot.completeness,
+    fetchedAt: snapshot.fetchedAt,
+    warnings: [...snapshot.warnings]
+  };
+}
+var FixtureLmsAdapter = class {
+  id;
+  sourceId;
+  #fixturePath;
+  #snapshot;
+  constructor(options = {}) {
+    this.id = options.id ?? "fixture-lms";
+    this.sourceId = options.sourceId ?? "fixture-lms";
+    this.#fixturePath = options.fixturePath;
+    this.#snapshot = options.snapshot;
+  }
+  async fetch() {
+    const snapshot = this.#loadSnapshot();
+    if (snapshot.error) {
+      if (snapshot.error.kind === "auth") {
+        throw new AdapterAuthError(snapshot.error.message);
+      }
+      throw new AdapterTransientError(snapshot.error.message);
+    }
+    return normalizeFixtureSnapshot(snapshot);
+  }
+  #loadSnapshot() {
+    if (this.#snapshot) return fixtureSnapshotSchema.parse(this.#snapshot);
+    const path = this.#fixturePath ?? defaultFixturePath;
+    const raw = JSON.parse(readFileSync(path, "utf8"));
+    return fixtureSnapshotSchema.parse(raw);
+  }
+};
+
 // packages/academic-agent-tools/src/tools.ts
 var ACADEMIC_TOOL_NAMES = {
   ListCourses: "academic_list_courses",
@@ -20149,9 +20271,9 @@ function formatInputError(error62) {
   }
   return error62 instanceof Error ? error62.message : String(error62);
 }
-function defineTool(name2, description, schema, run) {
+function defineTool(name, description, schema, run) {
   return {
-    name: name2,
+    name,
     description,
     inputSchema: schema,
     async execute(input2) {
@@ -20355,10 +20477,10 @@ var InMemoryToolHost = class {
   list() {
     return [...this.#tools.values()];
   }
-  async call(name2, input2) {
-    const tool = this.#tools.get(name2);
+  async call(name, input2) {
+    const tool = this.#tools.get(name);
     if (!tool) {
-      return { ok: false, code: "NOT_FOUND", message: `Unknown tool: ${name2}` };
+      return { ok: false, code: "NOT_FOUND", message: `Unknown tool: ${name}` };
     }
     return tool.execute(input2);
   }
@@ -20373,128 +20495,6 @@ function registerAcademicTools(host, dependencies) {
     }
   };
 }
-
-// apps/academic-cli/src/composition.ts
-import { createHash as createHash5, randomUUID as randomUUID3 } from "node:crypto";
-import { mkdirSync as mkdirSync2 } from "node:fs";
-import { dirname as dirname2 } from "node:path";
-
-// adapters/fixture-lms/src/index.ts
-import { createHash as createHash2 } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-var fixtureCourseSchema = external_exports.object({
-  externalCourseId: external_exports.string().min(1),
-  termId: external_exports.string().min(1),
-  code: external_exports.string().min(1),
-  title: external_exports.string().min(1)
-});
-var fixtureItemSchema = external_exports.object({
-  externalItemId: external_exports.string().min(1),
-  courseExternalId: external_exports.string().min(1).optional(),
-  kind: external_exports.enum(["assignment", "exam", "quiz"]),
-  title: external_exports.string().min(1),
-  description: external_exports.string().optional(),
-  due: dueSchema,
-  sourceUrl: external_exports.string().url().optional(),
-  sourceUpdatedAt: isoDateTimeSchema.optional()
-});
-var fixtureSnapshotSchema = external_exports.object({
-  sourceId: external_exports.string().min(1).default("fixture-lms"),
-  fetchedAt: isoDateTimeSchema,
-  completeness: external_exports.enum(["full", "partial", "unknown"]).default("full"),
-  warnings: external_exports.array(external_exports.string()).default([]),
-  courses: external_exports.array(fixtureCourseSchema).default([]),
-  items: external_exports.array(fixtureItemSchema).default([]),
-  error: external_exports.object({
-    kind: external_exports.enum(["auth", "transient"]),
-    message: external_exports.string().min(1)
-  }).optional()
-});
-var defaultFixturePath = fileURLToPath(
-  new URL("../../../fixtures/fixture-lms/snapshot.json", import.meta.url)
-);
-var DEFAULT_FIXTURE_COURSE = {
-  sourceId: "fixture-lms",
-  externalCourseId: "CS101",
-  termId: "2026-fall",
-  code: "CS101",
-  title: "Introduction to Computer Science"
-};
-function canonicalize2(value) {
-  if (Array.isArray(value)) return value.map(canonicalize2);
-  if (value !== null && typeof value === "object") {
-    const record2 = value;
-    const result = {};
-    for (const key of Object.keys(record2).sort()) {
-      const entry = record2[key];
-      if (entry !== void 0) result[key] = canonicalize2(entry);
-    }
-    return result;
-  }
-  return value;
-}
-function contentHashForItem(sourceId, item) {
-  const content = canonicalize2({
-    sourceId,
-    courseExternalId: item.courseExternalId ?? null,
-    kind: item.kind,
-    title: item.title,
-    description: item.description ?? null,
-    due: item.due,
-    sourceUrl: item.sourceUrl ?? null,
-    sourceUpdatedAt: item.sourceUpdatedAt ?? null
-  });
-  return createHash2("sha256").update(JSON.stringify(content)).digest("hex");
-}
-function normalizeFixtureSnapshot(snapshot) {
-  const items = snapshot.items.map((item) => ({
-    sourceId: snapshot.sourceId,
-    externalItemId: item.externalItemId,
-    courseExternalId: item.courseExternalId,
-    kind: item.kind,
-    title: item.title,
-    description: item.description,
-    due: item.due,
-    sourceUrl: item.sourceUrl,
-    sourceUpdatedAt: item.sourceUpdatedAt,
-    contentHash: contentHashForItem(snapshot.sourceId, item)
-  }));
-  return {
-    items,
-    completeness: snapshot.completeness,
-    fetchedAt: snapshot.fetchedAt,
-    warnings: [...snapshot.warnings]
-  };
-}
-var FixtureLmsAdapter = class {
-  id;
-  sourceId;
-  #fixturePath;
-  #snapshot;
-  constructor(options = {}) {
-    this.id = options.id ?? "fixture-lms";
-    this.sourceId = options.sourceId ?? "fixture-lms";
-    this.#fixturePath = options.fixturePath;
-    this.#snapshot = options.snapshot;
-  }
-  async fetch() {
-    const snapshot = this.#loadSnapshot();
-    if (snapshot.error) {
-      if (snapshot.error.kind === "auth") {
-        throw new AdapterAuthError(snapshot.error.message);
-      }
-      throw new AdapterTransientError(snapshot.error.message);
-    }
-    return normalizeFixtureSnapshot(snapshot);
-  }
-  #loadSnapshot() {
-    if (this.#snapshot) return fixtureSnapshotSchema.parse(this.#snapshot);
-    const path = this.#fixturePath ?? defaultFixturePath;
-    const raw = JSON.parse(readFileSync(path, "utf8"));
-    return fixtureSnapshotSchema.parse(raw);
-  }
-};
 
 // packages/academic-connectors/src/connector.ts
 function errorMessage(error62) {
@@ -24100,7 +24100,7 @@ async function createAcademicApp(options) {
     clock,
     ids
   });
-  const plannerCapability = registerPlannerCapability(registry2);
+  const plannerCapability = options.registerPlannerCapability === false ? void 0 : registerPlannerCapability(registry2);
   const adapterCapability = registry2.register({
     id: `academic.adapter.${adapter.id}`,
     kind: "adapter",
@@ -24128,7 +24128,7 @@ async function createAcademicApp(options) {
     ...options.authorizeAgentWrite ? { authorizeWrite: options.authorizeAgentWrite } : {}
   });
   const disposables = [
-    plannerCapability,
+    ...plannerCapability ? [plannerCapability] : [],
     adapterCapability,
     notificationCapability,
     agentRegistration
@@ -24480,6 +24480,9 @@ async function createAcademicApp(options) {
       if (result.ok) replans.invalidateSuggestions(plan.range);
       return result;
     },
+    registerPlannerCapability() {
+      return registerPlannerCapability(registry2);
+    },
     markNotificationRead(notificationId) {
       return notifications.markRead(notificationId);
     },
@@ -24528,170 +24531,39 @@ async function createAcademicApp(options) {
   return app;
 }
 
-// packages/academic-dsh-plugin/src/index.ts
-var name = "academic-agent";
-var inject = ["tools"];
+// packages/academic-dsh-plugin/src/host.ts
 var DEFAULT_MIGRATIONS_DIR = fileURLToPath3(new URL("../migrations/", import.meta.url));
 function defaultDatabasePath() {
   const home = process.env.DSH_HOME ?? join2(homedir(), ".dsh");
   return join2(home, "academic-agent", "academic.db");
 }
-var TOOL_SPECS = [
-  {
-    name: ACADEMIC_TOOL_NAMES.ListCourses,
-    description: "List academic courses stored by Academic Agent. Read-only; use termId to filter one term.",
-    parameters: {
-      termId: { type: "string", description: "Optional term id, e.g. 2026-fall" }
-    },
-    write: false
-  },
-  {
-    name: ACADEMIC_TOOL_NAMES.ListDueItems,
-    description: "List active academic items (assignments, exams, quizzes) ordered by due date. Read-only.",
-    parameters: {
-      courseId: { type: "string", description: "Optional internal course id" },
-      dueBefore: { type: "string", description: "Optional ISO-8601 upper bound" },
-      limit: { type: "integer", description: "Optional page size, 1-200" }
-    },
-    write: false
-  },
-  {
-    name: ACADEMIC_TOOL_NAMES.GetItem,
-    description: "Get one academic item by its internal id. Read-only.",
-    parameters: {
-      itemId: { type: "string", required: true, description: "Internal academic item id" }
-    },
-    write: false
-  },
-  {
-    name: ACADEMIC_TOOL_NAMES.GetStudyPlan,
-    description: "Get the active study plan overlapping a time range. Read-only. Returns null when no plan exists.",
-    parameters: {
-      rangeStart: { type: "string", required: true, description: "ISO-8601 range start" },
-      rangeEnd: { type: "string", required: true, description: "ISO-8601 range end" }
-    },
-    write: false
-  },
-  {
-    name: ACADEMIC_TOOL_NAMES.UpdateTask,
-    description: "Complete, reopen, or change the estimate of a study task. This is a write; the host must obtain trusted user approval for each call.",
-    parameters: {
-      taskId: { type: "string", required: true, description: "Internal study task id" },
-      action: {
-        type: "string",
-        required: true,
-        enum: ["complete", "reopen", "change-estimate"],
-        description: "State transition to apply"
-      },
-      estimateMinutes: {
-        type: "integer",
-        description: "Required for change-estimate; 5-1440 minutes"
-      }
-    },
-    write: true
-  },
-  {
-    name: ACADEMIC_TOOL_NAMES.RequestReplan,
-    description: "Queue a replan request for a time range. Does not change academic facts; requires the planner capability.",
-    parameters: {
-      reason: {
-        type: "string",
-        enum: ["items-changed", "tasks-changed", "availability-changed", "manual"],
-        description: "Why replanning is requested; defaults to manual"
-      },
-      rangeStart: { type: "string", required: true, description: "ISO-8601 range start" },
-      rangeEnd: { type: "string", required: true, description: "ISO-8601 range end" }
-    },
-    write: true
-  }
-];
-function toJsonValue(value) {
-  return JSON.parse(JSON.stringify(value ?? null));
-}
-function registerTools(ctx, app) {
-  for (const spec of TOOL_SPECS) {
-    ctx.tools.register(
-      defineTool2({
-        name: spec.name,
-        description: spec.description,
-        parameters: spec.parameters,
-        output: {
-          schema: { type: "json" },
-          render: (_args, value) => [
-            {
-              type: "text",
-              text: typeof value === "string" ? value : JSON.stringify(value, null, 2)
-            }
-          ]
-        },
-        timeoutMs: 3e4,
-        async execute(args, exec) {
-          if (exec.signal.aborted) throw new Error("Tool call was aborted");
-          const result = await app.agentBridge.host.call(spec.name, args);
-          if (!result.ok) {
-            throw new Error(`${result.code}: ${result.message}`);
-          }
-          return toJsonValue(result.data);
-        }
-      })
-    );
-  }
-}
-function apply(ctx, config2 = {}) {
-  ctx.effect(async () => {
+var AcademicAppService = class extends Service {
+  appReady;
+  constructor(ctx, config2 = {}) {
+    super(ctx, "academicApp");
     const databasePath = config2.databasePath ?? process.env.ACADEMIC_AGENT_DB ?? defaultDatabasePath();
-    const app = await createAcademicApp({
+    this.appReady = createAcademicApp({
       databasePath,
       migrationsDir: config2.migrationsDir ?? DEFAULT_MIGRATIONS_DIR,
-      agentWrites: config2.agentWrites ?? false
+      agentWrites: config2.agentWrites ?? false,
+      registerPlannerCapability: false,
+      ...config2.notificationWindowDays ? { notificationWindowDays: config2.notificationWindowDays } : {},
+      ...config2.replanHorizonDays ? { replanHorizonDays: config2.replanHorizonDays } : {},
+      ...config2.defaultTaskEstimates ? { defaultTaskEstimates: config2.defaultTaskEstimates } : {}
     });
-    try {
+    ctx.effect(async () => {
+      const app = await this.appReady;
       if (config2.startBackground !== false) app.start();
-      registerTools(ctx, app);
-      const [courses, items] = await Promise.all([
-        app.store.queries.listCourses(),
-        app.store.queries.listAcademicItems({ limit: 1 })
-      ]);
-      const registered = ctx.tools.get(ACADEMIC_TOOL_NAMES.ListCourses) !== void 0;
       if (config2.logLoad !== false) {
-        console.log(
-          `[academic-agent] loaded db=${databasePath} tools=${app.agentBridge.host.list().length} registered=${registered} courses=${courses.items.length} items=${items.items.length}`
-        );
-      }
-      if (config2.selfTest ?? process.env.ACADEMIC_AGENT_SELFTEST === "1") {
-        try {
-          const signal = new AbortController().signal;
-          const read = await ctx.tools.execute({
-            callId: "academic-selftest-read",
-            name: ACADEMIC_TOOL_NAMES.ListCourses,
-            arguments: {},
-            signal
-          });
-          const readCourses = read.isError ? -1 : read.value?.courses?.length ?? -1;
-          const write = await ctx.tools.execute({
-            callId: "academic-selftest-write",
-            name: ACADEMIC_TOOL_NAMES.UpdateTask,
-            arguments: { taskId: "selftest", action: "complete" },
-            signal
-          });
-          console.log(
-            `[academic-agent] selftest readIsError=${read.isError} readCourses=${readCourses} writeIsError=${write.isError} writeError=${write.error?.message ?? ""}`
-          );
-        } catch (error62) {
-          console.log(
-            `[academic-agent] selftest failed: ${error62 instanceof Error ? error62.message : String(error62)}`
-          );
-        }
+        console.log(`[academic-host] loaded db=${databasePath}`);
       }
       return () => app.close();
-    } catch (error62) {
-      app.close();
-      throw error62;
-    }
-  }, "academic-agent");
-}
+    }, "academic-host");
+  }
+  getApp = () => this.appReady;
+};
+var host_default = AcademicAppService;
 export {
-  apply,
-  inject,
-  name
+  AcademicAppService,
+  host_default as default
 };

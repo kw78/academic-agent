@@ -43,7 +43,7 @@ import {
   AvailabilityStore,
   PlannerService,
   ReplanStore,
-  registerPlannerCapability,
+  registerPlannerCapability as registerPlannerCapabilityInRegistry,
   type AcceptPlanOptions,
   type PlanSuggestion,
   type PreviewOptions,
@@ -81,6 +81,8 @@ export interface AcademicAppOptions {
   agentWrites?: boolean
   /** Trusted host approval for each concrete agent write. */
   authorizeAgentWrite?: AgentWriteAuthorizer
+  /** Set false when a host plugin owns the planner capability lifecycle. */
+  registerPlannerCapability?: boolean
   notificationWindowDays?: number
   replanHorizonDays?: number
   defaultTaskEstimates?: Partial<Record<'assignment' | 'exam' | 'quiz', number>>
@@ -161,6 +163,7 @@ export interface AcademicApp {
   lockPlanBlock(input: LockPlanBlockInput): Promise<LockPlanResult>
   unlockPlanBlock(lockId: string): Promise<LockPlanResult>
   archivePlan(): Promise<CommandResult>
+  registerPlannerCapability(): DisposableRegistration
   markNotificationRead(notificationId: string): boolean
   markAllNotificationsRead(): number
   scanDeadlineReminders(): Promise<DeadlineScanResult>
@@ -238,7 +241,10 @@ export async function createAcademicApp(
     ids,
   })
 
-  const plannerCapability = registerPlannerCapability(registry)
+  const plannerCapability =
+    options.registerPlannerCapability === false
+      ? undefined
+      : registerPlannerCapabilityInRegistry(registry)
   const adapterCapability = registry.register({
     id: `academic.adapter.${adapter.id}`,
     kind: 'adapter',
@@ -270,7 +276,7 @@ export async function createAcademicApp(
   })
 
   const disposables: DisposableRegistration[] = [
-    plannerCapability,
+    ...(plannerCapability ? [plannerCapability] : []),
     adapterCapability,
     notificationCapability,
     agentRegistration,
@@ -667,6 +673,10 @@ export async function createAcademicApp(
       )
       if (result.ok) replans.invalidateSuggestions(plan.range)
       return result
+    },
+
+    registerPlannerCapability() {
+      return registerPlannerCapabilityInRegistry(registry)
     },
 
     markNotificationRead(notificationId) {

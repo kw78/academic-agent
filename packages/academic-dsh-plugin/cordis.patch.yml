@@ -1,5 +1,10 @@
-# Academic Agent DSH bundle patch: mount the host plugin under its package name.
-# The plugin defaults to $DSH_HOME/academic-agent/academic.db and read-only tools.
+# Academic Agent DSH bundle patch. The host owns store/scheduler/dispatcher;
+# planner and tools are independent fibers. Disabling the tools row unloads the
+# Agent Bridge without stopping background automation.
 - insert:
-    - id: academic-agent
-      name: '@academic/dsh-plugin'
+    - id: academic-host
+      name: '@academic/dsh-plugin/host'
+    - id: academic-planner
+      name: '@academic/dsh-plugin/planner'
+    - id: academic-tools
+      name: '@academic/dsh-plugin/tools'

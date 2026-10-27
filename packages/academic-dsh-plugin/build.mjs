@@ -11,8 +11,13 @@ rmSync(join(packageRoot, 'migrations'), { recursive: true, force: true })
 mkdirSync(join(packageRoot, 'lib'), { recursive: true })
 
 await build({
-  entryPoints: [join(packageRoot, 'src', 'index.ts')],
-  outfile: join(packageRoot, 'lib', 'index.js'),
+  entryPoints: {
+    host: join(packageRoot, 'src', 'host.ts'),
+    tools: join(packageRoot, 'src', 'tools.ts'),
+    planner: join(packageRoot, 'src', 'planner.ts'),
+  },
+  outdir: join(packageRoot, 'lib'),
+  entryNames: '[name]',
   bundle: true,
   platform: 'node',
   format: 'esm',
@@ -25,4 +30,4 @@ await build({
 cpSync(join(repoRoot, 'migrations'), join(packageRoot, 'migrations'), {
   recursive: true,
 })
-console.log('[academic-dsh-plugin] built lib/index.js and migrations/')
+console.log('[academic-dsh-plugin] built host/tools/planner and migrations/')
