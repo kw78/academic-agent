@@ -2,17 +2,23 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import {
+  COMMAND,
   CapabilityRegistry,
   CapabilityUnavailableError,
   EVENT,
+  parseCommand,
   systemClock,
+  timeBlockSchema,
   type Clock,
   type CommandResult,
   type CourseView,
   type DisposableRegistration,
   type IdGenerator,
+  type LockedBlock,
+  type PlanBlock,
   type Range,
   type ReplanReason,
+  type StudyPlanView,
   type SyncRunSummary,
 } from '@academic/contracts'
 import {
@@ -38,8 +44,17 @@ import {
   type PlanSuggestion,
   type PreviewOptions,
 } from '@academic/planner-basic'
-import { Scheduler, SchedulerPauseError } from '@academic/scheduler'
-import { createAcademicStore, type AcademicStore } from '@academic/storage-sqlite'
+import {
+  Scheduler,
+  SchedulerPauseError,
+  type JobRun,
+  type ScheduledJob,
+} from '@academic/scheduler'
+import {
+  createAcademicStore,
+  type AcademicStore,
+  type ProjectionHealth,
+} from '@academic/storage-sqlite'
 import { backupDatabase } from './backup.js'
 
 export class ModelUsageMeter {
@@ -62,6 +77,42 @@ export interface AcademicAppOptions {
   agentWrites?: boolean
   notificationWindowDays?: number
   replanHorizonDays?: number
+}
+
+export interface AutomationStatus {
+  health: ProjectionHealth
+  lastSync?: SyncRunSummary
+  syncRuns: SyncRunSummary[]
+  jobs: ScheduledJob[]
+  jobRuns: JobRun[]
+  unreadNotifications: number
+}
+
+export interface CreateCourseInput {
+  termId: string
+  code: string
+  title: string
+}
+
+export interface CreateTaskInput {
+  title: string
+  itemId?: string
+  estimateMinutes: number
+  dueAt?: string
+  priority?: number
+}
+
+export interface LockPlanBlockInput {
+  start: string
+  end: string
+  title?: string
+}
+
+export interface LockPlanResult {
+  command: CommandResult
+  removedBlocks: PlanBlock[]
+  lock?: LockedBlock
+  plan?: StudyPlanView
 }
 
 export interface AcademicApp {
@@ -92,10 +143,34 @@ export interface AcademicApp {
   ): Promise<CommandResult>
   requestReplan(range: Range, reason?: ReplanReason): { replanRequestId: string; status: string }
   processPendingReplans(limit?: number): Promise<number>
+  addCourse(input: CreateCourseInput): Promise<CommandResult>
+  archiveCourse(courseId: string): Promise<CommandResult>
+  createTask(input: CreateTaskInput): Promise<CommandResult>
+  completeTask(taskId: string): Promise<CommandResult>
+  reopenTask(taskId: string): Promise<CommandResult>
+  changeTaskEstimate(taskId: string, estimateMinutes: number): Promise<CommandResult>
+  getLatestPlan(): Promise<StudyPlanView | undefined>
+  lockPlanBlock(input: LockPlanBlockInput): Promise<LockPlanResult>
+  unlockPlanBlock(lockId: string): Promise<LockPlanResult>
+  archivePlan(): Promise<CommandResult>
+  markNotificationRead(notificationId: string): boolean
+  markAllNotificationsRead(): number
+  getAutomationStatus(): Promise<AutomationStatus>
   backup(targetPath: string): void
   start(): void
   stop(): void
   close(): void
+}
+
+function blocksOverlap(left: PlanBlock, right: LockedBlock): boolean {
+  return (
+    Date.parse(left.start) < Date.parse(right.end) &&
+    Date.parse(right.start) < Date.parse(left.end)
+  )
+}
+
+function failure(message: string): CommandResult {
+  return { ok: false, code: 'NOT_FOUND', message }
 }
 
 function addMilliseconds(iso: string, milliseconds: number): string {
@@ -268,6 +343,55 @@ export async function createAcademicApp(
     return { summary: { processed } }
   })
 
+  const userActor = { kind: 'user' as const, id: 'local-user' }
+
+  async function taskCommand(
+    taskId: string,
+    type: string,
+    payload: unknown,
+  ): Promise<CommandResult> {
+    const task = await store.queries.getStudyTask(taskId)
+    if (!task) return failure(`Study task not found: ${taskId}`)
+    return store.commands.execute(
+      parseCommand({
+        commandId: ids.next(),
+        type,
+        aggregateId: taskId,
+        expectedVersion: task.version,
+        actor: userActor,
+        correlationId: `task/${taskId}`,
+        payload,
+      }),
+    )
+  }
+
+  async function revisePlan(
+    plan: StudyPlanView,
+    blocks: PlanBlock[],
+    lockedBlocks: LockedBlock[],
+  ): Promise<CommandResult> {
+    const result = await store.commands.execute(
+      parseCommand({
+        commandId: ids.next(),
+        type: COMMAND.StudyPlanRevise,
+        aggregateId: plan.planId,
+        expectedVersion: plan.version,
+        actor: userActor,
+        correlationId: `plan/${plan.planId}`,
+        payload: { blocks, lockedBlocks },
+      }),
+    )
+    if (result.ok) {
+      replans.invalidateSuggestions(plan.range)
+      replans.enqueue({
+        reason: 'availability-changed',
+        range: plan.range,
+        sourceKey: `plan-change:${ids.next()}`,
+      })
+    }
+    return result
+  }
+
   let started = false
   let closed = false
 
@@ -320,6 +444,168 @@ export async function createAcademicApp(
         processed += 1
       }
       return processed
+    },
+
+    async addCourse(input) {
+      const courseId = ids.next()
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.CourseCreate,
+          aggregateId: courseId,
+          expectedVersion: 0,
+          actor: userActor,
+          correlationId: `course/${courseId}`,
+          payload: input,
+        }),
+      )
+    },
+
+    async archiveCourse(courseId) {
+      const course = await store.queries.getCourse(courseId)
+      if (!course) return failure(`Course not found: ${courseId}`)
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.CourseArchive,
+          aggregateId: courseId,
+          expectedVersion: course.version,
+          actor: userActor,
+          correlationId: `course/${courseId}`,
+          payload: {},
+        }),
+      )
+    },
+
+    async createTask(input) {
+      const taskId = ids.next()
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.StudyTaskCreate,
+          aggregateId: taskId,
+          expectedVersion: 0,
+          actor: userActor,
+          correlationId: `task/${taskId}`,
+          payload: {
+            title: input.title,
+            estimateMinutes: input.estimateMinutes,
+            ...(input.itemId ? { itemId: input.itemId } : {}),
+            ...(input.dueAt ? { dueAt: input.dueAt } : {}),
+            ...(input.priority !== undefined ? { priority: input.priority } : {}),
+          },
+        }),
+      )
+    },
+
+    async completeTask(taskId) {
+      return taskCommand(taskId, COMMAND.StudyTaskComplete, {})
+    },
+
+    async reopenTask(taskId) {
+      return taskCommand(taskId, COMMAND.StudyTaskReopen, {})
+    },
+
+    async changeTaskEstimate(taskId, estimateMinutes) {
+      return taskCommand(taskId, COMMAND.StudyTaskChangeEstimate, {
+        estimateMinutes,
+      })
+    },
+
+    async getLatestPlan() {
+      return store.queries.getLatestStudyPlan()
+    },
+
+    async lockPlanBlock(input) {
+      const block = timeBlockSchema.parse({ start: input.start, end: input.end })
+      const plan = await store.queries.getLatestStudyPlan()
+      if (!plan) {
+        return { command: failure('No active study plan'), removedBlocks: [] }
+      }
+      const lock: LockedBlock = {
+        id: `lock-${ids.next()}`,
+        start: block.start,
+        end: block.end,
+        ...(input.title ? { title: input.title } : {}),
+      }
+      const removedBlocks = plan.blocks.filter((candidate) =>
+        blocksOverlap(candidate, lock),
+      )
+      const remainingBlocks = plan.blocks.filter(
+        (candidate) => !blocksOverlap(candidate, lock),
+      )
+      const command = await revisePlan(plan, remainingBlocks, [
+        ...plan.lockedBlocks,
+        lock,
+      ])
+      const updated = command.ok ? await store.queries.getLatestStudyPlan() : undefined
+      return {
+        command,
+        removedBlocks,
+        lock,
+        ...(updated ? { plan: updated } : {}),
+      }
+    },
+
+    async unlockPlanBlock(lockId) {
+      const plan = await store.queries.getLatestStudyPlan()
+      if (!plan) {
+        return { command: failure('No active study plan'), removedBlocks: [] }
+      }
+      const lock = plan.lockedBlocks.find((candidate) => candidate.id === lockId)
+      if (!lock) {
+        return { command: failure(`Lock not found: ${lockId}`), removedBlocks: [] }
+      }
+      const command = await revisePlan(
+        plan,
+        plan.blocks,
+        plan.lockedBlocks.filter((candidate) => candidate.id !== lockId),
+      )
+      const updated = command.ok ? await store.queries.getLatestStudyPlan() : undefined
+      return {
+        command,
+        removedBlocks: [],
+        lock,
+        ...(updated ? { plan: updated } : {}),
+      }
+    },
+
+    async archivePlan() {
+      const plan = await store.queries.getLatestStudyPlan()
+      if (!plan) return failure('No active study plan')
+      const result = await store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.StudyPlanArchive,
+          aggregateId: plan.planId,
+          expectedVersion: plan.version,
+          actor: userActor,
+          correlationId: `plan/${plan.planId}`,
+          payload: { reason: 'user archived the plan' },
+        }),
+      )
+      if (result.ok) replans.invalidateSuggestions(plan.range)
+      return result
+    },
+
+    markNotificationRead(notificationId) {
+      return notifications.markRead(notificationId)
+    },
+
+    markAllNotificationsRead() {
+      return notifications.markAllRead()
+    },
+
+    async getAutomationStatus() {
+      const runs = await store.queries.listSyncRuns(undefined, 5)
+      return {
+        health: store.health(),
+        ...(runs.items[0] ? { lastSync: runs.items[0] } : {}),
+        syncRuns: runs.items,
+        jobs: scheduler.listJobs(),
+        jobRuns: scheduler.listRuns(undefined, 5),
+        unreadNotifications: notifications.unreadCount(),
+      }
     },
 
     backup(targetPath) {

@@ -1,4 +1,11 @@
-import { COMMAND, newId, parseCommand, type Range } from '@academic/contracts'
+import {
+  COMMAND,
+  newId,
+  parseCommand,
+  type CommandResult,
+  type Range,
+  type StudyPlanView,
+} from '@academic/contracts'
 import { createAcademicApp, type AcademicApp } from './composition.js'
 
 const DATABASE_PATH = process.env.ACADEMIC_DB ?? '.data/academic.db'
@@ -12,6 +19,59 @@ function nextDays(days: number, from = new Date()): Range {
     start: from.toISOString(),
     end: new Date(from.getTime() + days * 86_400_000).toISOString(),
   }
+}
+
+interface ParsedArgs {
+  positional: string[]
+  flags: Map<string, string | true>
+}
+
+function parseArgs(args: string[]): ParsedArgs {
+  const positional: string[] = []
+  const flags = new Map<string, string | true>()
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!
+    if (!arg.startsWith('--')) {
+      positional.push(arg)
+      continue
+    }
+    const key = arg.slice(2)
+    const next = args[index + 1]
+    if (next !== undefined && !next.startsWith('--')) {
+      flags.set(key, next)
+      index += 1
+    } else {
+      flags.set(key, true)
+    }
+  }
+  return { positional, flags }
+}
+
+function stringFlag(flags: Map<string, string | true>, name: string): string | undefined {
+  const value = flags.get(name)
+  if (value === undefined) return undefined
+  if (value === true) throw new Error(`--${name} 需要一个值`)
+  return value
+}
+
+function numberFlag(
+  flags: Map<string, string | true>,
+  name: string,
+  fallback?: number,
+): number {
+  const value = stringFlag(flags, name)
+  if (value === undefined) {
+    if (fallback === undefined) throw new Error(`缺少 --${name}`)
+    return fallback
+  }
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed)) throw new Error(`--${name} 必须是整数`)
+  return parsed
+}
+
+function ensureOk(result: CommandResult, successText: string): void {
+  if (!result.ok) throw new Error(`${result.code}: ${result.message}`)
+  console.log(`${successText}（版本 ${result.version}）`)
 }
 
 async function ensureStudyTasks(app: AcademicApp): Promise<void> {
@@ -61,7 +121,12 @@ async function printOverview(app: AcademicApp): Promise<void> {
   const items = await app.store.queries.listAcademicItems({ limit: 10 })
   console.log(`\n待办事项（${items.items.length}）：`)
   for (const item of items.items) {
-    const due = item.due.kind === 'instant' ? formatTime(item.due.utc) : item.due.kind === 'local-date' ? item.due.date : '未知'
+    const due =
+      item.due.kind === 'instant'
+        ? formatTime(item.due.utc)
+        : item.due.kind === 'local-date'
+          ? item.due.date
+          : '未知'
     console.log(`  [${due}] ${item.title} · ${item.kind} · 进度 ${item.progress.percent}%`)
   }
 
@@ -95,7 +160,28 @@ async function runSync(app: AcademicApp): Promise<void> {
   }
 }
 
-async function runPlan(app: AcademicApp, accept: boolean): Promise<void> {
+async function printPlan(app: AcademicApp, plan: StudyPlanView): Promise<void> {
+  const tasks = await app.store.queries.listStudyTasks({ status: 'all' })
+  const titles = new Map(tasks.items.map((task) => [task.taskId, task.title]))
+  console.log(
+    `\n计划 ${plan.planId} · ${plan.status} · v${plan.version} · ${plan.planner.id}@${plan.planner.version}`,
+  )
+  console.log(`范围：${formatTime(plan.range.start)} → ${formatTime(plan.range.end)}`)
+  console.log(`学习块（${plan.blocks.length}）：`)
+  for (const block of plan.blocks) {
+    console.log(
+      `  ${formatTime(block.start)} - ${formatTime(block.end)}  ${titles.get(block.taskId) ?? block.taskId}`,
+    )
+  }
+  console.log(`锁定时段（${plan.lockedBlocks.length}）：`)
+  for (const lock of plan.lockedBlocks) {
+    console.log(
+      `  [${lock.id}] ${formatTime(lock.start)} - ${formatTime(lock.end)}  ${lock.title ?? ''}`,
+    )
+  }
+}
+
+async function runPlanPreview(app: AcademicApp, accept: boolean): Promise<void> {
   await ensureStudyTasks(app)
   const range = nextDays(7)
   const suggestion = await app.previewPlan(range)
@@ -116,9 +202,180 @@ async function runPlan(app: AcademicApp, accept: boolean): Promise<void> {
   for (const warning of suggestion.warnings) console.log(`  提示：${warning}`)
 
   if (accept && suggestion.blocks.length > 0) {
-    const result = await app.acceptPlan(suggestion)
-    if (!result.ok) throw new Error(result.message)
-    console.log(`计划已确认并保存（版本 ${result.version}）`)
+    ensureOk(await app.acceptPlan(suggestion), '计划已确认并保存')
+  }
+}
+
+async function runPlanShow(app: AcademicApp): Promise<void> {
+  const plan = await app.getLatestPlan()
+  if (!plan) {
+    console.log('当前没有生效计划。运行 `plan` 生成建议，或 `plan --accept` 确认。')
+    return
+  }
+  await printPlan(app, plan)
+}
+
+async function runPlanLock(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional } = parseArgs(args)
+  const [start, end, ...titleParts] = positional
+  if (!start || !end) {
+    throw new Error('用法：plan lock <start ISO> <end ISO> [标题]')
+  }
+  const result = await app.lockPlanBlock({
+    start,
+    end,
+    ...(titleParts.length > 0 ? { title: titleParts.join(' ') } : {}),
+  })
+  if (!result.command.ok) throw new Error(result.command.message)
+  console.log(
+    `已锁定 ${formatTime(start)} - ${formatTime(end)}，id=${result.lock?.id ?? '?'}，移除 ${result.removedBlocks.length} 个重叠学习块`,
+  )
+  if (result.plan) await printPlan(app, result.plan)
+  console.log('已排队重规划请求；运行 `plan` 查看避开锁定后的建议。')
+}
+
+async function runPlanUnlock(app: AcademicApp, lockId: string | undefined): Promise<void> {
+  if (!lockId) throw new Error('用法：plan unlock <lockId>')
+  const result = await app.unlockPlanBlock(lockId)
+  if (!result.command.ok) throw new Error(result.command.message)
+  console.log(`已解除锁定 ${lockId}`)
+  if (result.plan) await printPlan(app, result.plan)
+}
+
+async function runPlanArchive(app: AcademicApp): Promise<void> {
+  const result = await app.archivePlan()
+  ensureOk(result, '计划已归档')
+}
+
+async function runCourseList(app: AcademicApp): Promise<void> {
+  const courses = await app.store.queries.listCourses()
+  console.log(`课程（${courses.items.length}）：`)
+  for (const course of courses.items) {
+    console.log(
+      `  [${course.courseId}] ${course.termId} ${course.code} ${course.title}${
+        course.archived ? '（已归档）' : ''
+      }`,
+    )
+  }
+}
+
+async function runCourseAdd(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional } = parseArgs(args)
+  const [termId, code, ...titleParts] = positional
+  if (!termId || !code || titleParts.length === 0) {
+    throw new Error('用法：course add <termId> <code> <title>')
+  }
+  const result = await app.addCourse({
+    termId,
+    code,
+    title: titleParts.join(' '),
+  })
+  if (!result.ok) throw new Error(result.message)
+  console.log(`课程已创建：${result.aggregateId}（版本 ${result.version}）`)
+}
+
+async function runCourseArchive(app: AcademicApp, courseId: string | undefined): Promise<void> {
+  if (!courseId) throw new Error('用法：course archive <courseId>')
+  ensureOk(await app.archiveCourse(courseId), '课程已归档')
+}
+
+async function runTaskList(app: AcademicApp): Promise<void> {
+  const tasks = await app.store.queries.listStudyTasks({ status: 'all' })
+  console.log(`学习任务（${tasks.items.length}）：`)
+  for (const task of tasks.items) {
+    console.log(
+      `  [${task.status}] [${task.taskId}] ${task.title} · ${task.estimateMinutes} 分钟${
+        task.dueAt ? ` · 截止 ${formatTime(task.dueAt)}` : ''
+      }`,
+    )
+  }
+}
+
+async function runTaskAdd(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  const title = positional.join(' ').trim()
+  if (!title) throw new Error('用法：task add <标题> [--minutes 60] [--due ISO] [--priority 1] [--item ID]')
+  const estimateMinutes = numberFlag(flags, 'minutes', 60)
+  const dueAt = stringFlag(flags, 'due')
+  const itemId = stringFlag(flags, 'item')
+  const priority = stringFlag(flags, 'priority') !== undefined ? numberFlag(flags, 'priority') : undefined
+  const result = await app.createTask({
+    title,
+    estimateMinutes,
+    ...(dueAt ? { dueAt } : {}),
+    ...(itemId ? { itemId } : {}),
+    ...(priority !== undefined ? { priority } : {}),
+  })
+  if (!result.ok) throw new Error(result.message)
+  console.log(`任务已创建：${result.aggregateId}（版本 ${result.version}）`)
+}
+
+async function runTaskTransition(
+  app: AcademicApp,
+  action: 'complete' | 'reopen' | 'estimate',
+  args: string[],
+): Promise<void> {
+  const { positional } = parseArgs(args)
+  const [taskId, estimate] = positional
+  if (!taskId) throw new Error(`用法：task ${action} <taskId>${action === 'estimate' ? ' <minutes>' : ''}`)
+  if (action === 'complete') {
+    ensureOk(await app.completeTask(taskId), '任务已完成')
+  } else if (action === 'reopen') {
+    ensureOk(await app.reopenTask(taskId), '任务已重开')
+  } else {
+    const minutes = Number(estimate)
+    if (!Number.isInteger(minutes)) throw new Error('预计时长必须是整数分钟')
+    ensureOk(await app.changeTaskEstimate(taskId, minutes), '任务预计时长已更新')
+  }
+}
+
+async function runStatus(app: AcademicApp): Promise<void> {
+  const status = await app.getAutomationStatus()
+  console.log('\n运行状态：')
+  console.log(
+    `  事件位置 ${status.health.eventPosition} · 投影位置 ${status.health.projectionPosition} · 待追赶 ${status.health.pendingEvents} · 一致=${status.health.consistent}`,
+  )
+  if (status.lastSync) {
+    console.log(
+      `  最近同步：${status.lastSync.status} · ${formatTime(status.lastSync.startedAt)} · 抓取 ${status.lastSync.itemsSeen} · 新增 ${status.lastSync.created} · 更新 ${status.lastSync.updated}${
+        status.lastSync.errorCode ? ` · ${status.lastSync.errorCode}` : ''
+      }`,
+    )
+  } else {
+    console.log('  最近同步：无')
+  }
+  console.log(`  未读提醒：${status.unreadNotifications}`)
+  console.log(`  定时任务（${status.jobs.length}）：`)
+  for (const job of status.jobs) {
+    console.log(
+      `    - ${job.jobId} (${job.kind}) enabled=${job.enabled} next=${formatTime(job.nextRunAt)} failures=${job.consecutiveFailures}`,
+    )
+  }
+  console.log(`  最近作业运行（${status.jobRuns.length}）：`)
+  for (const run of status.jobRuns) {
+    console.log(
+      `    - ${run.jobId} ${run.status} attempt=${run.attempt} started=${formatTime(run.startedAt)}${
+        run.errorMessage ? ` error=${run.errorMessage}` : ''
+      }`,
+    )
+  }
+}
+
+async function runNotifications(app: AcademicApp, args: string[]): Promise<void> {
+  const { flags } = parseArgs(args)
+  const readId = stringFlag(flags, 'read')
+  if (readId) {
+    console.log(app.markNotificationRead(readId) ? `已标记已读：${readId}` : `提醒不存在或已读：${readId}`)
+    return
+  }
+  if (flags.has('read-all')) {
+    console.log(`已标记 ${app.markAllNotificationsRead()} 条提醒为已读`)
+    return
+  }
+  const unread = app.notifications.list(20, { unreadOnly: true })
+  console.log(`未读提醒：${unread.length}`)
+  for (const notification of unread) {
+    console.log(`  [${notification.notificationId}] ${notification.title} — ${notification.body}`)
   }
 }
 
@@ -129,21 +386,33 @@ function printHelp(): void {
   npm run demo -- [命令]
 
 命令：
-  demo            同步 fixture 数据源、生成任务、给出并确认学习计划
-  sync            同步 fixture 数据源并处理提醒/重规划请求
-  list            查看待办、任务与未读提醒
-  plan [--accept] 生成未来 7 天学习计划，可选择确认
-  notifications   查看未读提醒
-  backup          生成一致性数据库备份
-  help            显示帮助
+  demo                      同步 fixture、生成任务、给出并确认学习计划
+  sync                      同步 fixture 数据源并处理提醒/重规划请求
+  list                      查看待办、任务与未读提醒
+  status                    查看投影一致性、同步、定时任务与作业运行
+  course list               列出课程
+  course add <term> <code> <title>   添加课程
+  course archive <courseId>          归档课程
+  task list                 列出全部学习任务
+  task add <title> [--minutes 60] [--due ISO] [--priority 1] [--item ID]
+  task complete|reopen <taskId>
+  task estimate <taskId> <minutes>
+  plan [--accept]           生成未来 7 天计划，可选择确认
+  plan show                 查看当前生效计划与锁定时段
+  plan lock <start ISO> <end ISO> [title]   锁定时间段并排队重规划
+  plan unlock <lockId>      解除锁定
+  plan archive              归档当前计划
+  notifications [--read ID | --read-all]
+  backup                    生成一致性数据库备份
+  help                      显示帮助
 
 环境变量：
-  ACADEMIC_DB     数据库路径（默认 .data/academic.db）
+  ACADEMIC_DB               数据库路径（默认 .data/academic.db）
 `)
 }
 
 async function main(): Promise<void> {
-  const command = process.argv[2] ?? 'demo'
+  const [command = 'demo', ...rest] = process.argv.slice(2)
   if (command === 'help') {
     printHelp()
     return
@@ -164,18 +433,42 @@ async function main(): Promise<void> {
         await printOverview(app)
         break
 
-      case 'plan':
-        await runPlan(app, process.argv.includes('--accept'))
+      case 'status':
+        await runStatus(app)
         break
 
-      case 'notifications': {
-        const unread = app.notifications.list(20, { unreadOnly: true })
-        console.log(`未读提醒：${unread.length}`)
-        for (const notification of unread) {
-          console.log(`  ! ${notification.title} — ${notification.body}`)
-        }
+      case 'course': {
+        const [subcommand, ...args] = rest
+        if (subcommand === 'list') await runCourseList(app)
+        else if (subcommand === 'add') await runCourseAdd(app, args)
+        else if (subcommand === 'archive') await runCourseArchive(app, args[0])
+        else throw new Error('用法：course list|add|archive')
         break
       }
+
+      case 'task': {
+        const [subcommand, ...args] = rest
+        if (subcommand === 'list') await runTaskList(app)
+        else if (subcommand === 'add') await runTaskAdd(app, args)
+        else if (subcommand === 'complete' || subcommand === 'reopen' || subcommand === 'estimate') {
+          await runTaskTransition(app, subcommand, args)
+        } else throw new Error('用法：task list|add|complete|reopen|estimate')
+        break
+      }
+
+      case 'plan': {
+        const [subcommand, ...args] = rest
+        if (subcommand === 'show') await runPlanShow(app)
+        else if (subcommand === 'lock') await runPlanLock(app, args)
+        else if (subcommand === 'unlock') await runPlanUnlock(app, args[0])
+        else if (subcommand === 'archive') await runPlanArchive(app)
+        else await runPlanPreview(app, rest.includes('--accept'))
+        break
+      }
+
+      case 'notifications':
+        await runNotifications(app, rest)
+        break
 
       case 'backup': {
         const stamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -194,7 +487,7 @@ async function main(): Promise<void> {
         if (existing) {
           console.log(`已有生效计划 ${existing.planId}，跳过自动确认`)
         } else {
-          await runPlan(app, true)
+          await runPlanPreview(app, true)
         }
         await printOverview(app)
         break
