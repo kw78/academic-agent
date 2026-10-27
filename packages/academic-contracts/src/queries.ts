@@ -122,6 +122,7 @@ export interface QueryApi {
     taskId: string,
   ): Promise<(StudyTaskView & { meta: QueryMeta }) | undefined>
   getActiveStudyPlan(range: Range): Promise<(StudyPlanView & { meta: QueryMeta }) | undefined>
+  getLatestStudyPlan(): Promise<(StudyPlanView & { meta: QueryMeta }) | undefined>
   getDashboardSummary(range: Range): Promise<DashboardSummary>
   listSyncRuns(sourceId?: string, limit?: number): Promise<Page<SyncRunSummary>>
 }

@@ -32,6 +32,13 @@ function parseJson<T>(value: unknown): T {
   return JSON.parse(String(value)) as T
 }
 
+function rangesOverlap(left: Range, right: Range): boolean {
+  return (
+    Date.parse(left.start) < Date.parse(right.end) &&
+    Date.parse(right.start) < Date.parse(left.end)
+  )
+}
+
 export class ReplanStore {
   readonly #db: DatabaseSync
   readonly #clock: Clock
@@ -107,6 +114,33 @@ export class ReplanStore {
       )
       .all(bounded) as SqlRow[]
     return rows.map((row) => this.#toRequest(row))
+  }
+
+  /**
+   * Drops cached suggestions whose range overlaps a plan change (for example a
+   * new locked block), so the next process run recomputes with the new locks.
+   */
+  invalidateSuggestions(range: Range): number {
+    return inTransaction(this.#db, () => {
+      const rows = this.#db
+        .prepare("SELECT * FROM replan_requests WHERE status = 'suggested'")
+        .all() as SqlRow[]
+      let invalidated = 0
+      for (const row of rows) {
+        const requestRange = parseJson<Range>(row.range_json)
+        if (!rangesOverlap(requestRange, range)) continue
+        this.#db
+          .prepare(
+            `UPDATE replan_requests SET
+               status = 'pending', suggestion_json = NULL, processed_at = NULL,
+               plan_id = NULL, error_message = NULL
+             WHERE replan_request_id = ?`,
+          )
+          .run(String(row.replan_request_id))
+        invalidated += 1
+      }
+      return invalidated
+    })
   }
 
   saveSuggestion(replanRequestId: string, suggestion: PlanSuggestion): void {

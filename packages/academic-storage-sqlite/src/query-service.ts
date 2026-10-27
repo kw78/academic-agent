@@ -227,6 +227,17 @@ export class SqliteQueryService implements QueryApi {
     return row ? { ...this.#toTask(row), meta: this.#meta() } : undefined
   }
 
+  async getLatestStudyPlan(): Promise<(StudyPlanView & { meta: QueryMeta }) | undefined> {
+    const row = this.#db
+      .prepare(
+        `SELECT * FROM study_plans_current
+         WHERE status = 'active'
+         ORDER BY accepted_at DESC, rowid DESC LIMIT 1`,
+      )
+      .get() as SqlRow | undefined
+    return row ? { ...this.#toPlan(row), meta: this.#meta() } : undefined
+  }
+
   async getActiveStudyPlan(
     range: Range,
   ): Promise<(StudyPlanView & { meta: QueryMeta }) | undefined> {

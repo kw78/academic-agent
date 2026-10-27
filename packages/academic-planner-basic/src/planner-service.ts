@@ -201,6 +201,7 @@ export class PlannerService {
 
   async #buildInput(options: PreviewOptions): Promise<PlannerInput> {
     const tasks = await this.#queries.listStudyTasks({ status: 'active' })
+    const activePlan = await this.#queries.getActiveStudyPlan(options.range)
     const itemDue = new Map<string, Due | undefined>()
     const plannerTasks: PlannerTaskInput[] = []
 
@@ -225,11 +226,16 @@ export class PlannerService {
       })
     }
 
+    const lockedById = new Map<string, LockedBlock>()
+    for (const lock of activePlan?.lockedBlocks ?? []) lockedById.set(lock.id, lock)
+    for (const lock of options.lockedBlocks ?? []) lockedById.set(lock.id, lock)
+    const lockedBlocks = [...lockedById.values()]
+
     return {
       range: options.range,
       tasks: plannerTasks,
       ...(options.busyBlocks ? { busyBlocks: options.busyBlocks } : {}),
-      ...(options.lockedBlocks ? { lockedBlocks: options.lockedBlocks } : {}),
+      ...(lockedBlocks.length > 0 ? { lockedBlocks } : {}),
       now: options.now ?? this.#clock.now(),
       ...(options.granularityMinutes
         ? { granularityMinutes: options.granularityMinutes }
