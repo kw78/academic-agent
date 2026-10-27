@@ -100,7 +100,8 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 
 - 桌面进程创建 Academic Host 默认数据库与 3 个调度作业；
 - UIAutomation 可见“学业”“Host 已连接”；
-- 桌面面板执行“立即同步”后数据库出现课程与来源事项。
+- 桌面面板执行“立即同步”后数据库出现课程与来源事项；
+- 桌面 Plugins 页面禁用 UI 后入口消失、后台作业继续，重新启用后入口恢复且作业数不变。
 - `dsh --profile desktop --dump-config` 被 Electron 拒绝，属于预期限制。
 
 ## DSH 实测（本机 0.2.1-rc.3）

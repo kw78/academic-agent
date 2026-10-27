@@ -164,7 +164,7 @@ docs/adr/                      # 架构决策记录
 | T14 Agent Bridge 卸载不影响后台 | 已覆盖（宿主无关 + 真实 Cordis tools fiber） | `tests/e2e/app.test.ts`、`cordis-lifecycle.test.ts` |
 | T15 零模型调用 | 已覆盖（ModelUsageMeter = 0；DSH 自测不调用模型） | `tests/e2e/app.test.ts`、DSH selftest |
 | T16 未授权写入被拒 | 已覆盖（可信宿主授权；模型参数不能自证；DSH 中 FORBIDDEN 实测） | `tests/integration/agent-tools.test.ts`、DSH selftest |
-| T17 插件停用资源释放 | 已覆盖（消费者/定时器/处理器 + 真实 Cordis tools/planner fiber + DSH Web UI 禁用/启用）；文件级 HMR 待补 | dispatcher、scheduler、cordis-lifecycle 测试；frontend-verification |
+| T17 插件停用资源释放 | 已覆盖（消费者/定时器/处理器 + 真实 Cordis tools/planner fiber + DSH Web + Desktop UI 禁用/启用）；文件级 HMR 待补 | dispatcher、scheduler、cordis-lifecycle 测试；frontend-verification |
 | T18 备份恢复 | 已覆盖 | `tests/e2e/app.test.ts` |
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
@@ -179,7 +179,7 @@ P0 修复已验证：启动不覆盖调度配置；消费者重启续跑 checkpo
 
 前端 UI 已验证（`packages/academic-dsh-ui`）：侧边栏“学业”入口、总览/任务/计划/连接/自动化/设置页面；任务完成、计划候选确认、锁定、可用时间保存、作业暂停/恢复、提醒已读均经 Host Remote API 生效；候选计划确认使用 Host 端 `previewId`，不信任客户端计划块；UI 不返回/保存 `credentialRef`，未实现真实 Adapter 时不显示认证表单。详细记录见 `docs/frontend-verification.md`。
 
-Desktop 安装已验证：`desktop` profile 的 bundle 列表包含 `@academic/dsh-plugin` / `@academic/dsh-ui`；DSH Desktop 进程创建 `$DSH_HOME/academic-agent/academic.db` 与 3 个后台作业，UIAutomation 可见“学业”“Host 已连接”，从桌面面板执行“立即同步”后数据库出现 1 门课程与 2 个来源事项。
+Desktop 安装已验证：`desktop` profile 的 bundle 列表包含 `@academic/dsh-plugin` / `@academic/dsh-ui`；DSH Desktop 进程创建 `$DSH_HOME/academic-agent/academic.db` 与 3 个后台作业，UIAutomation 可见“学业”“Host 已连接”，从桌面面板执行“立即同步”后数据库出现 1 门课程与 2 个来源事项。桌面 Plugins 页面禁用 UI 后入口消失、后台作业继续；重新启用后入口恢复且作业数不变。
 
 DSH 实测（本机 0.2.1-rc.3，独立 `academic` profile）：
 
