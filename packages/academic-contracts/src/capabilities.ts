@@ -3,6 +3,8 @@ import { CapabilityConflictError, CapabilityUnavailableError } from './errors.js
 export const CAPABILITY_KINDS = ['adapter', 'planner', 'notification', 'tutor'] as const
 export type CapabilityKind = (typeof CAPABILITY_KINDS)[number]
 
+export const PLANNER_CAPABILITY_ID = 'academic.planner.basic'
+
 export interface CapabilityDescriptor {
   id: string
   kind: CapabilityKind

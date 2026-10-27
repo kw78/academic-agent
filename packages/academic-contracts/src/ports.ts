@@ -1,6 +1,21 @@
 import type { CommandResult, DomainCommand } from './commands.js'
 import type { DomainEvent } from './events.js'
 import type { QueryApi } from './queries.js'
+import type { Range } from './primitives.js'
+
+export type ReplanReason =
+  | 'items-changed'
+  | 'tasks-changed'
+  | 'availability-changed'
+  | 'manual'
+
+export interface ReplanRequestPort {
+  enqueue(input: {
+    reason: ReplanReason
+    range: Range
+    sourceKey?: string
+  }): { replanRequestId: string; status: string }
+}
 
 export interface CommandApi {
   execute(command: DomainCommand): Promise<CommandResult>

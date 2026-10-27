@@ -218,6 +218,15 @@ export class SqliteQueryService implements QueryApi {
     return { items: rows.map((row) => this.#toTask(row)), meta: this.#meta() }
   }
 
+  async getStudyTask(
+    taskId: string,
+  ): Promise<(StudyTaskView & { meta: QueryMeta }) | undefined> {
+    const row = this.#db
+      .prepare('SELECT * FROM study_tasks_current WHERE task_id = ?')
+      .get(taskId) as SqlRow | undefined
+    return row ? { ...this.#toTask(row), meta: this.#meta() } : undefined
+  }
+
   async getActiveStudyPlan(
     range: Range,
   ): Promise<(StudyPlanView & { meta: QueryMeta }) | undefined> {

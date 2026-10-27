@@ -1,14 +1,15 @@
-import type {
-  Due,
-  LockedBlock,
-  PlanBlock,
-  PlannerIdentity,
-  Range,
-  TimeBlock,
+import {
+  PLANNER_CAPABILITY_ID,
+  type Due,
+  type LockedBlock,
+  type PlanBlock,
+  type PlannerIdentity,
+  type Range,
+  type TimeBlock,
 } from '@academic/contracts'
 import { deadlineForDue } from './time.js'
 
-export const PLANNER_ID = 'academic.planner.basic'
+export const PLANNER_ID = PLANNER_CAPABILITY_ID
 export const PLANNER_VERSION = '1.0.0'
 
 export interface PlannerTaskInput {

@@ -118,6 +118,9 @@ export interface QueryApi {
     externalItemId: string,
   ): Promise<(AcademicItemView & { meta: QueryMeta }) | undefined>
   listStudyTasks(params?: ListStudyTasksParams): Promise<Page<StudyTaskView>>
+  getStudyTask(
+    taskId: string,
+  ): Promise<(StudyTaskView & { meta: QueryMeta }) | undefined>
   getActiveStudyPlan(range: Range): Promise<(StudyPlanView & { meta: QueryMeta }) | undefined>
   getDashboardSummary(range: Range): Promise<DashboardSummary>
   listSyncRuns(sourceId?: string, limit?: number): Promise<Page<SyncRunSummary>>
