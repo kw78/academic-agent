@@ -13,6 +13,7 @@ GitHub: <https://github.com/kw78/academic-agent>
 ## 当前状态
 
 - 单用户、本地、CLI + SQLite 的 MVP 闭环已完成。
+- 用户控制已补齐：课程/任务管理、计划锁定/解锁/归档、自动化状态、提醒已读。
 - 常规同步、去重、提醒、基础规划**不调用 LLM**；Agent 只通过受控工具读取事实或提交命令。
 - M1（事件溯源内核）与 M2（fixture 数据源 + 调度 + 规划）已完成；M3 的 Agent 工具已完成。
 - **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，6 个工具注册成功，并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
@@ -38,8 +39,16 @@ CLI 命令：
 npm run demo                    # 同步 fixture、创建任务、生成并确认计划
 npm run demo -- sync            # 同步 + 处理提醒/重规划请求
 npm run demo -- list            # 查看待办、任务、未读提醒
+npm run demo -- status          # 投影一致性、同步、定时任务、作业运行
+npm run demo -- course list     # 课程管理
+npm run demo -- course add 2026-fall CS101 "Computer Science"
+npm run demo -- task list       # 任务管理
+npm run demo -- task complete <taskId>
+npm run demo -- plan show       # 查看当前计划与锁定时段
 npm run demo -- plan --accept   # 生成未来 7 天计划并确认
-npm run demo -- notifications   # 未读提醒
+npm run demo -- plan lock 2026-10-27T16:30:00 2026-10-27T18:00:00 "锁定"
+npm run demo -- plan unlock <lockId>
+npm run demo -- notifications --read-all
 npm run demo -- backup          # 一致性备份到 .data/backups/
 npm run demo -- help
 ```
@@ -151,4 +160,4 @@ npm test
 npm run build:dsh
 ```
 
-共 57 项自动化测试，覆盖 T01–T20 的宿主无关部分；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry 自测。详见 [docs/testing.md](docs/testing.md)。
+共 59 项自动化测试，覆盖 T01–T20 的宿主无关部分与用户控制闭环；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry 自测。详见 [docs/testing.md](docs/testing.md)。

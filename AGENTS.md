@@ -127,7 +127,7 @@ docs/adr/                      # 架构决策记录
 |---|---|---|
 | M0 | DSH 版本锁定与框架可运行性验证 | 部分完成：本机 `0.2.1-rc.3` 已验证 bundle 加载、6 工具注册、真实 ToolRegistry 执行；HMR/Session 待补 |
 | M1 | Event-Sourced Kernel、SQLite Event Store、核心投影、迁移 | 已完成（MVP 范围） |
-| M2 | fixture LMS、Connector、Scheduler、StudyTask/StudyPlan、Planner | 已完成（fixture 闭环） |
+| M2 | fixture LMS、Connector、Scheduler、StudyTask/StudyPlan、Planner | 已完成（fixture 闭环 + 用户管理/计划锁定） |
 | M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成：宿主无关工具、DSH 工具绑定、DeepSeek 模型自然语言工具调用均通过 |
 | M4 | 生命周期、故障注入、备份恢复、迁移与性能 | 部分完成（生命周期/故障/备份/Upcaster/重启已测；性能与迁移演练待做） |
 
@@ -156,7 +156,9 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（57 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`。
+当前验证命令：`npm run typecheck`、`npm test`（59 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`。
+
+用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 
 DSH 实测（本机 0.2.1-rc.3，独立 `academic` profile）：
 

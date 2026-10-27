@@ -13,6 +13,7 @@
 - 每次重规划使用稳定的 `replanRequestId`；请求保存在 `replan_requests`（pending / suggested / accepted / failed）。
 - 相同 `reason + range` 的仍 pending 请求合并为一条，避免事件风暴。
 - 处理请求时先返回已保存的建议；已接受的请求直接返回 `planId`，不重新计算或创建新计划。
+- 用户锁定/解锁计划时段时，与计划范围重叠的 `suggested` 请求会被重置为 `pending` 并丢弃旧建议，避免锁变更后继续返回过期排程；随后排队新的重规划请求。
 - 接受计划时把 `replanRequestId` 写入 `StudyPlanAccepted` 事件，计划与请求可双向追溯。
 - Planner 首次启用从最新事件位置开始，避免历史回放触发补算；能力卸载后旧计划仍可查询，重新启用后按 checkpoint/已保存请求续跑。
 

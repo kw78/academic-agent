@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**57 项测试通过**（12 个测试文件）。
+当前基线：**59 项测试通过**（13 个测试文件）。
 
 ## 分层
 
@@ -18,7 +18,7 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 | `packages/*/test` | 契约、内核、Planner 的单元测试 |
 | `tests/integration` | 存储、Dispatcher、Connector、Scheduler、Planner 生命周期、通知、Agent 工具 |
 | `tests/replay` | Upcaster 与历史事件重放 |
-| `tests/e2e` | 组合根、Agent Bridge 卸载、零模型调用、备份恢复、应用重启 |
+| `tests/e2e` | 组合根、Agent Bridge 卸载、零模型调用、备份恢复、应用重启、用户管理/计划锁定 |
 
 ## 架构测试矩阵（Spec §19）
 
@@ -44,6 +44,16 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 | T18 | 数据库备份恢复；事件完整、投影可校验/重建 | `tests/e2e/app.test.ts` | 通过 |
 | T19 | 旧 Schema 事件经 Upcaster 正确投影 | `tests/replay/upcaster.test.ts` | 通过 |
 | T20 | 会话/应用结束不影响持久化状态与后台任务 | `tests/e2e/app.test.ts` | 通过（应用重启；DSH Session 待 M0） |
+
+## MVP 用户控制
+
+`tests/e2e/management.test.ts` 覆盖：
+
+- 课程添加/归档、任务创建/完成/重开/改预计时长；
+- 自动化状态（投影一致性、最近同步、定时任务）与提醒已读；
+- 计划锁定：移除重叠学习块、增加锁定时段、排队重规划；
+- 锁定后旧建议失效并重新计算，新建议不占用锁定时间；
+- 解锁与计划归档。
 
 ## DSH 实测（本机 0.2.1-rc.3）
 
