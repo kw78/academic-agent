@@ -24,6 +24,7 @@ Academic Agent 的 DSH 客户端界面与 Host Remote API 适配层。
 - 明确区分 Loading、Empty、Ready、Stale、Degraded、Auth Required、Conflict、Unavailable、Error；
 - 查询失败保留最后一次有效数据并显示时间，不把失败伪装成空数据；
 - “已保存凭据”只显示为“已保存凭据，未验证”，不会显示“已连接”；
+- Blackboard 通过宿主拉起 Edge/Chrome 登录窗口，用户自行完成 SSO 与验证码；宿主读取会话 Cookie 写入 DPAPI，应用不读取密码。
 - 只有真实 Adapter 可用时才展示认证表单；没有实现真实平台 Adapter 时明确标记不可用；
 - 凭据输入框提交前清空 React 状态，使用 `type="password"`，不写入 URL、浏览器存储、日志或 Agent Prompt；
 - 浏览器本地仅保存非敏感 UI 偏好（当前页面）。

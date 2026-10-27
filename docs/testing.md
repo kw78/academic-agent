@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**104 项测试通过**（21 个测试文件）。
+当前基线：**105 项测试通过**（21 个测试文件）。
 
 ## 分层
 
@@ -94,15 +94,12 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 
 `packages/academic-dsh-ui` 的单元、集成与真实 DSH Web 验证见 [frontend-verification.md](frontend-verification.md)。
 
-## Blackboard 会话探针
+## Blackboard 登录与探针
 
-`adapters/ustc-blackboard/test/probe.test.ts` 覆盖：
-
-- 从 Blackboard 页面提取课程链接并解析相对 URL；
-- 登录页重定向识别；
-- 诊断 summary 不包含 Cookie 值。
-
-真实 Cookie 只通过本机隐藏输入写入 DPAPI；仓库测试不使用真实账号或会话。
+- `tests/integration/ui-api.test.ts` 使用注入的登录结果验证：宿主 API 会创建 Blackboard 连接、写入凭据存储、标记已连接，且响应不包含 Cookie。
+- `adapters/ustc-blackboard/test/probe.test.ts` 覆盖：课程链接解析、登录页重定向识别、诊断 summary 不包含 Cookie。
+- 真实 `blackboard login` 需要人工在 Edge/Chrome 完成 USTC SSO 与验证码，属于桌面手工验收，不在自动化测试中绕过验证码。
+- 测试不使用真实账号、密码或会话。
 
 ## DSH Desktop
 

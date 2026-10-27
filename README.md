@@ -64,7 +64,8 @@ npm run demo -- connection list
 npm run demo -- connection add secure-lms "Secure LMS" --auth token --scopes courses,assignments
 npm run demo -- connection connect <connectionId>   # 本机隐藏输入，写入系统凭据库
 npm run demo -- connection disconnect <connectionId>
-npm run demo -- blackboard connect   # 本机隐藏输入 BB 会话 Cookie（不进入聊天/日志）
+npm run demo -- blackboard login     # 拉起 Edge/Chrome 完成 SSO，自动保存会话
+npm run demo -- blackboard connect   # 备用：本机隐藏输入 BB 会话 Cookie
 npm run demo -- blackboard probe <connectionId>
 npm run demo -- backup          # 一致性备份到 .data/backups/
 npm run demo -- help
@@ -126,7 +127,7 @@ ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-ui-test.db \
   dsh --profile academic-web --no-open --port 0
 ```
 
-打开 DSH 打印的 URL，侧边栏会出现“学业”。UI 只通过受认证的 Host Remote API 读写，不接触 SQLite、Event Store、Scheduler 表或 Credential Vault；禁用 UI 不会停止后台同步和提醒。详见 [UI README](packages/academic-dsh-ui/README.md) 与 [验证记录](docs/frontend-verification.md)。
+打开 DSH 打印的 URL，侧边栏会出现“学业”。“连接”页的 Blackboard 卡片可拉起 Edge/Chrome 登录窗口，完成 SSO 后由宿主保存会话；UI 只通过受认证的 Host Remote API 读写，不接触 SQLite、Event Store、Scheduler 表或 Credential Vault；禁用 UI 不会停止后台同步和提醒。详见 [UI README](packages/academic-dsh-ui/README.md) 与 [验证记录](docs/frontend-verification.md)。
 
 #### 安装到 DSH Desktop
 
@@ -224,4 +225,4 @@ npm test
 npm run build:dsh
 ```
 
-共 104 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。
+共 105 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。

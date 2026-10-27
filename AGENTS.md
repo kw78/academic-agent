@@ -170,13 +170,13 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（104 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（105 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 
 P0 修复已验证：启动不覆盖调度配置；消费者重启续跑 checkpoint；Agent 写入需可信宿主授权；同步自动生成默认任务且不重复/不覆盖用户修改；Planner 遵守每周可用时间与临时不可用；72h/24h 截止提醒去重且重启补偿。
 
-Blackboard 会话探针已实现：手动 SSO 登录后，通过本机隐藏输入把 Cookie 写入 DPAPI，`blackboard probe` 只读抓取 BB 登录页/课程页并输出结构摘要；正式 Blackboard Adapter（作业/考试解析与课程注册）尚未实现，不得声称真实平台同步完成。
+Blackboard 应用内登录与只读探针已实现：`blackboard login` 使用 Playwright 驱动系统 Edge/Chrome 拉起登录窗口，用户自行完成 SSO 与验证码，宿主读取会话 Cookie 写入 DPAPI；桌面端“连接”页也提供登录按钮。`blackboard probe` 只读抓取 BB 登录页/课程页并输出结构摘要。统一认证密码不进入应用。正式 Blackboard Adapter（作业/考试解析、课程注册、同步）尚未实现，不得声称真实平台同步完成。
 
 凭据连接 MVP 已验证：连接元数据与秘密分离；Windows DPAPI 加密存储；fail-closed；验证/断开/删除凭据；认证失败停止同步并保留旧数据；source mismatch 拒绝；DB/事件/同步记录无明文；DPAPI 受保护凭据完成端到端同步。
 

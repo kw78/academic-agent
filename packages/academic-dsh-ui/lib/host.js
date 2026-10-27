@@ -19967,6 +19967,106 @@ var CapabilityUnavailableError = class extends Error {
   }
 };
 
+// adapters/ustc-blackboard/src/login.ts
+import { chromium } from "playwright-core";
+var USTC_BLACKBOARD_LOGIN_URL = "https://www.bb.ustc.edu.cn/";
+function isBlackboardUrl(url2) {
+  return url2.hostname === "www.bb.ustc.edu.cn" || url2.hostname.endsWith(".bb.ustc.edu.cn");
+}
+function isLoggedInUrl(url2) {
+  if (!isBlackboardUrl(url2)) return false;
+  return !/\/webapps\/login|\/authValidate|\/cas\//i.test(url2.pathname);
+}
+async function launchBrowser(channel) {
+  return chromium.launch({
+    channel,
+    headless: false,
+    args: ["--no-first-run", "--no-default-browser-check"]
+  });
+}
+async function loginBlackboardWithBrowser(options = {}) {
+  const channels = options.channel ? [options.channel] : ["msedge", "chrome"];
+  let browser;
+  let context;
+  let launchError;
+  for (const channel of channels) {
+    try {
+      browser = await launchBrowser(channel);
+      break;
+    } catch (error62) {
+      launchError = error62;
+    }
+  }
+  if (!browser) {
+    throw new Error(
+      `\u65E0\u6CD5\u542F\u52A8 Edge/Chrome \u767B\u5F55\u7A97\u53E3\uFF1A${launchError instanceof Error ? launchError.message : String(launchError)}`
+    );
+  }
+  try {
+    context = await browser.newContext({
+      locale: "zh-CN",
+      viewport: { width: 1280, height: 900 }
+    });
+    const page = await context.newPage();
+    await page.goto(USTC_BLACKBOARD_LOGIN_URL, {
+      waitUntil: "domcontentloaded",
+      timeout: 6e4
+    });
+    const deadline = Date.now() + (options.timeoutMs ?? 4 * 6e4);
+    let loggedPage = page;
+    while (Date.now() < deadline) {
+      if (!browser.isConnected()) {
+        throw new Error("\u767B\u5F55\u7A97\u53E3\u5DF2\u5173\u95ED\uFF0C\u672A\u5B8C\u6210 Blackboard \u767B\u5F55");
+      }
+      const reached = context.pages().find((candidate) => {
+        try {
+          return isLoggedInUrl(new URL(candidate.url()));
+        } catch {
+          return false;
+        }
+      });
+      if (reached) {
+        loggedPage = reached;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    let finalUrl;
+    try {
+      finalUrl = new URL(loggedPage.url());
+    } catch {
+      throw new Error("\u672A\u80FD\u8BFB\u53D6\u767B\u5F55\u540E\u7684 Blackboard \u9875\u9762");
+    }
+    if (!isLoggedInUrl(finalUrl)) {
+      throw new Error("\u767B\u5F55\u8D85\u65F6\uFF1A\u672A\u68C0\u6D4B\u5230 Blackboard \u95E8\u6237");
+    }
+    await loggedPage.waitForLoadState("domcontentloaded").catch(() => void 0);
+    const cookies = await context.cookies();
+    const blackboardCookies = cookies.filter((cookie) => {
+      const domain2 = cookie.domain.replace(/^\./, "");
+      return domain2 === "bb.ustc.edu.cn" || domain2.endsWith(".bb.ustc.edu.cn");
+    });
+    const cookieHeader = blackboardCookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+    if (!cookieHeader) {
+      throw new Error("\u767B\u5F55\u6210\u529F\u4F46\u672A\u8BFB\u53D6\u5230 Blackboard \u4F1A\u8BDD Cookie");
+    }
+    const title = await loggedPage.title().catch(() => void 0);
+    return {
+      cookieHeader,
+      cookieCount: blackboardCookies.length,
+      finalOrigin: finalUrl.origin,
+      finalPath: finalUrl.pathname,
+      ...title ? { title } : {}
+    };
+  } finally {
+    await context?.close().catch(() => void 0);
+    await browser.close().catch(() => void 0);
+  }
+}
+
+// adapters/ustc-blackboard/src/index.ts
+var USTC_BLACKBOARD_SOURCE_ID = "ustc-blackboard";
+
 // packages/academic-planner-basic/src/time.ts
 function zoneOffsetMs(zone, instant) {
   const truncated = new Date(Math.floor(instant.getTime() / 1e3) * 1e3);
@@ -20317,6 +20417,9 @@ function sourceDetail(source) {
       return source.lastSync.errorMessage ?? "\u6700\u8FD1\u4E00\u6B21\u540C\u6B65\u5931\u8D25\uFF1B\u65E7\u6570\u636E\u4FDD\u7559";
     }
     if (source.state === "connected") return "\u6700\u8FD1\u4E00\u6B21\u5185\u7F6E\u540C\u6B65\u6210\u529F";
+    if (source.sourceId === USTC_BLACKBOARD_SOURCE_ID) {
+      return "\u5C1A\u672A\u767B\u5F55\uFF1B\u53EF\u5728\u684C\u9762\u7AEF\u62C9\u8D77 Blackboard \u767B\u5F55\u7A97\u53E3";
+    }
     return "\u5C1A\u672A\u914D\u7F6E\u8FDE\u63A5";
   }
   switch (source.connection.status) {
@@ -20342,6 +20445,13 @@ function buildSources(app, connections, syncRuns) {
     adapterAvailable: true,
     authKind: "none",
     state: "unconfigured"
+  });
+  catalog.set(USTC_BLACKBOARD_SOURCE_ID, {
+    sourceId: USTC_BLACKBOARD_SOURCE_ID,
+    displayName: "USTC Blackboard",
+    adapterAvailable: false,
+    authKind: "token",
+    state: "unavailable"
   });
   for (const adapter of app.registry.list("adapter")) {
     const prefix = "academic.adapter.";
@@ -20432,7 +20542,8 @@ async function loadTasks(app, options = {}) {
     ...plan ? { plan } : {}
   };
 }
-function createAcademicUiApi(app) {
+function createAcademicUiApi(app, options = {}) {
+  const loginBlackboard = options.loginBlackboard ?? (() => loginBlackboardWithBrowser());
   const previews = /* @__PURE__ */ new Map();
   function rememberPreview(suggestion) {
     const previewId = randomUUID();
@@ -20743,6 +20854,32 @@ function createAcademicUiApi(app) {
         return fromError(error62);
       }
     },
+    async blackboardLogin() {
+      try {
+        const result = await loginBlackboard();
+        const existing = app.connections.list().find((connection2) => connection2.sourceId === USTC_BLACKBOARD_SOURCE_ID);
+        const connection = existing ?? app.connections.create({
+          sourceId: USTC_BLACKBOARD_SOURCE_ID,
+          displayName: "USTC Blackboard",
+          authKind: "token",
+          scopes: ["courses", "assignments"]
+        });
+        if (connection.authKind !== "token") {
+          return failure2("VALIDATION", "\u73B0\u6709 Blackboard \u8FDE\u63A5\u4E0D\u662F\u4F1A\u8BDD\u51ED\u636E\u7C7B\u578B");
+        }
+        await app.connections.setSecret(
+          connection.connectionId,
+          JSON.stringify({ cookie: result.cookieHeader })
+        );
+        await app.connections.verify(connection.connectionId, async () => ({
+          ok: true
+        }));
+        const updated = app.connections.get(connection.connectionId);
+        return updated ? ok(updated) : failure2("NOT_FOUND", "\u767B\u5F55\u6210\u529F\u4F46\u8FDE\u63A5\u8BB0\u5F55\u672A\u627E\u5230");
+      } catch (error62) {
+        return failure2("ERROR", safeMessage(error62));
+      }
+    },
     async setConnectionSecret(request) {
       const parsed = parse3(secretSchema, request);
       if (!parsed.ok) return parsed;
@@ -20966,6 +21103,7 @@ var REMOTE_METHODS = [
   "updateAvailability",
   "connections",
   "createConnection",
+  "blackboardLogin",
   "setConnectionSecret",
   "verifyConnection",
   "disconnectConnection",
@@ -21051,6 +21189,9 @@ var AcademicUiService = class extends TypertRemoteService {
   }
   async createConnection(request) {
     return (await this.apiReady).createConnection(request);
+  }
+  async blackboardLogin(request) {
+    return (await this.apiReady).blackboardLogin(request);
   }
   async setConnectionSecret(request) {
     return (await this.apiReady).setConnectionSecret(request);

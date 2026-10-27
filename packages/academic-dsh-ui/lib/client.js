@@ -2414,6 +2414,7 @@ function SourceCard({
     await refresh();
   });
   const connection = source.connection;
+  const isBlackboard = source.sourceId === "ustc-blackboard";
   const canAuthenticate = source.adapterAvailable && connection !== void 0 && connection.authKind !== "none";
   const canSync = source.adapterAvailable && source.sourceId === "fixture-lms";
   return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: "ac-card ac-source-card", children: [
@@ -2456,9 +2457,25 @@ function SourceCard({
       ] }),
       connection?.status === "configured" && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-warn", children: "\u5DF2\u4FDD\u5B58\u51ED\u636E\uFF0C\u4F46\u5C1A\u672A\u9A8C\u8BC1\uFF1B\u4FDD\u5B58\u51ED\u636E\u4E0D\u4EE3\u8868\u5E73\u53F0\u53EF\u7528\u3002" }),
       action.notice && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) }),
-      canAuthenticate && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(CredentialForm, { ctx, connection, onDone: async () => {
+      isBlackboard ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u5C06\u6253\u5F00 Edge/Chrome \u767B\u5F55\u7A97\u53E3\uFF1B\u8BF7\u5B8C\u6210\u7EDF\u4E00\u8BA4\u8BC1\u548C\u9A8C\u8BC1\u7801\u3002\u5E94\u7528\u4E0D\u4F1A\u8BFB\u53D6\u6216\u4FDD\u5B58\u4F60\u7684\u7EDF\u4E00\u8BA4\u8BC1\u5BC6\u7801\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          "button",
+          {
+            type: "button",
+            className: "ac-button ac-button-primary",
+            disabled: action.pending !== void 0,
+            onClick: () => void action.run(
+              "bb-login",
+              () => callApi(ctx, "blackboardLogin", {}),
+              "\u767B\u5F55\u6210\u529F\uFF0CBlackboard \u4F1A\u8BDD\u5DF2\u4FDD\u5B58"
+            ),
+            children: action.pending === "bb-login" ? "\u7B49\u5F85\u767B\u5F55\u7A97\u53E3\u2026" : connection ? "\u91CD\u65B0\u767B\u5F55 Blackboard" : "\u767B\u5F55 Blackboard"
+          }
+        )
+      ] }) : canAuthenticate ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(CredentialForm, { ctx, connection, onDone: async () => {
         await refresh();
-      } })
+      } }) : null
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-source-actions", children: [
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
@@ -2490,7 +2507,7 @@ function SourceCard({
           children: action.pending === "sync" ? "\u540C\u6B65\u4E2D\u2026" : "\u7ACB\u5373\u540C\u6B65"
         }
       ),
-      connection && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      connection && !isBlackboard && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
         "button",
         {
           type: "button",
@@ -2557,7 +2574,8 @@ function ConnectionsPage({ ctx, active }) {
   const [connectionAccount, setConnectionAccount] = (0, import_react6.useState)("");
   const [connectionScopes, setConnectionScopes] = (0, import_react6.useState)("");
   const authSources = (data?.sources ?? []).filter(
-    (source) => source.adapterAvailable && source.authKind !== "none" && source.authKind !== "unknown"
+    (source) => source.adapterAvailable && source.authKind !== "none" && source.authKind !== "unknown" && // Blackboard uses its own login-window card, not the generic token form.
+    source.sourceId !== "ustc-blackboard"
   );
   const addCourse = async () => {
     if (!courseTerm.trim() || !courseCode.trim() || !courseTitle.trim()) {
@@ -2683,9 +2701,9 @@ function ConnectionsPage({ ctx, active }) {
               },
               source.sourceId
             )) }),
-            authSources.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ac-banner ac-banner-warn", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: "\u5F53\u524D\u7248\u672C\u6CA1\u6709\u652F\u6301\u8BA4\u8BC1\u7684\u771F\u5B9E\u6570\u636E\u6E90" }),
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { children: "\u5185\u7F6E Fixture \u6570\u636E\u6E90\u4E0D\u9700\u8981\u51ED\u636E\uFF1BBlackboard \u7B49\u771F\u5B9E\u5E73\u53F0 Adapter \u5C1A\u672A\u5B9E\u73B0\uFF0C\u56E0\u6B64\u4E0D\u4F1A\u5C55\u793A\u8BA4\u8BC1\u8868\u5355\u6216\u6697\u793A\u53EF\u4EE5\u63A5\u5165\u4EFB\u610F\u7F51\u7AD9\u3002" })
+            authSources.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ac-banner ac-banner-info", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: "Blackboard \u5DF2\u652F\u6301\u5E94\u7528\u5185\u767B\u5F55" }),
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { children: "\u5728\u4E0A\u65B9 Blackboard \u5361\u7247\u70B9\u51FB\u201C\u767B\u5F55 Blackboard\u201D\uFF0C\u4F1A\u5728\u65B0\u7A97\u53E3\u5B8C\u6210\u7EDF\u4E00\u8BA4\u8BC1\uFF1B \u5E94\u7528\u4E0D\u4F1A\u8BFB\u53D6\u5BC6\u7801\u3002\u8BFE\u7A0B/\u4F5C\u4E1A\u540C\u6B65\u89E3\u6790\u4ECD\u5728\u63A5\u5165\u4E2D\uFF0C\u5176\u4ED6\u771F\u5B9E\u5E73\u53F0 Adapter \u5C1A\u672A\u5B9E\u73B0\u3002" })
             ] }) }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
               "form",
               {

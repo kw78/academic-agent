@@ -9,6 +9,7 @@ import {
 } from '@academic/contracts'
 import type { WeeklySlot } from '@academic/planner-basic'
 import {
+  loginBlackboardWithBrowser,
   probeBlackboard,
   USTC_BLACKBOARD_SOURCE_ID,
 } from '@academic/adapter-ustc-blackboard'
@@ -566,6 +567,37 @@ async function runConnectionDeleteCredential(app: AcademicApp, connectionId: str
   printConnection(await app.connections.deleteCredential(connectionId))
 }
 
+async function runBlackboardLogin(app: AcademicApp): Promise<void> {
+  console.log('正在打开登录窗口；请在其中完成统一身份认证和验证码，登录成功后窗口会自动读取会话。')
+  const result = await loginBlackboardWithBrowser()
+  const existing = app.connections
+    .list()
+    .find((connection) => connection.sourceId === USTC_BLACKBOARD_SOURCE_ID)
+  const connection =
+    existing ??
+    app.connections.create({
+      sourceId: USTC_BLACKBOARD_SOURCE_ID,
+      displayName: 'USTC Blackboard',
+      authKind: 'token',
+      scopes: ['courses', 'assignments'],
+    })
+  if (connection.authKind === 'none' || connection.authKind === 'oauth') {
+    throw new Error('现有 Blackboard 连接不是 token 类型；请先创建新的 token 连接')
+  }
+  await app.connections.setSecret(
+    connection.connectionId,
+    JSON.stringify({ cookie: result.cookieHeader }),
+  )
+  await app.connections.verify(connection.connectionId, async () => ({ ok: true }))
+  console.log(
+    `登录成功：读取 ${result.cookieCount} 个 Blackboard Cookie · ${result.finalOrigin}${result.finalPath}`,
+  )
+  console.log(`连接：${connection.connectionId}`)
+  console.log(
+    `下一步：ACADEMIC_DB=${DATABASE_PATH} npm run demo -- blackboard probe ${connection.connectionId}`,
+  )
+}
+
 async function runBlackboardConnect(app: AcademicApp): Promise<void> {
   const cookie = await promptHidden('Blackboard 会话 Cookie（输入不回显）: ')
   if (!cookie) throw new Error('会话 Cookie 不能为空')
@@ -735,7 +767,8 @@ function printHelp(): void {
   connection disconnect <id> [--delete-credential]
   connection delete-credential <id>
   connection show <id>
-  blackboard connect               在本机隐藏输入 Blackboard 会话 Cookie
+  blackboard login                 拉起浏览器完成 SSO，自动保存 Blackboard 会话
+  blackboard connect               手动粘贴会话 Cookie（备用）
   blackboard probe <connectionId>   用已保存的会话 Cookie 探测 BB 登录与课程页面
   notifications [--read ID | --read-all]
   backup                    生成一致性数据库备份
@@ -835,9 +868,10 @@ async function main(): Promise<void> {
 
       case 'blackboard': {
         const [subcommand, ...args] = rest
-        if (subcommand === 'connect') await runBlackboardConnect(app)
+        if (subcommand === 'login') await runBlackboardLogin(app)
+        else if (subcommand === 'connect') await runBlackboardConnect(app)
         else if (subcommand === 'probe') await runBlackboardProbe(app, args[0])
-        else throw new Error('用法：blackboard connect|probe <connectionId>')
+        else throw new Error('用法：blackboard login|connect|probe <connectionId>')
         break
       }
 

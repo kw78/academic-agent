@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createAcademicApp } from '@academic/cli'
+import { InMemoryCredentialVault } from '@academic/connections'
 import { createAcademicUiApi } from '../../packages/academic-dsh-ui/src/api.js'
 import { fixedClock } from '../helpers/store.js'
 
@@ -252,5 +253,40 @@ describe('academic UI host API', () => {
     expect(sync.ok).toBe(true)
     if (!sync.ok) return
     expect(['success', 'partial']).toContain(sync.value.status)
+  })
+})
+
+describe('Blackboard login through the UI host API', () => {
+  it('opens the login flow, stores only the session cookie and reports connected', async () => {
+    const clock = fixedClock()
+    const app = await createAcademicApp({
+      databasePath: ':memory:',
+      clock,
+      credentialVault: new InMemoryCredentialVault(),
+    })
+    cleanup.push(() => app.close())
+    const api = createAcademicUiApi(app, {
+      loginBlackboard: async () => ({
+        cookieHeader: 'BbRouter=test-session-secret; JSESSIONID=abc',
+        cookieCount: 2,
+        finalOrigin: 'https://www.bb.ustc.edu.cn',
+        finalPath: '/webapps/portal/frameset.jsp',
+      }),
+    })
+
+    const result = await api.blackboardLogin({})
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.sourceId).toBe('ustc-blackboard')
+    expect(result.value.status).toBe('connected')
+    expect(JSON.stringify(result.value)).not.toContain('test-session-secret')
+
+    const listed = await api.connections({})
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    const source = listed.value.sources.find((entry) => entry.sourceId === 'ustc-blackboard')
+    expect(source?.adapterAvailable).toBe(true)
+    expect(source?.authKind).toBe('token')
+    expect(JSON.stringify(listed.value)).not.toContain('test-session-secret')
   })
 })

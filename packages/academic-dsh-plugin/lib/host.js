@@ -24544,6 +24544,15 @@ async function createAcademicApp(options) {
     capabilities: ["academic.reminder.in-app"],
     requiredPermissions: []
   });
+  const blackboardCapability = registry2.register({
+    id: "academic.adapter.ustc-blackboard",
+    kind: "adapter",
+    version: "0.1.0",
+    providerPlugin: "@academic/adapter-ustc-blackboard",
+    // Sync parsing is not implemented yet; only the session login is real.
+    capabilities: ["academic.auth.session", "academic.courses.probe"],
+    requiredPermissions: []
+  });
   const host = new InMemoryToolHost();
   const agentRegistration = registerAcademicTools(host, {
     queries: store.queries,
@@ -24557,6 +24566,7 @@ async function createAcademicApp(options) {
   const disposables = [
     ...plannerCapability ? [plannerCapability] : [],
     adapterCapability,
+    blackboardCapability,
     notificationCapability,
     agentRegistration
   ];

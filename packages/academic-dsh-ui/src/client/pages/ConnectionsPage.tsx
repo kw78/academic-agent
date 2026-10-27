@@ -108,6 +108,7 @@ function SourceCard({
     await refresh()
   })
   const connection = source.connection
+  const isBlackboard = source.sourceId === 'ustc-blackboard'
   const canAuthenticate =
     source.adapterAvailable &&
     connection !== undefined &&
@@ -146,11 +147,35 @@ function SourceCard({
         {action.notice && (
           <NoticeBar notice={action.notice} onDismiss={() => action.setNotice(undefined)} />
         )}
-        {canAuthenticate && (
+        {isBlackboard ? (
+          <div className="ac-secret-form">
+            <p className="ac-muted">
+              将打开 Edge/Chrome 登录窗口；请完成统一认证和验证码。应用不会读取或保存你的统一认证密码。
+            </p>
+            <button
+              type="button"
+              className="ac-button ac-button-primary"
+              disabled={action.pending !== undefined}
+              onClick={() =>
+                void action.run(
+                  'bb-login',
+                  () => callApi<ConnectionView>(ctx, 'blackboardLogin', {}),
+                  '登录成功，Blackboard 会话已保存',
+                )
+              }
+            >
+              {action.pending === 'bb-login'
+                ? '等待登录窗口…'
+                : connection
+                  ? '重新登录 Blackboard'
+                  : '登录 Blackboard'}
+            </button>
+          </div>
+        ) : canAuthenticate ? (
           <CredentialForm ctx={ctx} connection={connection} onDone={async () => {
             await refresh()
           }} />
-        )}
+        ) : null}
       </div>
       <div className="ac-source-actions">
         <button
@@ -184,7 +209,7 @@ function SourceCard({
         >
           {action.pending === 'sync' ? '同步中…' : '立即同步'}
         </button>
-        {connection && (
+        {connection && !isBlackboard && (
           <button
             type="button"
             className="ac-button"
@@ -264,7 +289,9 @@ export function ConnectionsPage({ ctx, active }: PageProps) {
     (source) =>
       source.adapterAvailable &&
       source.authKind !== 'none' &&
-      source.authKind !== 'unknown',
+      source.authKind !== 'unknown' &&
+      // Blackboard uses its own login-window card, not the generic token form.
+      source.sourceId !== 'ustc-blackboard',
   )
 
   const addCourse = async (): Promise<UiResult<CommandReceipt>> => {
@@ -400,12 +427,12 @@ export function ConnectionsPage({ ctx, active }: PageProps) {
             </ul>
 
             {authSources.length === 0 ? (
-              <div className="ac-banner ac-banner-warn" role="status">
+              <div className="ac-banner ac-banner-info" role="status">
                 <div>
-                  <strong>当前版本没有支持认证的真实数据源</strong>
+                  <strong>Blackboard 已支持应用内登录</strong>
                   <p>
-                    内置 Fixture 数据源不需要凭据；Blackboard 等真实平台 Adapter
-                    尚未实现，因此不会展示认证表单或暗示可以接入任意网站。
+                    在上方 Blackboard 卡片点击“登录 Blackboard”，会在新窗口完成统一认证；
+                    应用不会读取密码。课程/作业同步解析仍在接入中，其他真实平台 Adapter 尚未实现。
                   </p>
                 </div>
               </div>

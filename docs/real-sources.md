@@ -22,23 +22,32 @@ https://www.bb.ustc.edu.cn/webapps/portal/execute/tabs/tabAction?tab_tab_group_i
 - 返回的是 Blackboard 登录页，未登录状态无法读取课程/作业数据
 - 未提供授权会话、账号或 API 凭据；没有尝试绕过登录、验证码或访问限制
 
-## 手动会话 Cookie 探针（已实现）
+## 应用内登录（已实现）
 
 USTC Blackboard 没有用户名/密码表单，登录会跳转到 `id.ustc.edu.cn` CAS，并带验证码。不要自动化或绕过该流程。
 
-已实现只读探针，流程是：
+`blackboard login` 会拉起一个 Edge/Chrome 窗口：
 
-1. 用户在自己的浏览器完成 SSO 和验证码登录；
-2. 从浏览器 DevTools → Network → 任一 `www.bb.ustc.edu.cn` 请求 → Request Headers 复制完整 `Cookie` 值；
-3. 在本机终端用隐藏输入保存到 DPAPI，探针只下载页面并输出结构摘要。
+1. 应用打开 Blackboard 登录页；
+2. 用户自己在窗口里完成统一认证和验证码；
+3. 登录成功到达 Blackboard 门户后，宿主读取 `bb.ustc.edu.cn` 会话 Cookie；
+4. Cookie 写入 Windows DPAPI，浏览器窗口关闭；应用不会读取或保存统一认证密码。
 
 ```bash
 cd D:/project/classhelper
 ACADEMIC_DB=.data/bb-probe.db \
-  npm run demo -- blackboard connect
-# 在隐藏提示处粘贴 Cookie，输入不回显
+  npm run demo -- blackboard login
 ACADEMIC_DB=.data/bb-probe.db \
   npm run demo -- blackboard probe <connectionId>
+```
+
+桌面端“连接”页也提供“登录 Blackboard”按钮，调用同一条宿主登录流程；不需要手工复制 Cookie。
+
+调试或 Playwright 不可用时，仍保留备用流程：
+
+```bash
+ACADEMIC_DB=.data/bb-probe.db npm run demo -- blackboard connect
+# 本机隐藏输入会话 Cookie
 ```
 
 探针输出 HTTP 状态、页面标题、课程链接数和诊断文件路径；`summary.json` 不包含 Cookie。`.data/bb-probe/` 下是本地诊断 HTML，可能含课程/账号相关文本，查看后应删除。不要把 Cookie 粘贴到聊天、Issue、日志或任何远端工具。

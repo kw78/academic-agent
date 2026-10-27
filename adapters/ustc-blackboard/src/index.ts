@@ -219,3 +219,10 @@ export async function probeBlackboard(
   )
   return result
 }
+
+export {
+  loginBlackboardWithBrowser,
+  USTC_BLACKBOARD_LOGIN_URL,
+  type BlackboardLoginOptions,
+  type BlackboardLoginResult,
+} from './login.js'

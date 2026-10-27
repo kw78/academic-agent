@@ -16,6 +16,11 @@ import {
   type SyncRunSummary,
 } from '@academic/contracts'
 import type { AcademicApp } from '@academic/cli'
+import {
+  loginBlackboardWithBrowser,
+  USTC_BLACKBOARD_SOURCE_ID,
+  type BlackboardLoginResult,
+} from '@academic/adapter-ustc-blackboard'
 import type { NotificationView } from '@academic/notifications'
 import { zonedDateTimeToUtc, type PlanSuggestion } from '@academic/planner-basic'
 import type { JobRun, ScheduledJob } from '@academic/scheduler'
@@ -388,6 +393,9 @@ function sourceDetail(source: SourceStatus): string {
       return source.lastSync.errorMessage ?? '最近一次同步失败；旧数据保留'
     }
     if (source.state === 'connected') return '最近一次内置同步成功'
+    if (source.sourceId === USTC_BLACKBOARD_SOURCE_ID) {
+      return '尚未登录；可在桌面端拉起 Blackboard 登录窗口'
+    }
     return '尚未配置连接'
   }
   switch (source.connection.status) {
@@ -418,6 +426,13 @@ function buildSources(
     adapterAvailable: true,
     authKind: 'none',
     state: 'unconfigured',
+  })
+  catalog.set(USTC_BLACKBOARD_SOURCE_ID, {
+    sourceId: USTC_BLACKBOARD_SOURCE_ID,
+    displayName: 'USTC Blackboard',
+    adapterAvailable: false,
+    authKind: 'token',
+    state: 'unavailable',
   })
   for (const adapter of app.registry.list('adapter')) {
     const prefix = 'academic.adapter.'
@@ -548,6 +563,7 @@ export interface AcademicUiApi {
   updateAvailability(request: unknown): Promise<UiResult<AvailabilityView>>
   connections(request: unknown): Promise<UiResult<ConnectionsView>>
   createConnection(request: unknown): Promise<UiResult<ConnectionView>>
+  blackboardLogin(request: unknown): Promise<UiResult<ConnectionView>>
   setConnectionSecret(request: unknown): Promise<UiResult<ConnectionView>>
   verifyConnection(request: unknown): Promise<UiResult<ConnectionView>>
   disconnectConnection(request: unknown): Promise<UiResult<ConnectionView>>
@@ -570,7 +586,15 @@ export interface AcademicUiApi {
   changeTaskEstimate(request: unknown): Promise<UiResult<CommandReceipt>>
 }
 
-export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
+export interface AcademicUiApiOptions {
+  loginBlackboard?: () => Promise<BlackboardLoginResult>
+}
+
+export function createAcademicUiApi(
+  app: AcademicApp,
+  options: AcademicUiApiOptions = {},
+): AcademicUiApi {
+  const loginBlackboard = options.loginBlackboard ?? (() => loginBlackboardWithBrowser())
   const previews = new Map<string, { suggestion: PlanSuggestion; expiresAt: number }>()
 
   function rememberPreview(suggestion: PlanSuggestion): string {
@@ -905,6 +929,39 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
         return ok(app.connections.create(body))
       } catch (error) {
         return fromError(error)
+      }
+    },
+
+    async blackboardLogin() {
+      try {
+        const result = await loginBlackboard()
+        const existing = app.connections
+          .list()
+          .find((connection) => connection.sourceId === USTC_BLACKBOARD_SOURCE_ID)
+        const connection =
+          existing ??
+          app.connections.create({
+            sourceId: USTC_BLACKBOARD_SOURCE_ID,
+            displayName: 'USTC Blackboard',
+            authKind: 'token',
+            scopes: ['courses', 'assignments'],
+          })
+        if (connection.authKind !== 'token') {
+          return failure('VALIDATION', '现有 Blackboard 连接不是会话凭据类型')
+        }
+        await app.connections.setSecret(
+          connection.connectionId,
+          JSON.stringify({ cookie: result.cookieHeader }),
+        )
+        await app.connections.verify(connection.connectionId, async () => ({
+          ok: true,
+        }))
+        const updated = app.connections.get(connection.connectionId)
+        return updated
+          ? ok(updated)
+          : failure('NOT_FOUND', '登录成功但连接记录未找到')
+      } catch (error) {
+        return failure('ERROR', safeMessage(error))
       }
     },
 

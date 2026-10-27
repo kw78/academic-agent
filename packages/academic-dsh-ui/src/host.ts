@@ -51,6 +51,7 @@ const REMOTE_METHODS = [
   'updateAvailability',
   'connections',
   'createConnection',
+  'blackboardLogin',
   'setConnectionSecret',
   'verifyConnection',
   'disconnectConnection',
@@ -173,6 +174,10 @@ export class AcademicUiService extends TypertRemoteService {
     request: unknown,
   ): Promise<UiResult<ConnectionView>> {
     return (await this.apiReady).createConnection(request as CreateConnectionRequest)
+  }
+
+  async blackboardLogin(request: unknown): Promise<UiResult<ConnectionView>> {
+    return (await this.apiReady).blackboardLogin(request)
   }
 
   async setConnectionSecret(
