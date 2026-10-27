@@ -9,6 +9,7 @@ import {
   parseCommand,
   systemClock,
   timeBlockSchema,
+  type AcademicSourceAdapter,
   type Clock,
   type CommandResult,
   type CourseView,
@@ -21,6 +22,11 @@ import {
   type StudyPlanView,
   type SyncRunSummary,
 } from '@academic/contracts'
+import {
+  ConnectionManager,
+  createDefaultCredentialVault,
+  type CredentialVault,
+} from '@academic/connections'
 import {
   DEFAULT_FIXTURE_COURSE,
   FixtureLmsAdapter,
@@ -83,6 +89,8 @@ export interface AcademicAppOptions {
   authorizeAgentWrite?: AgentWriteAuthorizer
   /** Set false when a host plugin owns the planner capability lifecycle. */
   registerPlannerCapability?: boolean
+  credentialVault?: CredentialVault
+  credentialVaultDir?: string
   notificationWindowDays?: number
   replanHorizonDays?: number
   defaultTaskEstimates?: Partial<Record<'assignment' | 'exam' | 'quiz', number>>
@@ -132,6 +140,7 @@ export interface AcademicApp {
   scheduler: Scheduler
   connectors: ConnectorService
   adapter: FixtureLmsAdapter
+  connections: ConnectionManager
   replans: ReplanStore
   availability: AvailabilityStore
   planner: PlannerService
@@ -143,6 +152,10 @@ export interface AcademicApp {
   modelUsage: ModelUsageMeter
   ensureFixtureCourse(): Promise<CourseView>
   syncFixture(): Promise<SyncRunSummary>
+  syncConnection(
+    connectionId: string,
+    adapter: AcademicSourceAdapter,
+  ): Promise<SyncRunSummary>
   previewPlan(
     range: Range,
     options?: Omit<PreviewOptions, 'range'>,
@@ -237,6 +250,14 @@ export async function createAcademicApp(
     db: store.database,
     commands: store.commands,
     queries: store.queries,
+    clock,
+    ids,
+  })
+  const connections = new ConnectionManager({
+    db: store.database,
+    vault:
+      options.credentialVault ??
+      createDefaultCredentialVault(options.credentialVaultDir),
     clock,
     ids,
   })
@@ -489,6 +510,7 @@ export async function createAcademicApp(
     scheduler,
     connectors,
     adapter,
+    connections,
     replans,
     availability,
     planner,
@@ -503,6 +525,14 @@ export async function createAcademicApp(
     async syncFixture() {
       await connectors.registerCourse(DEFAULT_FIXTURE_COURSE)
       const summary = await connectors.sync(adapter)
+      await dispatcher.processOnce()
+      return summary
+    },
+
+    async syncConnection(connectionId, sourceAdapter) {
+      const summary = await connectors.sync(sourceAdapter, {
+        connection: { connectionId, credentials: connections },
+      })
       await dispatcher.processOnce()
       return summary
     },

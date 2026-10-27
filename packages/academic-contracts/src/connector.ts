@@ -1,3 +1,4 @@
+import type { AdapterFetchContext } from './connections.js'
 import type { Due } from './primitives.js'
 
 export interface NormalizedAcademicItem {
@@ -25,7 +26,7 @@ export interface AdapterResult {
 export interface AcademicSourceAdapter {
   readonly id: string
   readonly sourceId: string
-  fetch(): Promise<AdapterResult>
+  fetch(context?: AdapterFetchContext): Promise<AdapterResult>
 }
 
 export const SYNC_RUN_STATUSES = ['running', 'success', 'partial', 'failed', 'auth-required'] as const

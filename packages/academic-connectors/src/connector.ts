@@ -6,7 +6,9 @@ import {
   type AcademicSourceAdapter,
   type AdapterResult,
   type CommandApi,
+  type ConnectionSyncBinding,
   type CourseView,
+  type CredentialAccess,
   type Clock,
   type IdGenerator,
   type NormalizedAcademicItem,
@@ -37,6 +39,8 @@ export interface SyncOptions {
    * even for a full snapshot, so an empty response can never silently wipe data.
    */
   archiveMissing?: boolean
+  /** When present, the adapter only runs with a source-checked credential lease. */
+  connection?: ConnectionSyncBinding
 }
 
 type ItemOutcome =
@@ -105,12 +109,44 @@ export class ConnectorService {
     const startedAt = this.#clock.now()
     this.#insertRunningRun(runId, adapter.sourceId, startedAt)
 
+    let credentials: CredentialAccess | undefined
+    if (options.connection) {
+      try {
+        credentials = await options.connection.credentials.openCredential(
+          options.connection.connectionId,
+          adapter.sourceId,
+        )
+      } catch (error) {
+        const summary: SyncRunSummary = {
+          runId,
+          sourceId: adapter.sourceId,
+          status: 'failed',
+          startedAt,
+          finishedAt: this.#clock.now(),
+          itemsSeen: 0,
+          created: 0,
+          updated: 0,
+          warnings: [],
+          errorCode: 'CONNECTION_UNAVAILABLE',
+          errorMessage: errorMessage(error),
+        }
+        this.#finishRun(summary)
+        return summary
+      }
+    }
+
     let adapterResult: AdapterResult
     try {
-      adapterResult = await adapter.fetch()
+      adapterResult = await adapter.fetch(credentials ? { credentials } : undefined)
     } catch (error) {
-      const status: SyncRunStatus =
-        error instanceof AdapterAuthError ? 'auth-required' : 'failed'
+      const authFailure = error instanceof AdapterAuthError
+      if (authFailure && options.connection) {
+        await options.connection.credentials.markAuthRequired(
+          options.connection.connectionId,
+          errorMessage(error),
+        )
+      }
+      const status: SyncRunStatus = authFailure ? 'auth-required' : 'failed'
       const summary: SyncRunSummary = {
         runId,
         sourceId: adapter.sourceId,
@@ -121,7 +157,7 @@ export class ConnectorService {
         created: 0,
         updated: 0,
         warnings: [],
-        errorCode: error instanceof AdapterAuthError ? 'AUTH_REQUIRED' : 'TRANSIENT',
+        errorCode: authFailure ? 'AUTH_REQUIRED' : 'TRANSIENT',
         errorMessage: errorMessage(error),
       }
       this.#finishRun(summary)
@@ -204,6 +240,12 @@ export class ConnectorService {
         created,
         updated,
         warnings,
+      }
+      if (options.connection) {
+        await options.connection.credentials.markSynced(
+          options.connection.connectionId,
+          this.#clock.now(),
+        )
       }
       this.#finishRun(summary)
       return summary

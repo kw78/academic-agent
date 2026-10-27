@@ -1,6 +1,9 @@
+import { createInterface } from 'node:readline/promises'
 import {
   newId,
   type CommandResult,
+  type ConnectionAuthKind,
+  type ConnectionView,
   type Range,
   type StudyPlanView,
 } from '@academic/contracts'
@@ -409,6 +412,166 @@ async function runRemindersSet(app: AcademicApp, args: string[]): Promise<void> 
   await runRemindersShow(app)
 }
 
+async function promptVisible(question: string): Promise<string> {
+  const readline = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  })
+  try {
+    return (await readline.question(question)).trim()
+  } finally {
+    readline.close()
+  }
+}
+
+async function promptHidden(question: string): Promise<string> {
+  if (!process.stdin.isTTY) {
+    throw new Error('凭据输入需要交互终端；请在本地终端运行该命令')
+  }
+  const stdin = process.stdin as typeof process.stdin & {
+    setRawMode(enabled: boolean): void
+  }
+  process.stdout.write(question)
+  stdin.setRawMode(true)
+  stdin.resume()
+  stdin.setEncoding('utf8')
+  return new Promise<string>((resolve, reject) => {
+    let value = ''
+    const cleanup = () => {
+      stdin.removeListener('data', onData)
+      stdin.setRawMode(false)
+      stdin.pause()
+    }
+    const onData = (chunk: string) => {
+      for (const char of chunk) {
+        if (char === '\r' || char === '\n') {
+          cleanup()
+          process.stdout.write('\n')
+          resolve(value)
+          return
+        }
+        if (char === '\u0003') {
+          cleanup()
+          process.stdout.write('\n')
+          reject(new Error('已取消凭据输入'))
+          return
+        }
+        if (char === '\u007f') {
+          value = value.slice(0, -1)
+          continue
+        }
+        value += char
+      }
+    }
+    stdin.on('data', onData)
+  })
+}
+
+function printConnection(connection: ConnectionView): void {
+  console.log(
+    `  [${connection.connectionId}] ${connection.sourceId} · ${connection.displayName} · ${connection.status}${
+      connection.accountLabel ? ` · ${connection.accountLabel}` : ''
+    } · credential=${connection.hasCredential ? 'stored' : 'none'}${
+      connection.lastSyncAt ? ` · lastSync=${formatTime(connection.lastSyncAt)}` : ''
+    }${connection.lastError ? ` · ${connection.lastError}` : ''}`,
+  )
+}
+
+async function runConnectionList(app: AcademicApp): Promise<void> {
+  const connections = app.connections.list()
+  console.log(`数据源连接（${connections.length}）：`)
+  for (const connection of connections) printConnection(connection)
+}
+
+async function runConnectionAdd(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  const [sourceId, displayName, ...titleParts] = positional
+  if (!sourceId || !displayName) {
+    throw new Error('用法：connection add <sourceId> <displayName> --auth password|token|none [--account name] [--scopes a,b]')
+  }
+  const authKind = stringFlag(flags, 'auth') ?? 'password'
+  if (!['password', 'token', 'oauth', 'none'].includes(authKind)) {
+    throw new Error('--auth 只能是 password、token、oauth 或 none')
+  }
+  const scopesValue = stringFlag(flags, 'scopes')
+  const view = app.connections.create({
+    sourceId,
+    displayName: [displayName, ...titleParts].join(' '),
+    authKind: authKind as ConnectionAuthKind,
+    ...(stringFlag(flags, 'account')
+      ? { accountLabel: stringFlag(flags, 'account')! }
+      : {}),
+    ...(scopesValue
+      ? {
+          scopes: scopesValue
+            .split(',')
+            .map((scope) => scope.trim())
+            .filter(Boolean),
+        }
+      : {}),
+  })
+  console.log(`连接已创建：${view.connectionId}`)
+  printConnection(view)
+}
+
+async function runConnectionConnect(app: AcademicApp, connectionId: string | undefined): Promise<void> {
+  if (!connectionId) throw new Error('用法：connection connect <connectionId>')
+  const connection = app.connections.get(connectionId)
+  if (!connection) throw new Error(`连接不存在：${connectionId}`)
+  if (connection.authKind === 'none') {
+    console.log('该连接不需要凭据')
+    return
+  }
+  if (connection.authKind === 'oauth') {
+    throw new Error('OAuth 登录流程尚未实现；请使用 token 或 password 连接')
+  }
+
+  let secret: string
+  if (connection.authKind === 'password') {
+    const username = await promptVisible(
+      `用户名${connection.accountLabel ? ` [${connection.accountLabel}]` : ''}: `,
+    )
+    const finalUsername = username || connection.accountLabel
+    if (!finalUsername) throw new Error('用户名不能为空')
+    const password = await promptHidden('密码（输入不回显）: ')
+    if (!password) throw new Error('密码不能为空')
+    secret = JSON.stringify({ username: finalUsername, password })
+  } else {
+    const token = await promptHidden('Token（输入不回显）: ')
+    if (!token) throw new Error('Token 不能为空')
+    secret = JSON.stringify({ token })
+  }
+
+  const updated = await app.connections.setSecret(connectionId, secret)
+  printConnection(updated)
+  console.log('凭据已安全保存；运行同步后由适配器验证。')
+}
+
+async function runConnectionDisconnect(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  const connectionId = positional[0]
+  if (!connectionId) throw new Error('用法：connection disconnect <connectionId> [--delete-credential]')
+  const updated = await app.connections.disconnect(connectionId, {
+    deleteCredential: flags.has('delete-credential'),
+  })
+  printConnection(updated)
+}
+
+async function runConnectionDeleteCredential(app: AcademicApp, connectionId: string | undefined): Promise<void> {
+  if (!connectionId) throw new Error('用法：connection delete-credential <connectionId>')
+  printConnection(await app.connections.deleteCredential(connectionId))
+}
+
+async function runConnectionShow(app: AcademicApp, connectionId: string | undefined): Promise<void> {
+  if (!connectionId) throw new Error('用法：connection show <connectionId>')
+  const connection = app.connections.get(connectionId)
+  if (!connection) throw new Error(`连接不存在：${connectionId}`)
+  printConnection(connection)
+  console.log(`授权范围：${connection.scopes.join(', ') || '（未声明）'}`)
+  if (connection.lastVerifiedAt) console.log(`上次验证：${formatTime(connection.lastVerifiedAt)}`)
+  if (connection.lastSyncAt) console.log(`上次同步：${formatTime(connection.lastSyncAt)}`)
+}
+
 async function runStatus(app: AcademicApp): Promise<void> {
   const status = await app.getAutomationStatus()
   console.log('\n运行状态：')
@@ -425,6 +588,7 @@ async function runStatus(app: AcademicApp): Promise<void> {
     console.log('  最近同步：无')
   }
   console.log(`  未读提醒：${status.unreadNotifications}`)
+  console.log(`  数据源连接：${app.connections.list().length}`)
   const reminderSettings = app.notifications.getSettings()
   console.log(
     `  截止提醒：${reminderSettings.enabled ? '启用' : '停用'} · 阈值 ${reminderSettings.thresholdsHours.join('h / ')}h`,
@@ -492,6 +656,12 @@ function printHelp(): void {
   availability unblock <blockId>
   reminders show            查看截止提醒开关与阈值
   reminders set [--enabled true|false] [--thresholds 72,24]
+  connection list           列出数据源连接与状态
+  connection add <sourceId> <displayName> --auth password|token|none [--account name] [--scopes a,b]
+  connection connect <id>   在本机隐藏输入凭据并保存到系统凭据存储
+  connection disconnect <id> [--delete-credential]
+  connection delete-credential <id>
+  connection show <id>
   notifications [--read ID | --read-all]
   backup                    生成一致性数据库备份
   help                      显示帮助
@@ -573,6 +743,18 @@ async function main(): Promise<void> {
         if (subcommand === 'show') await runRemindersShow(app)
         else if (subcommand === 'set') await runRemindersSet(app, args)
         else throw new Error('用法：reminders show|set')
+        break
+      }
+
+      case 'connection': {
+        const [subcommand, ...args] = rest
+        if (subcommand === 'list') await runConnectionList(app)
+        else if (subcommand === 'add') await runConnectionAdd(app, args)
+        else if (subcommand === 'connect') await runConnectionConnect(app, args[0])
+        else if (subcommand === 'disconnect') await runConnectionDisconnect(app, args)
+        else if (subcommand === 'delete-credential') await runConnectionDeleteCredential(app, args[0])
+        else if (subcommand === 'show') await runConnectionShow(app, args[0])
+        else throw new Error('用法：connection list|add|connect|disconnect|delete-credential|show')
         break
       }
 
