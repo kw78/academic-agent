@@ -4,7 +4,12 @@ import {
   COMMAND,
   type AcademicItemSnapshot,
 } from '@academic/contracts'
-import { InMemoryToolHost, registerAcademicTools, ACADEMIC_TOOL_NAMES } from '@academic/agent-tools'
+import {
+  InMemoryToolHost,
+  registerAcademicTools,
+  ACADEMIC_TOOL_NAMES,
+  type AgentWriteAuthorizer,
+} from '@academic/agent-tools'
 import { registerPlannerCapability, ReplanStore } from '@academic/planner-basic'
 import {
   countRows,
@@ -82,7 +87,11 @@ async function seed(store: ReturnType<typeof createTestStore>) {
   )
 }
 
-function setup(options: { allowWrites: boolean; withPlanner?: boolean }) {
+function setup(options: {
+  allowWrites: boolean
+  withPlanner?: boolean
+  authorizeWrite?: AgentWriteAuthorizer
+}) {
   const clock = fixedClock()
   const store = createTestStore({ clock })
   const registry = new CapabilityRegistry()
@@ -95,6 +104,7 @@ function setup(options: { allowWrites: boolean; withPlanner?: boolean }) {
     registry,
     ids: sequentialIds('agent'),
     allowWrites: options.allowWrites,
+    ...(options.authorizeWrite ? { authorizeWrite: options.authorizeWrite } : {}),
   })
   const plannerCapability = options.withPlanner
     ? registerPlannerCapability(registry)
@@ -138,7 +148,7 @@ describe('academic agent tools', () => {
     expect((plan.data as { plan: { planId: string } | null }).plan?.planId).toBe('plan-1')
   })
 
-  it('T16 refuses writes without permission or confirmation', async () => {
+  it('T16 refuses writes without trusted host authorization', async () => {
     const { store, host } = setup({ allowWrites: false })
     await seed(store)
     const before = countRows(store, 'domain_events')
@@ -150,35 +160,46 @@ describe('academic agent tools', () => {
     })
     expect(forbidden).toMatchObject({ ok: false, code: 'FORBIDDEN' })
     expect(countRows(store, 'domain_events')).toBe(before)
-    expect((await store.queries.getStudyTask('task-1'))?.status).toBe('active')
 
     const writable = setup({ allowWrites: true })
     await seed(writable.store)
-    const unconfirmed = await writable.host.call(ACADEMIC_TOOL_NAMES.UpdateTask, {
+    const modelFlagOnly = await writable.host.call(ACADEMIC_TOOL_NAMES.UpdateTask, {
       taskId: 'task-1',
       action: 'complete',
+      confirmed: true,
     })
-    expect(unconfirmed).toMatchObject({ ok: false, code: 'CONFIRM_REQUIRED' })
+    expect(modelFlagOnly).toMatchObject({ ok: false, code: 'CONFIRM_REQUIRED' })
     expect((await writable.store.queries.getStudyTask('task-1'))?.status).toBe('active')
 
-    const confirmed = await writable.host.call(ACADEMIC_TOOL_NAMES.UpdateTask, {
-      taskId: 'task-1',
-      action: 'complete',
-      confirmed: true,
-    })
-    expect(confirmed).toMatchObject({ ok: true })
-    expect((await writable.store.queries.getStudyTask('task-1'))?.status).toBe('completed')
+    const denied = setup({ allowWrites: true, authorizeWrite: () => false })
+    await seed(denied.store)
+    expect(
+      await denied.host.call(ACADEMIC_TOOL_NAMES.UpdateTask, {
+        taskId: 'task-1',
+        action: 'complete',
+      }),
+    ).toMatchObject({ ok: false, code: 'CONFIRM_REQUIRED' })
+    expect((await denied.store.queries.getStudyTask('task-1'))?.status).toBe('active')
 
-    const invalid = await writable.host.call(ACADEMIC_TOOL_NAMES.UpdateTask, {
+    const approved = setup({ allowWrites: true, authorizeWrite: () => true })
+    await seed(approved.store)
+    expect(
+      await approved.host.call(ACADEMIC_TOOL_NAMES.UpdateTask, {
+        taskId: 'task-1',
+        action: 'complete',
+      }),
+    ).toMatchObject({ ok: true })
+    expect((await approved.store.queries.getStudyTask('task-1'))?.status).toBe('completed')
+
+    const invalid = await approved.host.call(ACADEMIC_TOOL_NAMES.UpdateTask, {
       taskId: 'task-1',
       action: 'change-estimate',
-      confirmed: true,
     })
     expect(invalid).toMatchObject({ ok: false, code: 'VALIDATION' })
   })
 
   it('requires the planner capability before queueing replans', async () => {
-    const withoutPlanner = setup({ allowWrites: true })
+    const withoutPlanner = setup({ allowWrites: true, authorizeWrite: () => true })
     await seed(withoutPlanner.store)
     const unavailable = await withoutPlanner.host.call(
       ACADEMIC_TOOL_NAMES.RequestReplan,
@@ -193,7 +214,11 @@ describe('academic agent tools', () => {
     })
     expect(withoutPlanner.replans.list()).toHaveLength(0)
 
-    const withPlanner = setup({ allowWrites: true, withPlanner: true })
+    const withPlanner = setup({
+      allowWrites: true,
+      withPlanner: true,
+      authorizeWrite: () => true,
+    })
     await seed(withPlanner.store)
     const queued = await withPlanner.host.call(ACADEMIC_TOOL_NAMES.RequestReplan, {
       reason: 'manual',

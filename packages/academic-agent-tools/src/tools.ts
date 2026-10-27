@@ -33,14 +33,29 @@ export interface AcademicTool {
   execute(input: unknown): Promise<ToolResult>
 }
 
+export interface AgentWriteRequest {
+  tool: string
+  arguments: Record<string, unknown>
+}
+
+/**
+ * Trusted host-side authorization for one concrete agent write. The model's
+ * tool arguments are never sufficient proof of user consent.
+ */
+export type AgentWriteAuthorizer = (
+  request: AgentWriteRequest,
+) => boolean | Promise<boolean>
+
 export interface AcademicToolDependencies {
   queries: QueryApi
   commands: CommandApi
   replans: ReplanRequestPort
   registry: CapabilityRegistryApi
   ids: IdGenerator
-  /** Writes are opt-in for the agent bridge; read-only tools always work. */
+  /** Deployment permission for the agent bridge; read-only tools always work. */
   allowWrites?: boolean
+  /** Per-operation trusted approval. Without it, agent writes are rejected. */
+  authorizeWrite?: AgentWriteAuthorizer
 }
 
 export const ACADEMIC_TOOL_NAMES = {
@@ -129,7 +144,6 @@ const updateTaskSchema = z
     taskId: z.string().min(1),
     action: z.enum(['complete', 'reopen', 'change-estimate']),
     estimateMinutes: z.number().int().min(5).max(1440).optional(),
-    confirmed: z.boolean().optional(),
   })
   .superRefine((value, context) => {
     if (value.action === 'change-estimate' && value.estimateMinutes === undefined) {
@@ -157,6 +171,25 @@ export function createAcademicTools(
   dependencies: AcademicToolDependencies,
 ): AcademicTool[] {
   const allowWrites = dependencies.allowWrites ?? false
+
+  async function requireWriteApproval(
+    tool: string,
+    args: Record<string, unknown>,
+  ): Promise<ToolResult | undefined> {
+    if (!allowWrites) {
+      return failure('FORBIDDEN', 'Agent write access is not enabled')
+    }
+    if (!dependencies.authorizeWrite) {
+      return failure(
+        'CONFIRM_REQUIRED',
+        'No trusted user-approval channel is available for this write',
+      )
+    }
+    const approved = await dependencies.authorizeWrite({ tool, arguments: args })
+    return approved
+      ? undefined
+      : failure('CONFIRM_REQUIRED', 'The user did not approve this write')
+  }
 
   return [
     defineTool(
@@ -214,18 +247,14 @@ export function createAcademicTools(
 
     defineTool(
       ACADEMIC_TOOL_NAMES.UpdateTask,
-      'Complete, reopen, or change the estimate of a study task. Requires write permission and explicit user confirmation.',
+      'Complete, reopen, or change the estimate of a study task. The host must authorize each write; no model-provided flag can approve it.',
       updateTaskSchema,
       async (input) => {
-        if (!allowWrites) {
-          return failure('FORBIDDEN', 'Agent write access is not enabled')
-        }
-        if (input.confirmed !== true) {
-          return failure(
-            'CONFIRM_REQUIRED',
-            'Ask the user for confirmation before changing task state',
-          )
-        }
+        const rejection = await requireWriteApproval(
+          ACADEMIC_TOOL_NAMES.UpdateTask,
+          { ...input },
+        )
+        if (rejection) return rejection
         const task = await dependencies.queries.getStudyTask(input.taskId)
         if (!task) return failure('NOT_FOUND', `Study task not found: ${input.taskId}`)
 
@@ -261,12 +290,14 @@ export function createAcademicTools(
 
     defineTool(
       ACADEMIC_TOOL_NAMES.RequestReplan,
-      'Queue a replan request for a time range. Requires write permission and an available planner.',
+      'Queue a replan request for a time range. The host must authorize the request; an available planner is also required.',
       requestReplanSchema,
       async (input) => {
-        if (!allowWrites) {
-          return failure('FORBIDDEN', 'Agent write access is not enabled')
-        }
+        const rejection = await requireWriteApproval(
+          ACADEMIC_TOOL_NAMES.RequestReplan,
+          { ...input },
+        )
+        if (rejection) return rejection
         dependencies.registry.require(PLANNER_CAPABILITY_ID)
         const reason: ReplanReason = input.reason ?? 'manual'
         const request = dependencies.replans.enqueue({
