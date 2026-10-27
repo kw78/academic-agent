@@ -63,6 +63,19 @@ ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-ui-test.db \
   dsh --profile academic-web --no-open --port 0
 ```
 
+安装到 DSH Desktop：
+
+```bash
+dsh plugin --profile desktop add \
+  D:/project/classhelper/packages/academic-dsh-plugin \
+  D:/project/classhelper/packages/academic-dsh-ui
+```
+
+并在 `~/.dsh/profiles/desktop/package.json` 的 `dsh.profile.bundles` 中加入
+`@academic/dsh-plugin` 与 `@academic/dsh-ui`，然后重启桌面端。桌面端默认使用
+`$DSH_HOME/academic-agent/academic.db`；`dsh --profile desktop --dump-config` 会被
+Electron 拒绝，需通过桌面进程验证。
+
 ## 已验证
 
 在 DSH `0.2.1-rc.3` Web profile 中实测：

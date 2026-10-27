@@ -94,6 +94,15 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 
 `packages/academic-dsh-ui` 的单元、集成与真实 DSH Web 验证见 [frontend-verification.md](frontend-verification.md)。
 
+## DSH Desktop
+
+`desktop` profile 已安装 `@academic/dsh-plugin` / `@academic/dsh-ui` 并重启桌面端验证：
+
+- 桌面进程创建 Academic Host 默认数据库与 3 个调度作业；
+- UIAutomation 可见“学业”“Host 已连接”；
+- 桌面面板执行“立即同步”后数据库出现课程与来源事项。
+- `dsh --profile desktop --dump-config` 被 Electron 拒绝，属于预期限制。
+
 ## DSH 实测（本机 0.2.1-rc.3）
 
 已在独立 `academic` profile（从 `headless` 模板创建）安装 `@academic/dsh-plugin`：

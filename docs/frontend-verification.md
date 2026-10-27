@@ -72,6 +72,19 @@
 - `scheduled_jobs` 仍为 3 条，课程仍为 1 条，领域事件仍为 8 条（验证时点），没有创建第二份 Runtime；
 - 刷新页面后仍可读取同一 SQLite 数据。
 
+## DSH Desktop 安装验证
+
+已获用户授权，将 `@academic/dsh-plugin` 与 `@academic/dsh-ui` 安装到 `desktop` profile，并在 `dsh.profile.bundles` 中追加两行（保留原有 base / web-app / office-tools）。
+
+验证结果：
+
+- 启动 DSH Desktop 后，桌面进程创建 `$DSH_HOME/academic-agent/academic.db`，包含 `fixture-lms-sync`、`planner.process-replans`、`academic.reminders.scan` 三个持久作业；
+- Windows UIAutomation 在桌面窗口中读取到侧边栏“学业”、页面标题“课程、任务、计划与数据源”“Host 已连接”；
+- 在桌面面板点击“立即同步”后，Host Remote API 执行成功，数据库出现 1 门课程和 2 个来源事项；
+- 桌面端默认数据库与 Web 测试 profile 的数据库相互独立。
+
+注意：`dsh --profile desktop --dump-config` 会被 Electron 视为“由桌面应用独占管理”而拒绝；桌面 profile 的验证必须通过桌面进程完成。
+
 ## 自动化测试
 
 ```bash

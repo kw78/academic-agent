@@ -32,6 +32,7 @@
 ## 验证记录
 
 - DSH `0.2.1-rc.3` Web profile：侧边栏入口、主面板、真实 SQLite 课程查询均通过。
+- DSH Desktop `desktop` profile：安装 host/planner/tools/ui 四行后，桌面进程创建默认数据库与调度作业；UIAutomation 可见“学业”“Host 已连接”，桌面面板“立即同步”写入真实课程与事项。
 - 任务完成、计划候选确认、锁定时段、可用时间保存、作业暂停/恢复、提醒已读均通过真实 Remote 调用。
 - 禁用 `@academic/dsh-ui` 后入口消失，后台 `planner.process-replans` 等作业继续运行；重新启用后入口恢复且无重复 Host/作业/课程。
 - 自动化测试：`tests/unit/ui-view.test.ts`、`tests/unit/ui-security.test.ts`、`tests/integration/ui-api.test.ts`。

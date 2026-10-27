@@ -72,7 +72,7 @@ npm run demo -- help
 
 ## 挂到本机 DSH
 
-已在本机 **DSH 0.2.1-rc.3** 验证。使用独立 `academic` profile，不修改现有 `desktop` / `web` profile。bundle patch 写入 `academic-host`、`academic-planner`、`academic-tools` 三行；禁用 tools 行即可卸载 Agent Bridge，禁用 planner 行则保留已有计划但停止新规划。
+已在本机 **DSH 0.2.1-rc.3** 验证。`headless` 使用独立 `academic` profile；Web 使用 `academic-web`；Desktop 已在 `desktop` profile 安装 host / planner / tools / ui 四行。bundle patch 写入 `academic-host`、`academic-planner`、`academic-tools` 三行；禁用 tools 行即可卸载 Agent Bridge，禁用 planner 行则保留已有计划但停止新规划。桌面端默认数据库为 `$DSH_HOME/academic-agent/academic.db`。
 
 ```bash
 npm run build:dsh
@@ -125,6 +125,25 @@ ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-ui-test.db \
 ```
 
 打开 DSH 打印的 URL，侧边栏会出现“学业”。UI 只通过受认证的 Host Remote API 读写，不接触 SQLite、Event Store、Scheduler 表或 Credential Vault；禁用 UI 不会停止后台同步和提醒。详见 [UI README](packages/academic-dsh-ui/README.md) 与 [验证记录](docs/frontend-verification.md)。
+
+#### 安装到 DSH Desktop
+
+```bash
+npm run build:dsh
+npm run build:ui
+dsh plugin --profile desktop add \
+  D:/project/classhelper/packages/academic-dsh-plugin \
+  D:/project/classhelper/packages/academic-dsh-ui
+```
+
+然后在 `~/.dsh/profiles/desktop/package.json` 的 `dsh.profile.bundles` 中加入：
+
+```json
+"@academic/dsh-plugin",
+"@academic/dsh-ui"
+```
+
+重启 DSH Desktop。桌面端使用 `$DSH_HOME/academic-agent/academic.db`，侧边栏出现“学业”，Host Remote API 与后台作业由桌面进程托管。
 
 ## 架构要点
 
@@ -190,7 +209,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 - **P1 未做**：给定 URL 自动探索、生成/安装 Adapter 插件（Intent 明确不属于 MVP）。
 - **M4**：性能基准（Spec §20）、迁移演练、故障注入扩展。
 - 真实 LMS 尚未接入；当前使用 `fixture-lms`。
-- DSH 主 `desktop` / `web` profile 未改动；当前只安装到独立 `academic` profile。
+- Desktop profile 已安装 `@academic/dsh-plugin` 与 `@academic/dsh-ui`；DSH `web` profile 未改动。
 - `node:sqlite` 为实验性 API，升级 Node/DSH 时需重新验证。
 
 ## 测试

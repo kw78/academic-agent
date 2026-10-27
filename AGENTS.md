@@ -130,6 +130,7 @@ docs/adr/                      # 架构决策记录
 - 已用 DSH 凭证中的 DeepSeek key 跑通真实自然语言工具调用：模型调用 `academic_list_courses`，工具返回真实 SQLite 数据并正确回答。
 - 尚未验证 Cordis 文件级 HMR、真实 Session 生命周期与审批 UI；不得把这些说成已完成。
 - `academic-dsh-ui` 是唯一客户端 UI 插件：同时用于 DSH Desktop 与 Web；通过 `sidebar.panellist` + `main` keyed slot 注册，Host 侧使用 `AcademicUiService extends TypertRemoteService`（namespace `academic`）和 Gateway SRC fallback。UI 不访问 SQLite/Event Store/Projection/Scheduler 表/Vault。
+- Desktop profile 已在用户授权下安装 `@academic/dsh-plugin` / `@academic/dsh-ui`，并在 `dsh.profile.bundles` 追加两行；桌面端默认数据库为 `$DSH_HOME/academic-agent/academic.db`。`dsh --profile desktop --dump-config` 会被 Electron 拒绝，桌面端配置需通过桌面进程验证。
 - `academic-agent-tools` 仍保留宿主无关的 `AcademicToolHost` 契约；`InMemoryToolHost` 仅用于本地 CLI/测试，DSH 适配在 `academic-dsh-plugin`。
 - 组合根 `apps/academic-cli` 负责装配能力、注册后台作业与通知 Reaction；它不包含领域规则，也不绕过 Command API。
 
@@ -178,6 +179,8 @@ P0 修复已验证：启动不覆盖调度配置；消费者重启续跑 checkpo
 
 前端 UI 已验证（`packages/academic-dsh-ui`）：侧边栏“学业”入口、总览/任务/计划/连接/自动化/设置页面；任务完成、计划候选确认、锁定、可用时间保存、作业暂停/恢复、提醒已读均经 Host Remote API 生效；候选计划确认使用 Host 端 `previewId`，不信任客户端计划块；UI 不返回/保存 `credentialRef`，未实现真实 Adapter 时不显示认证表单。详细记录见 `docs/frontend-verification.md`。
 
+Desktop 安装已验证：`desktop` profile 的 bundle 列表包含 `@academic/dsh-plugin` / `@academic/dsh-ui`；DSH Desktop 进程创建 `$DSH_HOME/academic-agent/academic.db` 与 3 个后台作业，UIAutomation 可见“学业”“Host 已连接”，从桌面面板执行“立即同步”后数据库出现 1 门课程与 2 个来源事项。
+
 DSH 实测（本机 0.2.1-rc.3，独立 `academic` profile）：
 
 ```bash
@@ -190,7 +193,7 @@ ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-aca
 ## 10. 待确认的环境参数（不阻塞实现）
 
 - 首个真实课程平台：已尝试 USTC Blackboard 入口，重定向到登录页；安全凭据连接已具备（DPAPI + CLI 隐藏输入），但 Blackboard Adapter 与真实同步尚未实现，真实平台 E2E 未完成（当前用 fixture，不能当作真实验收）。
-- 目标运行形态：本地 CLI + SQLite 已验证；DSH `headless` / `web` profile 可挂载，Desktop 主 profile 暂不改动。
+- 目标运行形态：本地 CLI + SQLite 已验证；DSH `headless` / `web` profile 可挂载；Desktop profile 已安装并验证 Academic Host 与 UI。
 - 通知仅应用内还是系统通知（当前先应用内）。
 - 课程规模、同步频率（当前 15 分钟）、计划粒度（15 分钟）、资源预算。
 - DSH 版本升级策略（当前固定 0.2.1-rc.3 验证；升级需重跑 bundle/工具自测）。
