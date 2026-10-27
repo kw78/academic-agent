@@ -21397,6 +21397,9 @@ function inTransaction2(db, operation) {
 function parseJson(value) {
   return JSON.parse(String(value));
 }
+function rangesOverlap(left, right) {
+  return Date.parse(left.start) < Date.parse(right.end) && Date.parse(right.start) < Date.parse(left.end);
+}
 var ReplanStore = class {
   #db;
   #clock;
@@ -21448,6 +21451,28 @@ var ReplanStore = class {
          ORDER BY created_at ASC, rowid ASC LIMIT ?`
     ).all(bounded);
     return rows.map((row) => this.#toRequest(row));
+  }
+  /**
+   * Drops cached suggestions whose range overlaps a plan change (for example a
+   * new locked block), so the next process run recomputes with the new locks.
+   */
+  invalidateSuggestions(range) {
+    return inTransaction2(this.#db, () => {
+      const rows = this.#db.prepare("SELECT * FROM replan_requests WHERE status = 'suggested'").all();
+      let invalidated = 0;
+      for (const row of rows) {
+        const requestRange = parseJson(row.range_json);
+        if (!rangesOverlap(requestRange, range)) continue;
+        this.#db.prepare(
+          `UPDATE replan_requests SET
+               status = 'pending', suggestion_json = NULL, processed_at = NULL,
+               plan_id = NULL, error_message = NULL
+             WHERE replan_request_id = ?`
+        ).run(String(row.replan_request_id));
+        invalidated += 1;
+      }
+      return invalidated;
+    });
   }
   saveSuggestion(replanRequestId, suggestion) {
     this.#db.prepare(
@@ -21602,6 +21627,7 @@ var PlannerService = class {
   }
   async #buildInput(options) {
     const tasks = await this.#queries.listStudyTasks({ status: "active" });
+    const activePlan = await this.#queries.getActiveStudyPlan(options.range);
     const itemDue = /* @__PURE__ */ new Map();
     const plannerTasks = [];
     for (const task of tasks.items) {
@@ -21624,11 +21650,15 @@ var PlannerService = class {
         ...due ? { due } : {}
       });
     }
+    const lockedById = /* @__PURE__ */ new Map();
+    for (const lock of activePlan?.lockedBlocks ?? []) lockedById.set(lock.id, lock);
+    for (const lock of options.lockedBlocks ?? []) lockedById.set(lock.id, lock);
+    const lockedBlocks = [...lockedById.values()];
     return {
       range: options.range,
       tasks: plannerTasks,
       ...options.busyBlocks ? { busyBlocks: options.busyBlocks } : {},
-      ...options.lockedBlocks ? { lockedBlocks: options.lockedBlocks } : {},
+      ...lockedBlocks.length > 0 ? { lockedBlocks } : {},
       now: options.now ?? this.#clock.now(),
       ...options.granularityMinutes ? { granularityMinutes: options.granularityMinutes } : {},
       ...options.timeZone ? { timeZone: options.timeZone } : {}
@@ -23314,6 +23344,14 @@ var SqliteQueryService = class {
     const row = this.#db.prepare("SELECT * FROM study_tasks_current WHERE task_id = ?").get(taskId);
     return row ? { ...this.#toTask(row), meta: this.#meta() } : void 0;
   }
+  async getLatestStudyPlan() {
+    const row = this.#db.prepare(
+      `SELECT * FROM study_plans_current
+         WHERE status = 'active'
+         ORDER BY accepted_at DESC, rowid DESC LIMIT 1`
+    ).get();
+    return row ? { ...this.#toPlan(row), meta: this.#meta() } : void 0;
+  }
   async getActiveStudyPlan(range) {
     const rows = this.#db.prepare(
       `SELECT * FROM study_plans_current
@@ -23554,6 +23592,12 @@ var ModelUsageMeter = class {
     return this.#calls;
   }
 };
+function blocksOverlap(left, right) {
+  return Date.parse(left.start) < Date.parse(right.end) && Date.parse(right.start) < Date.parse(left.end);
+}
+function failure3(message) {
+  return { ok: false, code: "NOT_FOUND", message };
+}
 function addMilliseconds2(iso, milliseconds) {
   return new Date(Date.parse(iso) + milliseconds).toISOString();
 }
@@ -23706,6 +23750,44 @@ async function createAcademicApp(options) {
     }
     return { summary: { processed } };
   });
+  const userActor = { kind: "user", id: "local-user" };
+  async function taskCommand(taskId, type, payload) {
+    const task = await store.queries.getStudyTask(taskId);
+    if (!task) return failure3(`Study task not found: ${taskId}`);
+    return store.commands.execute(
+      parseCommand({
+        commandId: ids.next(),
+        type,
+        aggregateId: taskId,
+        expectedVersion: task.version,
+        actor: userActor,
+        correlationId: `task/${taskId}`,
+        payload
+      })
+    );
+  }
+  async function revisePlan(plan, blocks, lockedBlocks) {
+    const result = await store.commands.execute(
+      parseCommand({
+        commandId: ids.next(),
+        type: COMMAND.StudyPlanRevise,
+        aggregateId: plan.planId,
+        expectedVersion: plan.version,
+        actor: userActor,
+        correlationId: `plan/${plan.planId}`,
+        payload: { blocks, lockedBlocks }
+      })
+    );
+    if (result.ok) {
+      replans.invalidateSuggestions(plan.range);
+      replans.enqueue({
+        reason: "availability-changed",
+        range: plan.range,
+        sourceKey: `plan-change:${ids.next()}`
+      });
+    }
+    return result;
+  }
   let started = false;
   let closed = false;
   const app = {
@@ -23751,6 +23833,155 @@ async function createAcademicApp(options) {
         processed += 1;
       }
       return processed;
+    },
+    async addCourse(input2) {
+      const courseId = ids.next();
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.CourseCreate,
+          aggregateId: courseId,
+          expectedVersion: 0,
+          actor: userActor,
+          correlationId: `course/${courseId}`,
+          payload: input2
+        })
+      );
+    },
+    async archiveCourse(courseId) {
+      const course2 = await store.queries.getCourse(courseId);
+      if (!course2) return failure3(`Course not found: ${courseId}`);
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.CourseArchive,
+          aggregateId: courseId,
+          expectedVersion: course2.version,
+          actor: userActor,
+          correlationId: `course/${courseId}`,
+          payload: {}
+        })
+      );
+    },
+    async createTask(input2) {
+      const taskId = ids.next();
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.StudyTaskCreate,
+          aggregateId: taskId,
+          expectedVersion: 0,
+          actor: userActor,
+          correlationId: `task/${taskId}`,
+          payload: {
+            title: input2.title,
+            estimateMinutes: input2.estimateMinutes,
+            ...input2.itemId ? { itemId: input2.itemId } : {},
+            ...input2.dueAt ? { dueAt: input2.dueAt } : {},
+            ...input2.priority !== void 0 ? { priority: input2.priority } : {}
+          }
+        })
+      );
+    },
+    async completeTask(taskId) {
+      return taskCommand(taskId, COMMAND.StudyTaskComplete, {});
+    },
+    async reopenTask(taskId) {
+      return taskCommand(taskId, COMMAND.StudyTaskReopen, {});
+    },
+    async changeTaskEstimate(taskId, estimateMinutes) {
+      return taskCommand(taskId, COMMAND.StudyTaskChangeEstimate, {
+        estimateMinutes
+      });
+    },
+    async getLatestPlan() {
+      return store.queries.getLatestStudyPlan();
+    },
+    async lockPlanBlock(input2) {
+      const block = timeBlockSchema.parse({ start: input2.start, end: input2.end });
+      const plan = await store.queries.getLatestStudyPlan();
+      if (!plan) {
+        return { command: failure3("No active study plan"), removedBlocks: [] };
+      }
+      const lock = {
+        id: `lock-${ids.next()}`,
+        start: block.start,
+        end: block.end,
+        ...input2.title ? { title: input2.title } : {}
+      };
+      const removedBlocks = plan.blocks.filter(
+        (candidate) => blocksOverlap(candidate, lock)
+      );
+      const remainingBlocks = plan.blocks.filter(
+        (candidate) => !blocksOverlap(candidate, lock)
+      );
+      const command = await revisePlan(plan, remainingBlocks, [
+        ...plan.lockedBlocks,
+        lock
+      ]);
+      const updated = command.ok ? await store.queries.getLatestStudyPlan() : void 0;
+      return {
+        command,
+        removedBlocks,
+        lock,
+        ...updated ? { plan: updated } : {}
+      };
+    },
+    async unlockPlanBlock(lockId) {
+      const plan = await store.queries.getLatestStudyPlan();
+      if (!plan) {
+        return { command: failure3("No active study plan"), removedBlocks: [] };
+      }
+      const lock = plan.lockedBlocks.find((candidate) => candidate.id === lockId);
+      if (!lock) {
+        return { command: failure3(`Lock not found: ${lockId}`), removedBlocks: [] };
+      }
+      const command = await revisePlan(
+        plan,
+        plan.blocks,
+        plan.lockedBlocks.filter((candidate) => candidate.id !== lockId)
+      );
+      const updated = command.ok ? await store.queries.getLatestStudyPlan() : void 0;
+      return {
+        command,
+        removedBlocks: [],
+        lock,
+        ...updated ? { plan: updated } : {}
+      };
+    },
+    async archivePlan() {
+      const plan = await store.queries.getLatestStudyPlan();
+      if (!plan) return failure3("No active study plan");
+      const result = await store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.StudyPlanArchive,
+          aggregateId: plan.planId,
+          expectedVersion: plan.version,
+          actor: userActor,
+          correlationId: `plan/${plan.planId}`,
+          payload: { reason: "user archived the plan" }
+        })
+      );
+      if (result.ok) replans.invalidateSuggestions(plan.range);
+      return result;
+    },
+    markNotificationRead(notificationId) {
+      return notifications.markRead(notificationId);
+    },
+    markAllNotificationsRead() {
+      return notifications.markAllRead();
+    },
+    async getAutomationStatus() {
+      const runs = await store.queries.listSyncRuns(void 0, 5);
+      return {
+        health: store.health(),
+        ...runs.items[0] ? { lastSync: runs.items[0] } : {},
+        syncRuns: runs.items,
+        jobs: scheduler.listJobs(),
+        jobRuns: scheduler.listRuns(void 0, 5),
+        unreadNotifications: notifications.unreadCount()
+      };
     },
     backup(targetPath) {
       backupDatabase(store, targetPath);
