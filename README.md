@@ -1,4 +1,4 @@
-# ClassHelper · Academic Agent
+# Academic Agent
 
 一个以**可靠自动化为主体、按需使用 Agent**的个人学业助手。课程、作业、考试、学习任务和计划由事件溯源内核持续维护；数据源、调度、规划、通知和 Agent 工具都是可替换、可卸载的能力。
 

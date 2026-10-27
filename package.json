@@ -1,9 +1,9 @@
 {
-  "name": "classhelper",
+  "name": "academic-agent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Event-sourced personal academic assistant following the Academic Agent architecture baseline.",
+  "description": "Academic Agent — event-sourced personal academic assistant following the Academic Agent architecture baseline.",
   "packageManager": "npm@10.9.8",
   "workspaces": [
     "packages/*",

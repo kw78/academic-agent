@@ -1,4 +1,4 @@
-# ClassHelper / Academic Agent — 工程准则（长期记忆文档）
+# Academic Agent — 工程准则（长期记忆文档）
 
 > 本文件记录必须跨会话遵守的准则、约束与项目状态。它位于工作区内，是项目长期记忆的权威位置；不要在 `D:\project\classhelper` 之外写入任何文档或配置。
 >
