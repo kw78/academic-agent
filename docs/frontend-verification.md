@@ -81,7 +81,7 @@
 - 启动 DSH Desktop 后，桌面进程创建 `$DSH_HOME/academic-agent/academic.db`，包含 `fixture-lms-sync`、`planner.process-replans`、`academic.reminders.scan` 三个持久作业；
 - Windows UIAutomation 在桌面窗口中读取到侧边栏“学业”、页面标题“课程、任务、计划与数据源”“Host 已连接”；
 - 在桌面面板点击“立即同步”后，Host Remote API 执行成功，数据库出现 1 门课程和 2 个来源事项；
-- 桌面端默认数据库与 Web 测试 profile 的数据库相互独立。
+- 桌面端默认数据库与 Web 测试 profile 的数据库相互独立；Desktop 占用默认数据库时不应再启动第二个使用同一数据库的 Host。
 
 注意：`dsh --profile desktop --dump-config` 会被 Electron 视为“由桌面应用独占管理”而拒绝；桌面 profile 的验证必须通过桌面进程完成。
 

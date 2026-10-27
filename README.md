@@ -145,6 +145,8 @@ dsh plugin --profile desktop add \
 
 重启 DSH Desktop。桌面端使用 `$DSH_HOME/academic-agent/academic.db`，侧边栏出现“学业”，Host Remote API 与后台作业由桌面进程托管。
 
+**不要同时启动另一个使用同一数据库的 Academic Host**（例如未设置 `ACADEMIC_AGENT_DB` 的 headless profile）；Desktop 已占用默认数据库时应使用 CLI 只读查看或另配数据库。
+
 ## 架构要点
 
 ```text

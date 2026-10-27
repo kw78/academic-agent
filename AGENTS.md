@@ -130,7 +130,7 @@ docs/adr/                      # 架构决策记录
 - 已用 DSH 凭证中的 DeepSeek key 跑通真实自然语言工具调用：模型调用 `academic_list_courses`，工具返回真实 SQLite 数据并正确回答。
 - 尚未验证 Cordis 文件级 HMR、真实 Session 生命周期与审批 UI；不得把这些说成已完成。
 - `academic-dsh-ui` 是唯一客户端 UI 插件：同时用于 DSH Desktop 与 Web；通过 `sidebar.panellist` + `main` keyed slot 注册，Host 侧使用 `AcademicUiService extends TypertRemoteService`（namespace `academic`）和 Gateway SRC fallback。UI 不访问 SQLite/Event Store/Projection/Scheduler 表/Vault。
-- Desktop profile 已在用户授权下安装 `@academic/dsh-plugin` / `@academic/dsh-ui`，并在 `dsh.profile.bundles` 追加两行；桌面端默认数据库为 `$DSH_HOME/academic-agent/academic.db`。`dsh --profile desktop --dump-config` 会被 Electron 拒绝，桌面端配置需通过桌面进程验证。
+- Desktop profile 已在用户授权下安装 `@academic/dsh-plugin` / `@academic/dsh-ui`，并在 `dsh.profile.bundles` 追加两行；桌面端默认数据库为 `$DSH_HOME/academic-agent/academic.db`。`dsh --profile desktop --dump-config` 会被 Electron 拒绝，桌面端配置需通过桌面进程验证。Desktop 占用默认数据库时，不得再启动第二个使用同一数据库的 Academic Host；需要并行时显式使用不同 `ACADEMIC_AGENT_DB`。
 - `academic-agent-tools` 仍保留宿主无关的 `AcademicToolHost` 契约；`InMemoryToolHost` 仅用于本地 CLI/测试，DSH 适配在 `academic-dsh-plugin`。
 - 组合根 `apps/academic-cli` 负责装配能力、注册后台作业与通知 Reaction；它不包含领域规则，也不绕过 Command API。
 
