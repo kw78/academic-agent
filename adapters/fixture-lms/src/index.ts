@@ -54,6 +54,14 @@ export const defaultFixturePath = fileURLToPath(
   new URL('../../../fixtures/fixture-lms/snapshot.json', import.meta.url),
 )
 
+export const DEFAULT_FIXTURE_COURSE = {
+  sourceId: 'fixture-lms',
+  externalCourseId: 'CS101',
+  termId: '2026-fall',
+  code: 'CS101',
+  title: 'Introduction to Computer Science',
+} as const
+
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize)
   if (value !== null && typeof value === 'object') {
