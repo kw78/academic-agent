@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline/promises'
+import { writeFileSync } from 'node:fs'
 import {
   newId,
   type CommandResult,
@@ -9,6 +10,7 @@ import {
   type StudyPlanView,
 } from '@academic/contracts'
 import type { WeeklySlot } from '@academic/planner-basic'
+import { loginWebSession } from '@academic/web-sessions'
 import { createAcademicApp, type AcademicApp } from './composition.js'
 
 const DATABASE_PATH = process.env.ACADEMIC_DB ?? '.data/academic.db'
@@ -697,6 +699,59 @@ async function runSourceArchive(
   printSource(app, app.sources.archive(sourceId))
 }
 
+async function runWebLogin(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  const url = positional[0]
+  if (!url) throw new Error('用法：web login <url> [--label name]')
+  console.log('正在打开登录窗口；完成登录后点击页面右上角“完成登录”。')
+  const login = await loginWebSession(url)
+  const session = await app.webSessions.create({
+    loginUrl: login.loginUrl,
+    cookies: login.cookies,
+    ...(stringFlag(flags, 'label') ? { label: stringFlag(flags, 'label')! } : {}),
+  })
+  console.log(
+    `网站会话已保存：${session.sessionId} · ${session.domain} · Cookie ${login.cookies.length} 个`,
+  )
+}
+
+function runWebList(app: AcademicApp): void {
+  const sessions = app.webSessions.list()
+  console.log(`网站会话（${sessions.length}）：`)
+  for (const session of sessions) {
+    console.log(
+      `  [${session.sessionId}] ${session.label ?? session.domain} · ${session.domain} · ${session.loginUrl}${
+        session.lastUsedAt ? ` · lastUsed=${formatTime(session.lastUsedAt)}` : ''
+      }`,
+    )
+  }
+}
+
+async function runWebFetch(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  const [sessionId, url] = positional
+  if (!sessionId || !url) throw new Error('用法：web fetch <sessionId> <url> [--out file]')
+  const result = await app.webSessions.fetch(sessionId, url)
+  const out = stringFlag(flags, 'out')
+  if (out) {
+    writeFileSync(out, result.body)
+    console.log(
+      `HTTP ${result.status} · ${result.finalUrl} · ${result.body.length} bytes${
+        result.truncated ? ' (truncated)' : ''
+      } · 已写入 ${out}`,
+    )
+  } else {
+    console.log(`HTTP ${result.status} · ${result.finalUrl}${result.truncated ? ' (truncated)' : ''}`)
+    console.log(result.body.slice(0, 4000))
+  }
+}
+
+async function runWebDelete(app: AcademicApp, sessionId: string | undefined): Promise<void> {
+  if (!sessionId) throw new Error('用法：web delete <sessionId>')
+  await app.webSessions.delete(sessionId)
+  console.log(`网站会话已删除：${sessionId}`)
+}
+
 async function runConnectionShow(app: AcademicApp, connectionId: string | undefined): Promise<void> {
   if (!connectionId) throw new Error('用法：connection show <connectionId>')
   const connection = app.connections.get(connectionId)
@@ -802,6 +857,10 @@ function printHelp(): void {
   source login <sourceId>    使用 engine 登录流程，会话写入凭据库
   source sync <sourceId> [--connection ID]
   source archive <sourceId>
+  web login <url> [--label name]   打开浏览器登录并保存网站会话
+  web list                         列出已保存的网站会话
+  web fetch <id> <url> [--out file]  带会话请求，不打印 Cookie
+  web delete <id>
   notifications [--read ID | --read-all]
   backup                    生成一致性数据库备份
   help                      显示帮助
@@ -906,6 +965,16 @@ async function main(): Promise<void> {
         else if (subcommand === 'sync') await runSourceSync(app, args)
         else if (subcommand === 'archive') await runSourceArchive(app, args[0])
         else throw new Error('用法：source list|add|login|sync|archive')
+        break
+      }
+
+      case 'web': {
+        const [subcommand, ...args] = rest
+        if (subcommand === 'login') await runWebLogin(app, args)
+        else if (subcommand === 'list') runWebList(app)
+        else if (subcommand === 'fetch') await runWebFetch(app, args)
+        else if (subcommand === 'delete') await runWebDelete(app, args[0])
+        else throw new Error('用法：web login|list|fetch|delete')
         break
       }
 

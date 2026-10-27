@@ -32,6 +32,7 @@ import {
   type CredentialVault,
 } from '@academic/connections'
 import { SourceConfigStore } from '@academic/sources'
+import { WebSessionStore } from '@academic/web-sessions'
 import { createBrowserSessionEngine } from '@academic/source-browser'
 import {
   DEFAULT_FIXTURE_COURSE,
@@ -152,6 +153,7 @@ export interface AcademicApp {
   sources: SourceConfigStore
   sourceEngines: SourceEngineRegistry
   connections: ConnectionManager
+  webSessions: WebSessionStore
   replans: ReplanStore
   availability: AvailabilityStore
   planner: PlannerService
@@ -265,11 +267,18 @@ export async function createAcademicApp(
     clock,
     ids,
   })
+  const credentialVault =
+    options.credentialVault ??
+    createDefaultCredentialVault(options.credentialVaultDir)
   const connections = new ConnectionManager({
     db: store.database,
-    vault:
-      options.credentialVault ??
-      createDefaultCredentialVault(options.credentialVaultDir),
+    vault: credentialVault,
+    clock,
+    ids,
+  })
+  const webSessions = new WebSessionStore({
+    db: store.database,
+    vault: credentialVault,
     clock,
     ids,
   })
@@ -325,6 +334,7 @@ export async function createAcademicApp(
     ids,
     sources,
     sourceEngines,
+    webSessions,
     allowWrites: options.agentWrites ?? false,
     ...(options.authorizeAgentWrite
       ? { authorizeWrite: options.authorizeAgentWrite }
@@ -549,6 +559,7 @@ export async function createAcademicApp(
     sources,
     sourceEngines,
     connections,
+    webSessions,
     replans,
     availability,
     planner,

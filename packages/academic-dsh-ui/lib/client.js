@@ -2850,6 +2850,7 @@ function ConnectionsPage({ ctx, active }) {
           ]
         }
       ),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(WebSessionPanel, { ctx }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Section, { title: "\u540C\u6B65\u8BB0\u5F55", subtitle: "\u5931\u8D25\u4E0D\u4F1A\u6E05\u7A7A\u5DF2\u6709\u5B66\u4E1A\u6570\u636E", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(SyncRunTable, { runs: data.syncRuns, timeZone }) })
     ] })
   ] });
@@ -2920,6 +2921,108 @@ function SyncRunTable({ runs, timeZone }) {
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("td", { children: run.errorMessage ?? "\u2014" })
     ] }, run.runId)) })
   ] }) });
+}
+function WebSessionPanel({ ctx }) {
+  const load = (0, import_react6.useCallback)(
+    (signal) => callApi(ctx, "webSessions", {}, signal),
+    [ctx]
+  );
+  const { state, refresh } = useLoad(load, true);
+  const action = useAction(refresh);
+  const [url, setUrl] = (0, import_react6.useState)("");
+  const [label, setLabel] = (0, import_react6.useState)("");
+  const login = async () => {
+    if (!url.trim()) {
+      return {
+        ok: false,
+        error: { code: "VALIDATION", message: "\u8BF7\u586B\u5199\u7F51\u7AD9 URL" }
+      };
+    }
+    return callApi(ctx, "webLogin", {
+      url: url.trim(),
+      ...label.trim() ? { label: label.trim() } : {}
+    });
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+    Section,
+    {
+      title: "\u7F51\u7AD9\u767B\u5F55\uFF08\u901A\u7528\u4F1A\u8BDD\uFF09",
+      subtitle: "\u586B URL \u2192 \u62C9\u8D77\u6D4F\u89C8\u5668\u767B\u5F55 \u2192 Cookie \u52A0\u5BC6\u4FDD\u5B58\uFF1BAgent/\u811A\u672C\u5E26\u4F1A\u8BDD\u8BBF\u95EE\uFF0C\u4E0D\u66B4\u9732 Cookie",
+      children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+          "form",
+          {
+            className: "ac-form-card",
+            onSubmit: (event) => {
+              event.preventDefault();
+              void action.run("web-login", login, "\u767B\u5F55\u6210\u529F\uFF0C\u4F1A\u8BDD\u5DF2\u4FDD\u5B58").then((ok) => {
+                if (ok) {
+                  setUrl("");
+                  setLabel("");
+                }
+              });
+            },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-form-grid", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u7F51\u7AD9 URL", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                  "input",
+                  {
+                    value: url,
+                    onChange: (event) => setUrl(event.target.value),
+                    placeholder: "https://example.com/",
+                    required: true
+                  }
+                ) }),
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u6807\u7B7E\uFF08\u53EF\u9009\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                  "input",
+                  {
+                    value: label,
+                    onChange: (event) => setLabel(event.target.value),
+                    placeholder: "\u4F8B\u5982\uFF1A\u8BFE\u7A0B\u7F51\u7AD9"
+                  }
+                ) })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u767B\u5F55\u7A97\u53E3\u91CC\u4F1A\u663E\u793A\u201C\u5B8C\u6210\u767B\u5F55\u201D\u6309\u94AE\uFF1B\u767B\u5F55\u5B8C\u6210\u540E\u70B9\u51FB\u5B83\uFF0C\u5E94\u7528\u53EA\u4FDD\u5B58\u8BE5\u57DF\u540D\u4E0B\u7684 Cookie\u3002" }),
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ac-form-actions", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "submit", className: "ac-button ac-button-primary", disabled: action.pending !== void 0, children: action.pending === "web-login" ? "\u7B49\u5F85\u767B\u5F55\u7A97\u53E3\u2026" : "\u767B\u5F55\u5E76\u4FDD\u5B58" }) }),
+              action.notice && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) })
+            ]
+          }
+        ),
+        state.loading && !state.data && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(LoadingLine, { children: "\u6B63\u5728\u8BFB\u53D6\u7F51\u7AD9\u4F1A\u8BDD\u2026" }),
+        state.failure && !state.data && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-bad", children: state.failure.message }),
+        state.data && state.data.sessions.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u4FDD\u5B58\u7684\u7F51\u7AD9\u4F1A\u8BDD", children: "\u586B\u5199 URL \u5E76\u5B8C\u6210\u767B\u5F55\u540E\uFF0C\u4F1A\u8BDD\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002" }),
+        state.data && state.data.sessions.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-list", children: state.data.sessions.map((session) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: "ac-list-row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: session.label ?? session.domain }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "ac-muted", children: [
+              session.domain,
+              " \xB7 ",
+              session.loginUrl
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "ac-muted", children: [
+              "\u6700\u8FD1\u4F7F\u7528\uFF1A",
+              formatDateTimeOrDash(session.lastUsedAt, "UTC")
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            ConfirmAction,
+            {
+              label: "\u5220\u9664\u4F1A\u8BDD",
+              confirmLabel: "\u786E\u8BA4\u5220\u9664",
+              disabled: action.pending !== void 0,
+              onConfirm: () => void action.run(
+                "web-delete",
+                () => callApi(ctx, "webDelete", {
+                  sessionId: session.sessionId
+                }),
+                "\u7F51\u7AD9\u4F1A\u8BDD\u5DF2\u5220\u9664"
+              )
+            }
+          )
+        ] }, session.sessionId)) })
+      ]
+    }
+  );
 }
 
 // packages/academic-dsh-ui/src/client/pages/AutomationPage.tsx

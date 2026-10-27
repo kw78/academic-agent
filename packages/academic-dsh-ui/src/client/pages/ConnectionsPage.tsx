@@ -24,6 +24,7 @@ import type {
   ConnectionsView,
   SourceStatus,
   UiResult,
+  WebSessionView,
 } from '../../protocol.js'
 import type { PageProps } from './types.js'
 
@@ -552,6 +553,8 @@ export function ConnectionsPage({ ctx, active }: PageProps) {
             <SourceForm ctx={ctx} data={data} onCreated={refresh} />
           </Section>
 
+          <WebSessionPanel ctx={ctx} />
+
           <Section title="同步记录" subtitle="失败不会清空已有学业数据">
             <SyncRunTable runs={data.syncRuns} timeZone={timeZone} />
           </Section>
@@ -646,5 +649,121 @@ function SyncRunTable({ runs, timeZone }: { runs: SyncRunSummary[]; timeZone: st
         </tbody>
       </table>
     </div>
+  )
+}
+
+function WebSessionPanel({ ctx }: { ctx: PageProps['ctx'] }) {
+  const load = useCallback(
+    (signal: AbortSignal) =>
+      callApi<{ sessions: WebSessionView[] }>(ctx, 'webSessions', {}, signal),
+    [ctx],
+  )
+  const { state, refresh } = useLoad(load, true)
+  const action = useAction(refresh)
+  const [url, setUrl] = useState('')
+  const [label, setLabel] = useState('')
+
+  const login = async (): Promise<UiResult<WebSessionView>> => {
+    if (!url.trim()) {
+      return {
+        ok: false,
+        error: { code: 'VALIDATION', message: '请填写网站 URL' },
+      }
+    }
+    return callApi<WebSessionView>(ctx, 'webLogin', {
+      url: url.trim(),
+      ...(label.trim() ? { label: label.trim() } : {}),
+    })
+  }
+
+  return (
+    <Section
+      title="网站登录（通用会话）"
+      subtitle="填 URL → 拉起浏览器登录 → Cookie 加密保存；Agent/脚本带会话访问，不暴露 Cookie"
+    >
+      <form
+        className="ac-form-card"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void action.run('web-login', login, '登录成功，会话已保存').then((ok) => {
+            if (ok) {
+              setUrl('')
+              setLabel('')
+            }
+          })
+        }}
+      >
+        <div className="ac-form-grid">
+          <Field label="网站 URL">
+            <input
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder="https://example.com/"
+              required
+            />
+          </Field>
+          <Field label="标签（可选）">
+            <input
+              value={label}
+              onChange={(event) => setLabel(event.target.value)}
+              placeholder="例如：课程网站"
+            />
+          </Field>
+        </div>
+        <p className="ac-muted">
+          登录窗口里会显示“完成登录”按钮；登录完成后点击它，应用只保存该域名下的 Cookie。
+        </p>
+        <div className="ac-form-actions">
+          <button type="submit" className="ac-button ac-button-primary" disabled={action.pending !== undefined}>
+            {action.pending === 'web-login' ? '等待登录窗口…' : '登录并保存'}
+          </button>
+        </div>
+        {action.notice && (
+          <NoticeBar notice={action.notice} onDismiss={() => action.setNotice(undefined)} />
+        )}
+      </form>
+
+      {state.loading && !state.data && <LoadingLine>正在读取网站会话…</LoadingLine>}
+      {state.failure && !state.data && (
+        <p className="ac-text-bad">{state.failure.message}</p>
+      )}
+      {state.data && state.data.sessions.length === 0 && (
+        <EmptyState title="还没有保存的网站会话">
+          填写 URL 并完成登录后，会话会出现在这里。
+        </EmptyState>
+      )}
+      {state.data && state.data.sessions.length > 0 && (
+        <ul className="ac-list">
+          {state.data.sessions.map((session) => (
+            <li key={session.sessionId} className="ac-list-row">
+              <div>
+                <strong>{session.label ?? session.domain}</strong>
+                <span className="ac-muted">
+                  {session.domain} · {session.loginUrl}
+                </span>
+                <span className="ac-muted">
+                  最近使用：{formatDateTimeOrDash(session.lastUsedAt, 'UTC')}
+                </span>
+              </div>
+              <ConfirmAction
+                label="删除会话"
+                confirmLabel="确认删除"
+                disabled={action.pending !== undefined}
+                onConfirm={() =>
+                  void action.run(
+                    'web-delete',
+                    () =>
+                      callApi(ctx, 'webDelete', {
+                        sessionId: session.sessionId,
+                      }),
+                    '网站会话已删除',
+                  )
+                }
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
   )
 }

@@ -19967,6 +19967,151 @@ var CapabilityUnavailableError = class extends Error {
   }
 };
 
+// packages/academic-web-sessions/src/index.ts
+import { chromium } from "playwright-core";
+var MAX_BODY_BYTES = 2 * 1024 * 1024;
+var DEFAULT_LOGIN_TIMEOUT_MS = 5 * 6e4;
+function normalizeDomain(hostname3) {
+  return hostname3.toLowerCase().replace(/^\./, "");
+}
+function assertHttpUrl(value) {
+  const url2 = new URL(value);
+  if (url2.protocol !== "http:" && url2.protocol !== "https:") {
+    throw new Error("Only http(s) URLs are supported");
+  }
+  if (url2.username || url2.password) {
+    throw new Error("URL must not contain embedded credentials");
+  }
+  return url2;
+}
+function isLoginCookie(domain2, hostname3) {
+  if (!domain2) return true;
+  const cookieDomain = normalizeDomain(domain2);
+  const host = normalizeDomain(hostname3);
+  return host === cookieDomain || host.endsWith(`.${cookieDomain}`);
+}
+async function injectDoneButton(page) {
+  try {
+    await page.evaluate(() => {
+      if (document.getElementById("__academic_web_session_done")) return;
+      const button = document.createElement("button");
+      button.id = "__academic_web_session_done";
+      button.textContent = "\u5B8C\u6210\u767B\u5F55";
+      Object.assign(button.style, {
+        position: "fixed",
+        top: "12px",
+        right: "12px",
+        zIndex: "2147483647",
+        padding: "10px 16px",
+        borderRadius: "8px",
+        border: "1px solid #ffffff66",
+        background: "#1f6feb",
+        color: "#ffffff",
+        font: "14px sans-serif",
+        cursor: "pointer",
+        boxShadow: "0 4px 16px #00000055"
+      });
+      button.addEventListener("click", () => {
+        ;
+        window.__academicWebSessionDone = true;
+        button.textContent = "\u5DF2\u8BB0\u5F55\u767B\u5F55\u4F1A\u8BDD";
+        button.style.background = "#238636";
+      });
+      document.documentElement.appendChild(button);
+    });
+  } catch {
+  }
+}
+async function launch() {
+  let lastError;
+  for (const channel of ["msedge", "chrome"]) {
+    try {
+      return await chromium.launch({
+        channel,
+        headless: false,
+        args: ["--no-first-run", "--no-default-browser-check"]
+      });
+    } catch (error62) {
+      lastError = error62;
+    }
+  }
+  throw new Error(
+    `\u65E0\u6CD5\u542F\u52A8 Edge/Chrome\uFF1A${lastError instanceof Error ? lastError.message : String(lastError)}`
+  );
+}
+async function loginWebSession(loginUrl, options = {}) {
+  const url2 = assertHttpUrl(loginUrl);
+  const browser = await launch();
+  let context;
+  try {
+    context = await browser.newContext({
+      locale: "zh-CN",
+      viewport: { width: 1280, height: 900 }
+    });
+    const page = await context.newPage();
+    context.on("page", (next) => {
+      next.on("domcontentloaded", () => {
+        void injectDoneButton(next);
+      });
+    });
+    page.on("domcontentloaded", () => {
+      void injectDoneButton(page);
+    });
+    await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 6e4 });
+    await injectDoneButton(page);
+    const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_LOGIN_TIMEOUT_MS);
+    let completed = false;
+    while (Date.now() < deadline) {
+      if (!browser.isConnected()) {
+        throw new Error("\u767B\u5F55\u7A97\u53E3\u5DF2\u5173\u95ED\uFF0C\u672A\u4FDD\u5B58\u4F1A\u8BDD");
+      }
+      const pages = context.pages();
+      if (pages.length === 0) {
+        throw new Error("\u767B\u5F55\u7A97\u53E3\u5DF2\u5173\u95ED\uFF0C\u672A\u4FDD\u5B58\u4F1A\u8BDD");
+      }
+      for (const candidate of pages) {
+        try {
+          const done = await candidate.evaluate(
+            () => Boolean(
+              window.__academicWebSessionDone
+            )
+          );
+          if (done) {
+            completed = true;
+            break;
+          }
+        } catch {
+        }
+      }
+      if (completed) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    if (!completed) {
+      throw new Error("\u767B\u5F55\u8D85\u65F6\uFF1A\u8BF7\u91CD\u65B0\u6253\u5F00\u767B\u5F55\u7A97\u53E3\u5E76\u5728\u5B8C\u6210\u540E\u70B9\u51FB\u201C\u5B8C\u6210\u767B\u5F55\u201D");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const cookies = (await context.cookies()).filter((cookie) => isLoginCookie(cookie.domain, url2.hostname)).map((cookie) => ({
+      name: cookie.name,
+      value: cookie.value,
+      ...cookie.domain ? { domain: cookie.domain } : {},
+      ...cookie.path ? { path: cookie.path } : {},
+      ...cookie.expires !== void 0 && cookie.expires >= 0 ? { expires: cookie.expires } : {},
+      ...cookie.httpOnly ? { httpOnly: true } : {},
+      ...cookie.secure ? { secure: true } : {},
+      ...cookie.sameSite ? { sameSite: cookie.sameSite } : {}
+    }));
+    if (cookies.length === 0) throw new Error("\u672A\u8BFB\u53D6\u5230\u8BE5\u7F51\u7AD9\u7684\u4F1A\u8BDD Cookie");
+    return {
+      loginUrl,
+      domain: normalizeDomain(url2.hostname),
+      cookies
+    };
+  } finally {
+    await context?.close().catch(() => void 0);
+    await browser.close().catch(() => void 0);
+  }
+}
+
 // packages/academic-planner-basic/src/time.ts
 function zoneOffsetMs(zone, instant) {
   const truncated = new Date(Math.floor(instant.getTime() / 1e3) * 1e3);
@@ -20126,6 +20271,15 @@ var updateSourceSchema = external_exports.object({
   expectedVersion: external_exports.number().int().min(1).optional()
 });
 var sourceIdSchema = external_exports.object({ sourceId: external_exports.string().min(1) });
+var webLoginSchema = external_exports.object({
+  url: external_exports.string().url(),
+  label: external_exports.string().min(1).max(200).optional()
+});
+var webFetchSchema = external_exports.object({
+  sessionId: external_exports.string().min(1),
+  url: external_exports.string().url()
+});
+var webSessionIdSchema = external_exports.object({ sessionId: external_exports.string().min(1) });
 var sourceSecretSchema = external_exports.object({
   sourceId: external_exports.string().min(1),
   secret: external_exports.string().min(1).max(8192)
@@ -20950,6 +21104,46 @@ function createAcademicUiApi(app) {
         return failure2("UNAVAILABLE", "\u7CFB\u7EDF\u51ED\u636E\u5E93\u4E0D\u53EF\u7528\uFF0C\u51ED\u636E\u672A\u5220\u9664");
       }
     },
+    async webSessions() {
+      return ok({ sessions: app.webSessions.list() });
+    },
+    async webLogin(request) {
+      const parsed = parse3(webLoginSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        const login = await loginWebSession(body.url);
+        const session = await app.webSessions.create({
+          loginUrl: login.loginUrl,
+          cookies: login.cookies,
+          ...body.label ? { label: body.label } : {}
+        });
+        return ok(session);
+      } catch (error62) {
+        return failure2("ERROR", safeMessage(error62));
+      }
+    },
+    async webFetch(request) {
+      const parsed = parse3(webFetchSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        return ok(await app.webSessions.fetch(body.sessionId, body.url));
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async webDelete(request) {
+      const parsed = parse3(webSessionIdSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        await app.webSessions.delete(body.sessionId);
+        return ok({ deleted: true });
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
     async automation() {
       const [status, syncPage] = await Promise.all([
         app.getAutomationStatus(),
@@ -21143,6 +21337,10 @@ var REMOTE_METHODS = [
   "sourceLogin",
   "sourceSetSecret",
   "setConnectionSecret",
+  "webSessions",
+  "webLogin",
+  "webFetch",
+  "webDelete",
   "verifyConnection",
   "disconnectConnection",
   "deleteConnectionCredential",
@@ -21256,6 +21454,18 @@ var AcademicUiService = class extends TypertRemoteService {
     return (await this.apiReady).deleteConnectionCredential(
       request
     );
+  }
+  async webSessions(request) {
+    return (await this.apiReady).webSessions(request);
+  }
+  async webLogin(request) {
+    return (await this.apiReady).webLogin(request);
+  }
+  async webFetch(request) {
+    return (await this.apiReady).webFetch(request);
+  }
+  async webDelete(request) {
+    return (await this.apiReady).webDelete(request);
   }
   async automation(request) {
     return (await this.apiReady).automation(request);

@@ -20,6 +20,7 @@
     "@academic/scheduler": "0.1.0",
     "@academic/storage-sqlite": "0.1.0",
     "@academic/sources": "0.1.0",
-    "@academic/source-browser": "0.1.0"
+    "@academic/source-browser": "0.1.0",
+    "@academic/web-sessions": "0.1.0"
   }
 }

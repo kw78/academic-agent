@@ -19952,6 +19952,8 @@ var ACADEMIC_TOOL_NAMES = {
   ListSources: "academic_list_sources",
   ListSourceEngines: "academic_list_source_engines",
   CreateSource: "academic_create_source",
+  ListWebSessions: "academic_list_web_sessions",
+  FetchWebSession: "academic_fetch_web_session",
   UpdateSource: "academic_update_source",
   UpdateTask: "academic_update_task",
   RequestReplan: "academic_request_replan"
@@ -20144,6 +20146,21 @@ var TOOL_SPECS = [
       expectedVersion: { type: "integer", description: "Optimistic concurrency version" }
     },
     write: true
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.ListWebSessions,
+    description: "List saved website sessions (domain, label, timestamps). Read-only; never returns cookies.",
+    parameters: {},
+    write: false
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.FetchWebSession,
+    description: "Fetch a URL with a saved website session. Returns the response body, never the Cookie. The URL host must match the saved session domain.",
+    parameters: {
+      sessionId: { type: "string", required: true, description: "Saved web session id" },
+      url: { type: "string", required: true, description: "http(s) URL on the same domain" }
+    },
+    write: false
   }
 ];
 function toJsonValue(value) {

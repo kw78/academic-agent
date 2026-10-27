@@ -57,6 +57,7 @@
 | 通知全部已读 | 未读数归零 |
 | “咨询 Agent” | 打开 DSH 原生聊天并填入非敏感问题，不自动授予写入 |
 | 通用 source 表单 | 在“连接”页选择 browser-session engine 并创建 DB source；卡片显示“登录 USTC Blackboard”，说明来自 engine + config，不是 vendor UI |
+| 网站登录面板 | 填写 URL + 标签，登录并保存；列表显示 domain/label，无 Cookie 泄露；登录窗口真实网站手工验收待做 |
 
 ## 生命周期验证
 
@@ -100,7 +101,7 @@ npm test
 - `tests/unit/ui-security.test.ts`：客户端源码不出现 `credentialRef`/`credential_ref`、`sessionStorage`、`indexedDB`、`fetch(`、`node:`；仅保存 UI tab 偏好；凭据状态在提交前清空；
 - `tests/integration/ui-api.test.ts`：Query API 读取、Command API 任务变更、候选/确认分离、防篡改确认、凭据引用不泄露、未支持 Adapter 拒绝认证、输入校验、作业暂停/恢复、可用时间与提醒设置、通知已读、同步结果。
 
-当前基线：107 项测试通过（22 个测试文件）。
+当前基线：108 项测试通过（23 个测试文件）。
 
 ## 未完成/未验证
 

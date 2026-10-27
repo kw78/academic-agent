@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { WebSessionStore } from '@academic/web-sessions'
 import {
   COMMAND,
   CapabilityUnavailableError,
@@ -60,6 +61,7 @@ export interface AcademicToolDependencies {
   authorizeWrite?: AgentWriteAuthorizer
   sources?: SourceConfigStoreApi
   sourceEngines?: SourceEngineRegistryApi
+  webSessions?: WebSessionStore
 }
 
 export const ACADEMIC_TOOL_NAMES = {
@@ -70,6 +72,8 @@ export const ACADEMIC_TOOL_NAMES = {
   ListSources: 'academic_list_sources',
   ListSourceEngines: 'academic_list_source_engines',
   CreateSource: 'academic_create_source',
+  ListWebSessions: 'academic_list_web_sessions',
+  FetchWebSession: 'academic_fetch_web_session',
   UpdateSource: 'academic_update_source',
   UpdateTask: 'academic_update_task',
   RequestReplan: 'academic_request_replan',
@@ -403,6 +407,40 @@ export function createAcademicTools(
                 input.expectedVersion,
               )
               return success({ source })
+            },
+          ),
+        ]
+      : []),
+
+    ...(dependencies.webSessions
+      ? [
+          defineTool(
+            ACADEMIC_TOOL_NAMES.ListWebSessions,
+            'List saved website sessions (domain, label, timestamps). Read-only; never returns cookies.',
+            z.object({}),
+            async () => success({ sessions: dependencies.webSessions!.list() }),
+          ),
+
+          defineTool(
+            ACADEMIC_TOOL_NAMES.FetchWebSession,
+            'Fetch a URL with a saved website session. Returns the response body, never the Cookie. The URL host must match the saved session domain.',
+            z.object({
+              sessionId: z.string().min(1),
+              url: z.string().url(),
+            }),
+            async (input) => {
+              const result = await dependencies.webSessions!.fetch(
+                input.sessionId,
+                input.url,
+              )
+              const body = result.body.slice(0, 50_000)
+              return success({
+                status: result.status,
+                finalUrl: result.finalUrl,
+                contentType: result.contentType ?? null,
+                body,
+                truncated: result.truncated || body.length < result.body.length,
+              })
             },
           ),
         ]

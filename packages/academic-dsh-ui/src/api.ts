@@ -17,6 +17,7 @@ import {
 } from '@academic/contracts'
 import type { AcademicApp } from '@academic/cli'
 import type { NotificationView } from '@academic/notifications'
+import { loginWebSession } from '@academic/web-sessions'
 import { zonedDateTimeToUtc, type PlanSuggestion } from '@academic/planner-basic'
 import type { JobRun, ScheduledJob } from '@academic/scheduler'
 import type {
@@ -62,6 +63,11 @@ import type {
   UpdateReminderSettingsRequest,
   UpdateSourceRequest,
   UpdateSyncScheduleRequest,
+  WebFetchRequest,
+  WebLoginRequest,
+  WebSessionFetchView,
+  WebSessionIdRequest,
+  WebSessionView,
 } from './protocol.js'
 
 const MAX_TASKS = 500
@@ -154,6 +160,15 @@ const updateSourceSchema = z.object({
   expectedVersion: z.number().int().min(1).optional(),
 })
 const sourceIdSchema = z.object({ sourceId: z.string().min(1) })
+const webLoginSchema = z.object({
+  url: z.string().url(),
+  label: z.string().min(1).max(200).optional(),
+})
+const webFetchSchema = z.object({
+  sessionId: z.string().min(1),
+  url: z.string().url(),
+})
+const webSessionIdSchema = z.object({ sessionId: z.string().min(1) })
 const sourceSecretSchema = z.object({
   sourceId: z.string().min(1),
   secret: z.string().min(1).max(8192),
@@ -589,6 +604,10 @@ export interface AcademicUiApi {
   archiveSource(request: unknown): Promise<UiResult<SourceStatus>>
   sourceLogin(request: unknown): Promise<UiResult<ConnectionView>>
   sourceSetSecret(request: unknown): Promise<UiResult<ConnectionView>>
+  webSessions(request: unknown): Promise<UiResult<{ sessions: WebSessionView[] }>>
+  webLogin(request: unknown): Promise<UiResult<WebSessionView>>
+  webFetch(request: unknown): Promise<UiResult<WebSessionFetchView>>
+  webDelete(request: unknown): Promise<UiResult<{ deleted: boolean }>>
   createConnection(request: unknown): Promise<UiResult<ConnectionView>>
   setConnectionSecret(request: unknown): Promise<UiResult<ConnectionView>>
   verifyConnection(request: unknown): Promise<UiResult<ConnectionView>>
@@ -1140,6 +1159,50 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
         return ok(await app.connections.deleteCredential(body.connectionId))
       } catch {
         return failure('UNAVAILABLE', '系统凭据库不可用，凭据未删除')
+      }
+    },
+
+    async webSessions() {
+      return ok({ sessions: app.webSessions.list() })
+    },
+
+    async webLogin(request) {
+      const parsed = parse(webLoginSchema, request)
+      if (!parsed.ok) return parsed
+      const body: WebLoginRequest = parsed.value
+      try {
+        const login = await loginWebSession(body.url)
+        const session = await app.webSessions.create({
+          loginUrl: login.loginUrl,
+          cookies: login.cookies,
+          ...(body.label ? { label: body.label } : {}),
+        })
+        return ok(session)
+      } catch (error) {
+        return failure('ERROR', safeMessage(error))
+      }
+    },
+
+    async webFetch(request) {
+      const parsed = parse(webFetchSchema, request)
+      if (!parsed.ok) return parsed
+      const body: WebFetchRequest = parsed.value
+      try {
+        return ok(await app.webSessions.fetch(body.sessionId, body.url))
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async webDelete(request) {
+      const parsed = parse(webSessionIdSchema, request)
+      if (!parsed.ok) return parsed
+      const body: WebSessionIdRequest = parsed.value
+      try {
+        await app.webSessions.delete(body.sessionId)
+        return ok({ deleted: true })
+      } catch (error) {
+        return fromError(error)
       }
     },
 

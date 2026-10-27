@@ -50,6 +50,7 @@
   "dependencies": {
     "@academic/sources": "0.1.0",
     "@academic/source-browser": "0.1.0",
-    "playwright-core": "1.64.1"
+    "playwright-core": "1.64.1",
+    "@academic/web-sessions": "0.1.0"
   }
 }

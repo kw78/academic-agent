@@ -43,6 +43,7 @@ packages/
   academic-connections/        # Connection Manager + Credential Vault
   academic-sources/            # DB source 配置（engine + 非敏感 config）
   academic-source-browser/     # 通用浏览器会话登录 engine
+  academic-web-sessions/       # 通用网站登录、DPAPI 会话 Cookie、带会话 fetch
   academic-dsh-plugin/         # DSH bundle：host / planner / tools 独立插件
   academic-dsh-ui/             # DSH 客户端 UI 插件 + Host Typert Remote API 适配
 adapters/
@@ -79,6 +80,7 @@ docs/adr/                      # 架构决策记录
 - Agent 写入必须由可信宿主对每次操作授权；模型传入的 `confirmed` 等参数不能作为授权依据。默认 Agent 只读。
 - 凭据、Cookie、Token 不进入事件 payload 或日志；二进制内容只存引用/摘要。
 - 数据源定义与配置保存在 `academic_sources` 运营表：少量通用 engine（fixture、browser-session，后续 ics/http-session）+ 非敏感 `config_json`。新增网站来源优先写 DB 配置，不在应用层为每家网站写代码或 vendor 插件；只有出现新的独立执行能力时才增加 engine。
+- 通用网站会话保存在 `web_sessions` 运营表，Cookie 仅存 DPAPI；UI/CLI/Agent 通过 `web login`、`academic_fetch_web_session` 等接口带会话访问，不把 Cookie 返回给模型或浏览器端。
 - Agent 可通过受控 `academic_list_sources` / `academic_create_source` / `academic_update_source` 工具创建或修改 source 配置，写入需可信宿主逐次授权；不得借此安装或执行未审查代码。
 - 连接元数据（source、状态、账号标识、授权范围、上次同步）与认证秘密分开保存。秘密只存在于系统凭据库（当前 Windows DPAPI，未来可替换 Credential Manager），SQLite 只保存连接元数据与不透明引用。
 - 系统凭据库不可用时失败关闭，不降级为明文；连接断开/删除凭据不得删除已有学业事件。Adapter 只能通过 source-checked 的凭据租约读取本连接秘密；Agent 工具不得获得连接或凭据访问。
@@ -128,7 +130,7 @@ docs/adr/                      # 架构决策记录
 - DSH 绑定继续按 M0 验证：`inject`、Service 注册/撤销、Tool 注册/撤销、HMR/重启语义、依赖组件卸载时资源释放。目前已完成加载、工具注册、ToolRegistry 执行、DeepSeek 模型自然语言调用，以及 Web 客户端 UI 的加载/卸载/重载；文件级 HMR 与真实 Session 生命周期待补。
 - Agent 工具通过 `ctx.tools.register(defineTool(...))` 暴露；工具只调用领域服务，不拼 SQL、不直接追加事件。
 - 普通 Host 插件可访问宿主进程；Cordis disposer 不是安全沙箱。未审查代码不得以可信 Host 插件身份安装。
-- 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 拆成 `host` / `planner` / `tools` 三个 Cordis fiber；host 提供 `academicApp` 服务，planner 与 tools 独立注入，10 个工具经真实 `ctx.tools` 注册。
+- 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 拆成 `host` / `planner` / `tools` 三个 Cordis fiber；host 提供 `academicApp` 服务，planner 与 tools 独立注入，12 个工具经真实 `ctx.tools` 注册。
 - 真实 Cordis 生命周期测试已验证：卸载 tools 后 host/scheduler/store 继续运行；卸载 planner 后旧计划仍可读、能力消失；重载二者恢复；host 卸载关闭 app。
 - DSH Web profile 已实测通过 Plugins 页面禁用/启用 `@academic/dsh-ui`：入口消失后后台同步/重算继续，重新启用后入口恢复且没有重复 Host、作业或课程。文件级 HMR 尚未验证。
 - DSH 运行时提供 `@deepseek-ai/cordis` / `@deepseek-ai/dsh-tools`；插件保持二者 external，不另造 Harness。普通 `--patch` 直接加载工作区文件无法解析这些 peer，必须安装到 profile（或从 DSH 源码 checkout 运行）。
@@ -174,7 +176,7 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（107 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（108 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 
@@ -183,6 +185,8 @@ P0 修复已验证：启动不覆盖调度配置；消费者重启续跑 checkpo
 Blackboard 不再作为应用层 vendor 插件：它是 `academic_sources` 中的一条 `engine=browser-session` 配置；通用浏览器 engine 拉起 Edge/Chrome，用户完成 SSO 与验证码后读取会话 Cookie 写入 DPAPI。UI 只渲染 DB source，不认识学校名称。正式 Blackboard 解析（作业/考试/课程规则）仍待实现，不得声称真实平台同步完成。
 
 凭据连接 MVP 已验证：连接元数据与秘密分离；Windows DPAPI 加密存储；fail-closed；验证/断开/删除凭据；认证失败停止同步并保留旧数据；source mismatch 拒绝；DB/事件/同步记录无明文；DPAPI 受保护凭据完成端到端同步。
+
+通用网站会话已实现：填写 URL 后宿主拉起 Edge/Chrome，用户点击页面右上角“完成登录”，应用只保存该域名的 Cookie 到 DPAPI；UI 的“网站登录”面板、CLI `web login/list/fetch/delete` 与 Agent 会话 fetch 工具已接入。存储/域名限制/不泄露 Cookie 有自动化测试；真实网站登录窗口仍需手工验收。
 
 前端 UI 已验证（`packages/academic-dsh-ui`）：侧边栏“学业”入口、总览/任务/计划/连接/自动化/设置页面；任务完成、计划候选确认、锁定、可用时间保存、作业暂停/恢复、提醒已读均经 Host Remote API 生效；候选计划确认使用 Host 端 `previewId`，不信任客户端计划块；UI 不返回/保存 `credentialRef`，未实现真实 Adapter 时不显示认证表单。详细记录见 `docs/frontend-verification.md`。
 
@@ -195,7 +199,7 @@ dsh plugin --profile academic add D:/project/classhelper/packages/academic-dsh-p
 ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db dsh academic --json "hello"
 ```
 
-已观测：host/planner/tools 三个 fiber 加载，`tools=10 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`；退出时 planner capability 释放。另外使用 DSH 凭证中的 DeepSeek key 跑通真实自然语言调用：模型调用 `academic_list_courses`，返回真实 SQLite 课程并正确回答。密钥只在进程环境中注入，未写入代码或日志。
+已观测：host/planner/tools 三个 fiber 加载，`tools=12 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`；退出时 planner capability 释放。另外使用 DSH 凭证中的 DeepSeek key 跑通真实自然语言调用：模型调用 `academic_list_courses`，返回真实 SQLite 课程并正确回答。密钥只在进程环境中注入，未写入代码或日志。
 
 ## 10. 待确认的环境参数（不阻塞实现）
 

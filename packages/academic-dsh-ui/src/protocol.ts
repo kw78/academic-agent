@@ -369,3 +369,37 @@ export interface SyncNowRequest {
   sourceId?: string
   connectionId?: string
 }
+
+export interface WebSessionView {
+  sessionId: string
+  loginUrl: string
+  domain: string
+  label?: string
+  createdAt: string
+  updatedAt: string
+  lastUsedAt?: string
+}
+
+export interface WebSessionFetchView {
+  sessionId: string
+  url: string
+  finalUrl: string
+  status: number
+  contentType?: string
+  body: string
+  truncated: boolean
+}
+
+export interface WebLoginRequest {
+  url: string
+  label?: string
+}
+
+export interface WebFetchRequest {
+  sessionId: string
+  url: string
+}
+
+export interface WebSessionIdRequest {
+  sessionId: string
+}

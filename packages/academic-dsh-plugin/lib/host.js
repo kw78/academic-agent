@@ -20551,8 +20551,8 @@ var ConnectionManager = class {
     };
   }
   #view(record2) {
-    const { credentialRef: _credentialRef, ...view } = record2;
-    return view;
+    const { credentialRef: _credentialRef, ...view2 } = record2;
+    return view2;
   }
 };
 
@@ -20738,8 +20738,134 @@ var SourceConfigStore = class {
   }
 };
 
-// packages/academic-source-browser/src/index.ts
+// packages/academic-web-sessions/src/index.ts
 import { chromium } from "playwright-core";
+var MAX_BODY_BYTES = 2 * 1024 * 1024;
+var DEFAULT_LOGIN_TIMEOUT_MS = 5 * 6e4;
+function vaultRef(sessionId) {
+  return `academic-agent/web-session/${sessionId}`;
+}
+function view(row) {
+  return {
+    sessionId: row.session_id,
+    loginUrl: row.login_url,
+    domain: row.domain,
+    ...row.label ? { label: row.label } : {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    ...row.last_used_at ? { lastUsedAt: row.last_used_at } : {}
+  };
+}
+function normalizeDomain(hostname3) {
+  return hostname3.toLowerCase().replace(/^\./, "");
+}
+function hostMatches(hostname3, domain2) {
+  const host = normalizeDomain(hostname3);
+  const base = normalizeDomain(domain2);
+  return host === base || host.endsWith(`.${base}`);
+}
+function cookieHeader(cookies) {
+  return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+}
+function assertHttpUrl(value) {
+  const url2 = new URL(value);
+  if (url2.protocol !== "http:" && url2.protocol !== "https:") {
+    throw new Error("Only http(s) URLs are supported");
+  }
+  if (url2.username || url2.password) {
+    throw new Error("URL must not contain embedded credentials");
+  }
+  return url2;
+}
+var WebSessionStore = class {
+  #db;
+  #vault;
+  #clock;
+  #ids;
+  #fetch;
+  constructor(options) {
+    this.#db = options.db;
+    this.#vault = options.vault;
+    this.#clock = options.clock;
+    this.#ids = options.ids;
+    this.#fetch = options.fetchImpl ?? fetch;
+  }
+  async create(input2) {
+    const url2 = assertHttpUrl(input2.loginUrl);
+    const cookies = input2.cookies.filter((cookie) => cookie.name && cookie.value);
+    if (cookies.length === 0) throw new Error("No session cookies were captured");
+    const sessionId = this.#ids.next();
+    const now = this.#clock.now();
+    const ref = vaultRef(sessionId);
+    await this.#vault.set(ref, JSON.stringify({ cookies }));
+    this.#db.prepare(
+      `INSERT INTO web_sessions (
+           session_id, login_url, domain, label, vault_ref,
+           created_at, updated_at, last_used_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`
+    ).run(
+      sessionId,
+      input2.loginUrl,
+      normalizeDomain(url2.hostname),
+      input2.label ?? null,
+      ref,
+      now,
+      now
+    );
+    return this.get(sessionId);
+  }
+  get(sessionId) {
+    const row = this.#db.prepare("SELECT * FROM web_sessions WHERE session_id = ?").get(sessionId);
+    return row ? view(row) : void 0;
+  }
+  list() {
+    const rows = this.#db.prepare("SELECT * FROM web_sessions ORDER BY updated_at DESC, rowid DESC").all();
+    return rows.map(view);
+  }
+  async delete(sessionId) {
+    const row = this.#db.prepare("SELECT * FROM web_sessions WHERE session_id = ?").get(sessionId);
+    if (!row) return;
+    await this.#vault.delete(row.vault_ref);
+    this.#db.prepare("DELETE FROM web_sessions WHERE session_id = ?").run(sessionId);
+  }
+  async fetch(sessionId, targetUrl, init = {}) {
+    const row = this.#db.prepare("SELECT * FROM web_sessions WHERE session_id = ?").get(sessionId);
+    if (!row) throw new Error("Web session not found");
+    const url2 = assertHttpUrl(targetUrl);
+    if (!hostMatches(url2.hostname, row.domain)) {
+      throw new Error(`URL host does not match session domain ${row.domain}`);
+    }
+    const raw = await this.#vault.get(row.vault_ref);
+    if (!raw) throw new Error("Web session credential is unavailable");
+    const parsed = JSON.parse(raw);
+    const header = cookieHeader(parsed.cookies ?? []);
+    if (!header) throw new Error("Web session has no cookies");
+    const response = await this.#fetch(targetUrl, {
+      ...init,
+      headers: {
+        ...init.headers ?? {},
+        Cookie: header
+      },
+      redirect: "follow"
+    });
+    const text = await response.text();
+    const truncated = text.length > MAX_BODY_BYTES;
+    const now = this.#clock.now();
+    this.#db.prepare("UPDATE web_sessions SET last_used_at = ?, updated_at = ? WHERE session_id = ?").run(now, now, sessionId);
+    return {
+      sessionId,
+      url: targetUrl,
+      finalUrl: response.url || targetUrl,
+      status: response.status,
+      ...response.headers.get("content-type") ? { contentType: response.headers.get("content-type") } : {},
+      body: truncated ? text.slice(0, MAX_BODY_BYTES) : text,
+      truncated
+    };
+  }
+};
+
+// packages/academic-source-browser/src/index.ts
+import { chromium as chromium2 } from "playwright-core";
 var browserConfigSchema = external_exports.object({
   loginUrl: external_exports.string().url(),
   authenticatedUrlPatterns: external_exports.array(external_exports.string().min(1)).min(1),
@@ -20758,7 +20884,7 @@ function matchesAny(patterns, value) {
     }
   });
 }
-function cookieHeader(cookies, domains) {
+function cookieHeader2(cookies, domains) {
   return cookies.filter((cookie) => {
     const domain2 = cookie.domain.replace(/^\./, "");
     return domains.some(
@@ -20771,7 +20897,7 @@ async function launch(channel) {
   let lastError;
   for (const candidate of channels) {
     try {
-      return await chromium.launch({
+      return await chromium2.launch({
         channel: candidate,
         headless: false,
         args: ["--no-first-run", "--no-default-browser-check"]
@@ -20823,7 +20949,7 @@ async function browserLogin(config2) {
     }
     await loggedPage.waitForLoadState("domcontentloaded").catch(() => void 0);
     const cookies = await context.cookies();
-    const header = cookieHeader(
+    const header = cookieHeader2(
       cookies.map((cookie) => ({
         name: cookie.name,
         value: cookie.value,
@@ -21039,6 +21165,8 @@ var ACADEMIC_TOOL_NAMES = {
   ListSources: "academic_list_sources",
   ListSourceEngines: "academic_list_source_engines",
   CreateSource: "academic_create_source",
+  ListWebSessions: "academic_list_web_sessions",
+  FetchWebSession: "academic_fetch_web_session",
   UpdateSource: "academic_update_source",
   UpdateTask: "academic_update_task",
   RequestReplan: "academic_request_replan"
@@ -21314,6 +21442,36 @@ function createAcademicTools(dependencies) {
             input2.expectedVersion
           );
           return success2({ source });
+        }
+      )
+    ] : [],
+    ...dependencies.webSessions ? [
+      defineTool(
+        ACADEMIC_TOOL_NAMES.ListWebSessions,
+        "List saved website sessions (domain, label, timestamps). Read-only; never returns cookies.",
+        external_exports.object({}),
+        async () => success2({ sessions: dependencies.webSessions.list() })
+      ),
+      defineTool(
+        ACADEMIC_TOOL_NAMES.FetchWebSession,
+        "Fetch a URL with a saved website session. Returns the response body, never the Cookie. The URL host must match the saved session domain.",
+        external_exports.object({
+          sessionId: external_exports.string().min(1),
+          url: external_exports.string().url()
+        }),
+        async (input2) => {
+          const result = await dependencies.webSessions.fetch(
+            input2.sessionId,
+            input2.url
+          );
+          const body = result.body.slice(0, 5e4);
+          return success2({
+            status: result.status,
+            finalUrl: result.finalUrl,
+            contentType: result.contentType ?? null,
+            body,
+            truncated: result.truncated || body.length < result.body.length
+          });
         }
       )
     ] : []
@@ -25001,9 +25159,16 @@ async function createAcademicApp(options) {
     clock,
     ids
   });
+  const credentialVault = options.credentialVault ?? createDefaultCredentialVault(options.credentialVaultDir);
   const connections = new ConnectionManager({
     db: store.database,
-    vault: options.credentialVault ?? createDefaultCredentialVault(options.credentialVaultDir),
+    vault: credentialVault,
+    clock,
+    ids
+  });
+  const webSessions = new WebSessionStore({
+    db: store.database,
+    vault: credentialVault,
     clock,
     ids
   });
@@ -25054,6 +25219,7 @@ async function createAcademicApp(options) {
     ids,
     sources,
     sourceEngines,
+    webSessions,
     allowWrites: options.agentWrites ?? false,
     ...options.authorizeAgentWrite ? { authorizeWrite: options.authorizeAgentWrite } : {}
   });
@@ -25245,6 +25411,7 @@ async function createAcademicApp(options) {
     sources,
     sourceEngines,
     connections,
+    webSessions,
     replans,
     availability,
     planner,

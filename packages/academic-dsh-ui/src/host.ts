@@ -37,6 +37,11 @@ import type {
   UpdateReminderSettingsRequest,
   UpdateSourceRequest,
   UpdateSyncScheduleRequest,
+  WebFetchRequest,
+  WebLoginRequest,
+  WebSessionFetchView,
+  WebSessionIdRequest,
+  WebSessionView,
 } from './protocol.js'
 import type { ConnectionView, SyncRunSummary } from '@academic/contracts'
 
@@ -62,6 +67,10 @@ const REMOTE_METHODS = [
   'sourceLogin',
   'sourceSetSecret',
   'setConnectionSecret',
+  'webSessions',
+  'webLogin',
+  'webFetch',
+  'webDelete',
   'verifyConnection',
   'disconnectConnection',
   'deleteConnectionCredential',
@@ -231,6 +240,26 @@ export class AcademicUiService extends TypertRemoteService {
     return (await this.apiReady).deleteConnectionCredential(
       request as ConnectionIdRequest,
     )
+  }
+
+  async webSessions(
+    request: unknown,
+  ): Promise<UiResult<{ sessions: WebSessionView[] }>> {
+    return (await this.apiReady).webSessions(request)
+  }
+
+  async webLogin(request: unknown): Promise<UiResult<WebSessionView>> {
+    return (await this.apiReady).webLogin(request as WebLoginRequest)
+  }
+
+  async webFetch(request: unknown): Promise<UiResult<WebSessionFetchView>> {
+    return (await this.apiReady).webFetch(request as WebFetchRequest)
+  }
+
+  async webDelete(
+    request: unknown,
+  ): Promise<UiResult<{ deleted: boolean }>> {
+    return (await this.apiReady).webDelete(request as WebSessionIdRequest)
   }
 
   async automation(request: unknown): Promise<UiResult<AutomationView>> {

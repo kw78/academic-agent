@@ -156,6 +156,23 @@ const TOOL_SPECS: ToolSpec[] = [
     },
     write: true,
   },
+  {
+    name: ACADEMIC_TOOL_NAMES.ListWebSessions,
+    description:
+      'List saved website sessions (domain, label, timestamps). Read-only; never returns cookies.',
+    parameters: {},
+    write: false,
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.FetchWebSession,
+    description:
+      'Fetch a URL with a saved website session. Returns the response body, never the Cookie. The URL host must match the saved session domain.',
+    parameters: {
+      sessionId: { type: 'string', required: true, description: 'Saved web session id' },
+      url: { type: 'string', required: true, description: 'http(s) URL on the same domain' },
+    },
+    write: false,
+  },
 ]
 
 function toJsonValue(value: unknown): unknown {
