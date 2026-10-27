@@ -1,0 +1,250 @@
+import type { DatabaseSync } from 'node:sqlite'
+import { z } from 'zod'
+import {
+  SourceConflictError,
+  SourceNotFoundError,
+  type Clock,
+  type IdGenerator,
+  type SourceConfig,
+  type SourceConfigInput,
+  type SourceConfigStoreApi,
+  type SourceConfigUpdate,
+} from '@academic/contracts'
+
+const AUTH_KINDS = ['none', 'password', 'token', 'oauth'] as const
+const MAX_CONFIG_BYTES = 64 * 1024
+const FORBIDDEN_CONFIG_KEYS = new Set([
+  'password',
+  'token',
+  'access_token',
+  'refresh_token',
+  'cookie',
+  'authorization',
+  'secret',
+  'credential',
+  'apikey',
+  'api_key',
+])
+
+const sourceInputSchema = z.object({
+  sourceId: z.string().min(1).max(200).optional(),
+  engine: z.string().min(1).max(100),
+  displayName: z.string().min(1).max(200),
+  authKind: z.enum(AUTH_KINDS),
+  loginMode: z.enum(['browser', 'manual']).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  capabilities: z.array(z.string().min(1).max(200)).max(50).optional(),
+  enabled: z.boolean().optional(),
+})
+
+const sourceUpdateSchema = z.object({
+  displayName: z.string().min(1).max(200).optional(),
+  authKind: z.enum(AUTH_KINDS).optional(),
+  loginMode: z.enum(['browser', 'manual']).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  capabilities: z.array(z.string().min(1).max(200)).max(50).optional(),
+  enabled: z.boolean().optional(),
+})
+
+interface SourceRow {
+  source_id: string
+  engine: string
+  display_name: string
+  auth_kind: string
+  login_mode: string | null
+  config_json: string
+  capabilities_json: string
+  enabled: number
+  archived: number
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+function assertNoSecrets(value: unknown, path = 'config'): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => assertNoSecrets(entry, `${path}[${index}]`))
+    return
+  }
+  if (value === null || typeof value !== 'object') return
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (FORBIDDEN_CONFIG_KEYS.has(key.toLowerCase())) {
+      throw new SourceConflictError(
+        `Source config must not contain credentials (${path}.${key}); use the credential vault`,
+      )
+    }
+    assertNoSecrets(entry, `${path}.${key}`)
+  }
+}
+
+function parseConfig(value: Record<string, unknown> | undefined): string {
+  const config = value ?? {}
+  const serialized = JSON.stringify(config)
+  if (serialized.length > MAX_CONFIG_BYTES) {
+    throw new SourceConflictError('Source config is too large')
+  }
+  assertNoSecrets(config)
+  return serialized
+}
+
+export interface SourceConfigStoreOptions {
+  db: DatabaseSync
+  clock: Clock
+  ids: IdGenerator
+}
+
+/** Operational source definitions; secrets never live in this table. */
+export class SourceConfigStore implements SourceConfigStoreApi {
+  readonly #db: DatabaseSync
+  readonly #clock: Clock
+  readonly #ids: IdGenerator
+
+  constructor(options: SourceConfigStoreOptions) {
+    this.#db = options.db
+    this.#clock = options.clock
+    this.#ids = options.ids
+  }
+
+  ensure(input: SourceConfigInput & { sourceId: string }): SourceConfig {
+    const existing = this.get(input.sourceId)
+    return existing ?? this.create(input)
+  }
+
+  create(input: SourceConfigInput): SourceConfig {
+    const parsed = sourceInputSchema.parse(input)
+    const sourceId = parsed.sourceId ?? this.#ids.next()
+    if (this.get(sourceId)) {
+      throw new SourceConflictError(`Source already exists: ${sourceId}`)
+    }
+    const now = this.#clock.now()
+    try {
+      this.#db
+        .prepare(
+          `INSERT INTO academic_sources (
+             source_id, engine, display_name, auth_kind, login_mode,
+             config_json, capabilities_json, enabled, archived, version,
+             created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`,
+        )
+        .run(
+          sourceId,
+          parsed.engine,
+          parsed.displayName,
+          parsed.authKind,
+          parsed.loginMode ?? null,
+          parseConfig(parsed.config),
+          JSON.stringify(parsed.capabilities ?? []),
+          parsed.enabled === false ? 0 : 1,
+          now,
+          now,
+        )
+    } catch (error) {
+      if (String(error).includes('UNIQUE')) {
+        throw new SourceConflictError(`Source already exists: ${sourceId}`)
+      }
+      throw error
+    }
+    return this.get(sourceId)!
+  }
+
+  get(sourceId: string): SourceConfig | undefined {
+    const row = this.#db
+      .prepare('SELECT * FROM academic_sources WHERE source_id = ?')
+      .get(sourceId) as unknown as SourceRow | undefined
+    return row ? this.#toConfig(row) : undefined
+  }
+
+  list(options: { includeArchived?: boolean } = {}): SourceConfig[] {
+    const rows = (
+      options.includeArchived
+        ? this.#db
+            .prepare('SELECT * FROM academic_sources ORDER BY created_at ASC, rowid ASC')
+            .all()
+        : this.#db
+            .prepare(
+              'SELECT * FROM academic_sources WHERE archived = 0 ORDER BY created_at ASC, rowid ASC',
+            )
+            .all()
+    ) as unknown as SourceRow[]
+    return rows.map((row) => this.#toConfig(row))
+  }
+
+  update(
+    sourceId: string,
+    update: SourceConfigUpdate,
+    expectedVersion?: number,
+  ): SourceConfig {
+    const current = this.get(sourceId)
+    if (!current) throw new SourceNotFoundError(sourceId)
+    if (current.archived) {
+      throw new SourceConflictError('Archived source cannot be updated')
+    }
+    if (expectedVersion !== undefined && expectedVersion !== current.version) {
+      throw new SourceConflictError(
+        `Source version changed: expected ${expectedVersion}, got ${current.version}`,
+      )
+    }
+    const parsed = sourceUpdateSchema.parse(update)
+    const next = {
+      displayName: parsed.displayName ?? current.displayName,
+      authKind: parsed.authKind ?? current.authKind,
+      loginMode: parsed.loginMode ?? current.loginMode,
+      config: parsed.config ?? current.config,
+      capabilities: parsed.capabilities ?? current.capabilities,
+      enabled: parsed.enabled ?? current.enabled,
+    }
+    const now = this.#clock.now()
+    this.#db
+      .prepare(
+        `UPDATE academic_sources SET
+           display_name = ?, auth_kind = ?, login_mode = ?,
+           config_json = ?, capabilities_json = ?, enabled = ?,
+           version = version + 1, updated_at = ?
+         WHERE source_id = ?`,
+      )
+      .run(
+        next.displayName,
+        next.authKind,
+        next.loginMode ?? null,
+        parseConfig(next.config),
+        JSON.stringify(next.capabilities),
+        next.enabled ? 1 : 0,
+        now,
+        sourceId,
+      )
+    return this.get(sourceId)!
+  }
+
+  archive(sourceId: string): SourceConfig {
+    const current = this.get(sourceId)
+    if (!current) throw new SourceNotFoundError(sourceId)
+    const now = this.#clock.now()
+    this.#db
+      .prepare(
+        `UPDATE academic_sources SET
+           archived = 1, enabled = 0, version = version + 1, updated_at = ?
+         WHERE source_id = ?`,
+      )
+      .run(now, sourceId)
+    return this.get(sourceId)!
+  }
+
+  #toConfig(row: SourceRow): SourceConfig {
+    return {
+      sourceId: row.source_id,
+      engine: row.engine,
+      displayName: row.display_name,
+      authKind: row.auth_kind as SourceConfig['authKind'],
+      ...(row.login_mode
+        ? { loginMode: row.login_mode as 'browser' | 'manual' }
+        : {}),
+      config: JSON.parse(row.config_json) as Record<string, unknown>,
+      capabilities: JSON.parse(row.capabilities_json) as string[],
+      enabled: Boolean(row.enabled),
+      archived: Boolean(row.archived),
+      version: Number(row.version),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }
+  }
+}

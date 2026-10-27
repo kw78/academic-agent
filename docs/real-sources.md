@@ -22,37 +22,30 @@ https://www.bb.ustc.edu.cn/webapps/portal/execute/tabs/tabAction?tab_tab_group_i
 - 返回的是 Blackboard 登录页，未登录状态无法读取课程/作业数据
 - 未提供授权会话、账号或 API 凭据；没有尝试绕过登录、验证码或访问限制
 
-## 应用内登录（已实现）
+## DB source + 通用浏览器 engine（已实现）
 
-USTC Blackboard 没有用户名/密码表单，登录会跳转到 `id.ustc.edu.cn` CAS，并带验证码。不要自动化或绕过该流程。
+Blackboard 是数据库中的一条 source 配置，不是应用层 vendor 插件：
 
-`blackboard login` 会拉起一个 Edge/Chrome 窗口：
+```text
+source_id = ustc-blackboard
+engine = browser-session
+auth_kind = token
+login_mode = browser
+config_json = { loginUrl, authenticatedUrlPatterns, cookieDomains, verifyUrl, loggedOutPatterns }
+```
 
-1. 应用打开 Blackboard 登录页；
-2. 用户自己在窗口里完成统一认证和验证码；
-3. 登录成功到达 Blackboard 门户后，宿主读取 `bb.ustc.edu.cn` 会话 Cookie；
-4. Cookie 写入 Windows DPAPI，浏览器窗口关闭；应用不会读取或保存统一认证密码。
+通用 `browser-session` engine 拉起 Edge/Chrome，用户自己完成 USTC SSO 和验证码；成功后只读取配置域名下的会话 Cookie 并写入 DPAPI。应用不读取统一认证密码，也不绕过验证码。
 
 ```bash
 cd D:/project/classhelper
-ACADEMIC_DB=.data/bb-probe.db \
-  npm run demo -- blackboard login
-ACADEMIC_DB=.data/bb-probe.db \
-  npm run demo -- blackboard probe <connectionId>
+ACADEMIC_DB=.data/bb-probe.db npm run demo -- source add ustc-blackboard "USTC Blackboard" --engine browser-session --auth token --login-mode browser --config "{\"loginUrl\":\"https://www.bb.ustc.edu.cn/\",\"authenticatedUrlPatterns\":[\"^https://www.bb.ustc.edu.cn/\"],\"cookieDomains\":[\"bb.ustc.edu.cn\"],\"verifyUrl\":\"https://www.bb.ustc.edu.cn/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_1_1\",\"loggedOutPatterns\":[\"/webapps/login\",\"id.ustc.edu.cn/cas\"]}"
+ACADEMIC_DB=.data/bb-probe.db npm run demo -- source login ustc-blackboard
+ACADEMIC_DB=.data/bb-probe.db npm run demo -- source sync ustc-blackboard
 ```
 
-桌面端“连接”页也提供“登录 Blackboard”按钮，调用同一条宿主登录流程；不需要手工复制 Cookie。
+桌面端“连接”页也通过同一套 DB source + engine 接口添加/登录/同步，UI 不认识学校名称。正式 Blackboard 作业/考试解析规则尚未实现，`source sync` 当前会明确报告能力缺失，不会伪造同步结果。
 
-调试或 Playwright 不可用时，仍保留备用流程：
-
-```bash
-ACADEMIC_DB=.data/bb-probe.db npm run demo -- blackboard connect
-# 本机隐藏输入会话 Cookie
-```
-
-探针输出 HTTP 状态、页面标题、课程链接数和诊断文件路径；`summary.json` 不包含 Cookie。`.data/bb-probe/` 下是本地诊断 HTML，可能含课程/账号相关文本，查看后应删除。不要把 Cookie 粘贴到聊天、Issue、日志或任何远端工具。
-
-探针只验证会话可访问性和课程链接结构，**还不是正式 Adapter**；正式 Adapter 需要基于真实 HTML 实现作业/考试解析、课程注册、去重与失败保留。
+凭据只进入 DPAPI；source `config_json` 禁止 password/token/cookie 字段。调试 HTML/诊断文件应放在 `.data` 并定期删除；不要把 Cookie 粘贴到聊天、Issue、日志或任何远端工具。
 
 ## 可行接入路径
 

@@ -6,19 +6,23 @@ import {
   CapabilityRegistry,
   CapabilityUnavailableError,
   EVENT,
+  SourceEngineRegistry,
   parseCommand,
   systemClock,
   timeBlockSchema,
   type AcademicSourceAdapter,
   type Clock,
   type CommandResult,
+  type ConnectionSyncBinding,
   type CourseView,
+  type CredentialAccess,
   type DisposableRegistration,
   type IdGenerator,
   type LockedBlock,
   type PlanBlock,
   type Range,
   type ReplanReason,
+  type SourceEngine,
   type StudyPlanView,
   type SyncRunSummary,
 } from '@academic/contracts'
@@ -27,9 +31,12 @@ import {
   createDefaultCredentialVault,
   type CredentialVault,
 } from '@academic/connections'
+import { SourceConfigStore } from '@academic/sources'
+import { createBrowserSessionEngine } from '@academic/source-browser'
 import {
   DEFAULT_FIXTURE_COURSE,
   FixtureLmsAdapter,
+  createFixtureSourceEngine,
 } from '@academic/adapter-fixture-lms'
 import {
   InMemoryToolHost,
@@ -94,6 +101,8 @@ export interface AcademicAppOptions {
   notificationWindowDays?: number
   replanHorizonDays?: number
   defaultTaskEstimates?: Partial<Record<'assignment' | 'exam' | 'quiz', number>>
+  /** Additional vendor-neutral engines (tests or reviewed extensions). */
+  sourceEngines?: SourceEngine[]
 }
 
 export interface AutomationStatus {
@@ -140,6 +149,8 @@ export interface AcademicApp {
   scheduler: Scheduler
   connectors: ConnectorService
   adapter: FixtureLmsAdapter
+  sources: SourceConfigStore
+  sourceEngines: SourceEngineRegistry
   connections: ConnectionManager
   replans: ReplanStore
   availability: AvailabilityStore
@@ -156,6 +167,7 @@ export interface AcademicApp {
     connectionId: string,
     adapter: AcademicSourceAdapter,
   ): Promise<SyncRunSummary>
+  syncSource(sourceId: string, connectionId?: string): Promise<SyncRunSummary>
   previewPlan(
     range: Range,
     options?: Omit<PreviewOptions, 'range'>,
@@ -282,15 +294,27 @@ export async function createAcademicApp(
     capabilities: ['academic.reminder.in-app'],
     requiredPermissions: [],
   })
-  const blackboardCapability = registry.register({
-    id: 'academic.adapter.ustc-blackboard',
-    kind: 'adapter',
-    version: '0.1.0',
-    providerPlugin: '@academic/adapter-ustc-blackboard',
-    // Sync parsing is not implemented yet; only the session login is real.
-    capabilities: ['academic.auth.session', 'academic.courses.probe'],
-    requiredPermissions: [],
+  const sources = new SourceConfigStore({
+    db: store.database,
+    clock,
+    ids,
   })
+  sources.ensure({
+    sourceId: 'fixture-lms',
+    engine: 'fixture',
+    displayName: 'Fixture LMS（内置演示）',
+    authKind: 'none',
+    capabilities: ['academic.sync', 'academic.courses.probe'],
+    config: {},
+  })
+  const sourceEngines = new SourceEngineRegistry()
+  const sourceEngineRegistrations = [
+    sourceEngines.register(createFixtureSourceEngine()),
+    sourceEngines.register(createBrowserSessionEngine()),
+    ...(options.sourceEngines ?? []).map((engine) =>
+      sourceEngines.register(engine),
+    ),
+  ]
 
   const host = new InMemoryToolHost()
   const agentRegistration = registerAcademicTools(host, {
@@ -299,6 +323,8 @@ export async function createAcademicApp(
     replans,
     registry,
     ids,
+    sources,
+    sourceEngines,
     allowWrites: options.agentWrites ?? false,
     ...(options.authorizeAgentWrite
       ? { authorizeWrite: options.authorizeAgentWrite }
@@ -308,7 +334,7 @@ export async function createAcademicApp(
   const disposables: DisposableRegistration[] = [
     ...(plannerCapability ? [plannerCapability] : []),
     adapterCapability,
-    blackboardCapability,
+    ...sourceEngineRegistrations,
     notificationCapability,
     agentRegistration,
   ]
@@ -520,6 +546,8 @@ export async function createAcademicApp(
     scheduler,
     connectors,
     adapter,
+    sources,
+    sourceEngines,
     connections,
     replans,
     availability,
@@ -543,6 +571,43 @@ export async function createAcademicApp(
       const summary = await connectors.sync(sourceAdapter, {
         connection: { connectionId, credentials: connections },
       })
+      await dispatcher.processOnce()
+      return summary
+    },
+
+    async syncSource(sourceId, connectionId) {
+      const source = sources.get(sourceId)
+      if (!source || !source.enabled || source.archived) {
+        throw new CapabilityUnavailableError(`source.${sourceId}`)
+      }
+      const engine = sourceEngines.get(source.engine)
+      if (!engine?.createAdapter) {
+        throw new CapabilityUnavailableError(`source.engine.${source.engine}`)
+      }
+      const context = { sourceId, config: source.config }
+      let credentials: CredentialAccess | undefined
+      let connection: ConnectionSyncBinding | undefined
+      if (connectionId) {
+        const record = connections.get(connectionId)
+        if (!record) throw new Error(`Connection not found: ${connectionId}`)
+        if (record.sourceId !== sourceId) {
+          throw new Error('Connection does not belong to the requested source')
+        }
+        credentials = await connections.openCredential(connectionId, sourceId)
+        connection = { connectionId, credentials: connections }
+      } else if (source.authKind !== 'none') {
+        throw new CapabilityUnavailableError(`source.credentials.${sourceId}`)
+      }
+      if (engine.listCourses) {
+        const courses = await engine.listCourses(context, credentials)
+        for (const course of courses) {
+          await connectors.registerCourse({ ...course, sourceId })
+        }
+      }
+      const summary = await connectors.sync(
+        engine.createAdapter(context),
+        connection ? { connection } : {},
+      )
       await dispatcher.processOnce()
       return summary
     },

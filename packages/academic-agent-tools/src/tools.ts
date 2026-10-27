@@ -11,6 +11,8 @@ import {
   type QueryApi,
   type ReplanReason,
   type ReplanRequestPort,
+  type SourceConfigStoreApi,
+  type SourceEngineRegistryApi,
 } from '@academic/contracts'
 
 export type ToolFailureCode =
@@ -56,6 +58,8 @@ export interface AcademicToolDependencies {
   allowWrites?: boolean
   /** Per-operation trusted approval. Without it, agent writes are rejected. */
   authorizeWrite?: AgentWriteAuthorizer
+  sources?: SourceConfigStoreApi
+  sourceEngines?: SourceEngineRegistryApi
 }
 
 export const ACADEMIC_TOOL_NAMES = {
@@ -63,6 +67,10 @@ export const ACADEMIC_TOOL_NAMES = {
   ListDueItems: 'academic_list_due_items',
   GetItem: 'academic_get_item',
   GetStudyPlan: 'academic_get_study_plan',
+  ListSources: 'academic_list_sources',
+  ListSourceEngines: 'academic_list_source_engines',
+  CreateSource: 'academic_create_source',
+  UpdateSource: 'academic_update_source',
   UpdateTask: 'academic_update_task',
   RequestReplan: 'academic_request_replan',
 } as const
@@ -166,6 +174,26 @@ const requestReplanSchema = z
   .refine((value) => Date.parse(value.rangeEnd) > Date.parse(value.rangeStart), {
     message: 'rangeEnd must be after rangeStart',
   })
+
+const createSourceSchema = z.object({
+  sourceId: z.string().min(1).max(200).optional(),
+  engine: z.string().min(1).max(100),
+  displayName: z.string().min(1).max(200),
+  authKind: z.enum(['none', 'password', 'token', 'oauth']),
+  loginMode: z.enum(['browser', 'manual']).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  capabilities: z.array(z.string().min(1).max(200)).max(50).optional(),
+  enabled: z.boolean().optional(),
+})
+
+const updateSourceSchema = z.object({
+  sourceId: z.string().min(1),
+  displayName: z.string().min(1).max(200).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  capabilities: z.array(z.string().min(1).max(200)).max(50).optional(),
+  enabled: z.boolean().optional(),
+  expectedVersion: z.number().int().min(1).optional(),
+})
 
 export function createAcademicTools(
   dependencies: AcademicToolDependencies,
@@ -311,5 +339,73 @@ export function createAcademicTools(
         })
       },
     ),
+
+    ...(dependencies.sources && dependencies.sourceEngines
+      ? [
+          defineTool(
+            ACADEMIC_TOOL_NAMES.ListSources,
+            'List database-backed data sources and available generic engines. Read-only; never returns credentials.',
+            z.object({ includeArchived: z.boolean().optional() }),
+            async (input) => {
+              const sources = dependencies.sources!.list({
+                includeArchived: input.includeArchived ?? false,
+              })
+              return success({
+                sources: sources.map((source) => ({
+                  ...source,
+                  engineAvailable: dependencies.sourceEngines!.get(source.engine) !== undefined,
+                })),
+                engines: dependencies.sourceEngines!.list().map((engine) => engine.descriptor),
+              })
+            },
+          ),
+
+          defineTool(
+            ACADEMIC_TOOL_NAMES.ListSourceEngines,
+            'List the stable generic source engines available in this Host. Read-only.',
+            z.object({}),
+            async () =>
+              success({
+                engines: dependencies.sourceEngines!.list().map((engine) => engine.descriptor),
+              }),
+          ),
+
+          defineTool(
+            ACADEMIC_TOOL_NAMES.CreateSource,
+            'Create a database-backed source definition from a known engine and non-secret config. The host must authorize this write; this tool cannot install code.',
+            createSourceSchema,
+            async (input) => {
+              const rejection = await requireWriteApproval(
+                ACADEMIC_TOOL_NAMES.CreateSource,
+                { ...input },
+              )
+              if (rejection) return rejection
+              if (!dependencies.sourceEngines!.get(input.engine)) {
+                return failure('CAPABILITY_UNAVAILABLE', `Unknown source engine: ${input.engine}`)
+              }
+              const source = dependencies.sources!.create(input)
+              return success({ source })
+            },
+          ),
+
+          defineTool(
+            ACADEMIC_TOOL_NAMES.UpdateSource,
+            'Update a database-backed source definition. The host must authorize this write; secrets never belong in config.',
+            updateSourceSchema,
+            async (input) => {
+              const rejection = await requireWriteApproval('academic_update_source', {
+                ...input,
+              })
+              if (rejection) return rejection
+              const source = dependencies.sources!.update(
+                input.sourceId,
+                input,
+                input.expectedVersion,
+              )
+              return success({ source })
+            },
+          ),
+        ]
+      : []),
   ]
 }

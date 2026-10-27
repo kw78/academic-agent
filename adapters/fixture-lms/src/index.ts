@@ -156,3 +156,29 @@ export function createFixtureAdapter(
 ): FixtureLmsAdapter {
   return new FixtureLmsAdapter({ ...options, snapshot })
 }
+
+export function createFixtureSourceEngine(): import('@academic/contracts').SourceEngine {
+  return {
+    descriptor: {
+      id: 'fixture',
+      displayName: 'Fixture LMS',
+      description: '内置测试数据源，不需要凭据。',
+      supportsSync: true,
+      supportsLogin: false,
+      supportsVerify: false,
+    },
+    createAdapter(context) {
+      const fixturePath =
+        typeof context.config.fixturePath === 'string'
+          ? context.config.fixturePath
+          : undefined
+      return new FixtureLmsAdapter({
+        sourceId: context.sourceId,
+        ...(fixturePath ? { fixturePath } : {}),
+      })
+    },
+    async listCourses(context) {
+      return [{ ...DEFAULT_FIXTURE_COURSE, sourceId: context.sourceId }]
+    },
+  }
+}

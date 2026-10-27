@@ -345,7 +345,8 @@ const CSS = `
 .ac-field input,
 .ac-field select,
 .ac-form-card input,
-.ac-form-card select {
+.ac-form-card select,
+.ac-form-card textarea {
   font: inherit;
   font-size: 13px;
   color: inherit;
@@ -355,12 +356,31 @@ const CSS = `
   padding: 5px 8px;
   min-width: 0;
 }
+.ac-form-card textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
 .ac-field input:focus-visible,
 .ac-field select:focus-visible,
 .ac-form-card input:focus-visible,
-.ac-form-card select:focus-visible {
+.ac-form-card select:focus-visible,
+.ac-form-card textarea:focus-visible {
   outline: 2px solid color-mix(in srgb, currentColor 40%, transparent);
   outline-offset: 1px;
+}
+.ac-config-details { margin-top: 10px; font-size: 12px; }
+.ac-config-details summary { cursor: pointer; opacity: 0.68; }
+.ac-config-details pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .ac-form-card {
   border: 1px solid color-mix(in srgb, currentColor 13%, transparent);

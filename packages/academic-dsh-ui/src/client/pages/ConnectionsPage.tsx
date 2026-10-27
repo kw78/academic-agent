@@ -27,13 +27,13 @@ import type {
 } from '../../protocol.js'
 import type { PageProps } from './types.js'
 
-function CredentialForm({
+function SourceCredentialForm({
   ctx,
-  connection,
+  source,
   onDone,
 }: {
   ctx: PageProps['ctx']
-  connection: ConnectionView
+  source: SourceStatus
   onDone: () => Promise<void>
 }) {
   const [secret, setSecret] = useState('')
@@ -50,8 +50,8 @@ function CredentialForm({
     setSecret('')
     setPending(true)
     setMessage(undefined)
-    const result = await callApi<ConnectionView>(ctx, 'setConnectionSecret', {
-      connectionId: connection.connectionId,
+    const result = await callApi<ConnectionView>(ctx, 'sourceSetSecret', {
+      sourceId: source.sourceId,
       secret: value,
     })
     setPending(false)
@@ -59,14 +59,14 @@ function CredentialForm({
       setMessage(result.error.message)
       return
     }
-    setMessage('凭据已交给本机 Host 保存；仍需真实验证或成功同步后才会显示已连接。')
+    setMessage('凭据已交给本机 Host 保存；验证成功前不会显示为已连接。')
     await onDone()
   }
 
   return (
     <div className="ac-secret-form">
       <Field
-        label={connection.authKind === 'token' ? 'Token' : '密码'}
+        label={source.authKind === 'token' ? 'Token' : '密码'}
         hint="只提交给本机 Host；不写入浏览器存储、URL 或日志。"
       >
         <input
@@ -86,7 +86,7 @@ function CredentialForm({
         disabled={pending}
         onClick={() => void submit()}
       >
-        {pending ? '提交中…' : '保存凭据'}
+        {pending ? '提交中…' : source.connection ? '更新凭据' : '保存凭据'}
       </button>
       {message && <p className="ac-muted">{message}</p>}
     </div>
@@ -108,12 +108,28 @@ function SourceCard({
     await refresh()
   })
   const connection = source.connection
-  const isBlackboard = source.sourceId === 'ustc-blackboard'
-  const canAuthenticate =
-    source.adapterAvailable &&
-    connection !== undefined &&
-    connection.authKind !== 'none'
-  const canSync = source.adapterAvailable && source.sourceId === 'fixture-lms'
+  const browserLogin = source.canLogin && source.loginMode === 'browser'
+  const manualCredential = source.authKind !== 'none' && !browserLogin
+
+  const sync = async (): Promise<UiResult<SyncRunSummary>> => {
+    const result = await callApi<SyncRunSummary>(ctx, 'syncNow', {
+      sourceId: source.sourceId,
+      ...(connection ? { connectionId: connection.connectionId } : {}),
+    })
+    if (!result.ok) return result
+    if (result.value.status === 'success' || result.value.status === 'partial') {
+      return result
+    }
+    return {
+      ok: false,
+      error: {
+        code: result.value.status === 'auth-required' ? 'AUTH_REQUIRED' : 'ERROR',
+        message:
+          result.value.errorMessage ??
+          `同步未成功：${syncStatusLabel(result.value.status)}；旧数据已保留`,
+      },
+    }
+  }
 
   return (
     <li className="ac-card ac-source-card">
@@ -121,17 +137,18 @@ function SourceCard({
         <div className="ac-task-title">
           <strong>{source.displayName}</strong>
           <Badge tone={sourceStateTone(source.state)}>{sourceStateLabel(source.state)}</Badge>
-          <Badge tone={source.adapterAvailable ? 'info' : 'bad'}>
-            {source.adapterAvailable ? 'Adapter 可用' : 'Adapter 不可用'}
-          </Badge>
+          <Badge tone={source.engineKnown ? 'info' : 'bad'}>引擎：{source.engine}</Badge>
+          {source.syncAvailable && <Badge tone="ok">同步可用</Badge>}
+          {source.canLogin && <Badge tone="info">登录可用</Badge>}
         </div>
         <p className="ac-muted">{source.detail}</p>
         <div className="ac-task-meta">
           <span>来源 ID：{source.sourceId}</span>
           <span>认证方式：{source.authKind}</span>
+          {source.loginMode && <span>登录方式：{source.loginMode}</span>}
           {connection?.accountLabel && <span>账号：{connection.accountLabel}</span>}
-          {connection?.scopes && connection.scopes.length > 0 && (
-            <span>授权范围：{connection.scopes.join('、')}</span>
+          {source.capabilities.length > 0 && (
+            <span>能力：{source.capabilities.join('、')}</span>
           )}
           <span>上次验证：{formatDateTimeOrDash(connection?.lastVerifiedAt, timeZone)}</span>
           <span>上次同步：{formatDateTimeOrDash(source.lastSync?.finishedAt, timeZone)}</span>
@@ -147,10 +164,10 @@ function SourceCard({
         {action.notice && (
           <NoticeBar notice={action.notice} onDismiss={() => action.setNotice(undefined)} />
         )}
-        {isBlackboard ? (
+        {browserLogin && (
           <div className="ac-secret-form">
             <p className="ac-muted">
-              将打开 Edge/Chrome 登录窗口；请完成统一认证和验证码。应用不会读取或保存你的统一认证密码。
+              将打开 Edge/Chrome 登录窗口；请在窗口中完成登录和验证码。应用不会读取或保存密码。
             </p>
             <button
               type="button"
@@ -158,62 +175,53 @@ function SourceCard({
               disabled={action.pending !== undefined}
               onClick={() =>
                 void action.run(
-                  'bb-login',
-                  () => callApi<ConnectionView>(ctx, 'blackboardLogin', {}),
-                  '登录成功，Blackboard 会话已保存',
+                  'source-login',
+                  () =>
+                    callApi<ConnectionView>(ctx, 'sourceLogin', {
+                      sourceId: source.sourceId,
+                    }),
+                  '登录成功，会话已保存',
                 )
               }
             >
-              {action.pending === 'bb-login'
+              {action.pending === 'source-login'
                 ? '等待登录窗口…'
                 : connection
-                  ? '重新登录 Blackboard'
-                  : '登录 Blackboard'}
+                  ? `重新登录 ${source.displayName}`
+                  : `登录 ${source.displayName}`}
             </button>
           </div>
-        ) : canAuthenticate ? (
-          <CredentialForm ctx={ctx} connection={connection} onDone={async () => {
-            await refresh()
-          }} />
-        ) : null}
+        )}
+        {manualCredential && (
+          <SourceCredentialForm
+            ctx={ctx}
+            source={source}
+            onDone={async () => {
+              await refresh()
+            }}
+          />
+        )}
+        {Object.keys(source.config).length > 0 && (
+          <details className="ac-config-details">
+            <summary>查看非敏感配置</summary>
+            <pre>{JSON.stringify(source.config, null, 2)}</pre>
+          </details>
+        )}
       </div>
       <div className="ac-source-actions">
         <button
           type="button"
           className="ac-button"
-          disabled={!canSync || action.pending !== undefined}
-          onClick={() =>
-            void action.run(
-              'sync',
-              async () => {
-                const result = await callApi<SyncRunSummary>(ctx, 'syncNow', {
-                  sourceId: source.sourceId,
-                })
-                if (!result.ok) return result
-                if (result.value.status === 'success' || result.value.status === 'partial') {
-                  return result
-                }
-                return {
-                  ok: false,
-                  error: {
-                    code: result.value.status === 'auth-required' ? 'AUTH_REQUIRED' : 'ERROR',
-                    message:
-                      result.value.errorMessage ??
-                      `同步未成功：${syncStatusLabel(result.value.status)}；旧数据已保留`,
-                  },
-                }
-              },
-              '同步完成',
-            )
-          }
+          disabled={!source.syncAvailable || action.pending !== undefined}
+          onClick={() => void action.run('sync', sync, '同步完成')}
         >
           {action.pending === 'sync' ? '同步中…' : '立即同步'}
         </button>
-        {connection && !isBlackboard && (
+        {connection && source.canVerify && (
           <button
             type="button"
             className="ac-button"
-            disabled={!canAuthenticate || action.pending !== undefined}
+            disabled={action.pending !== undefined}
             onClick={() =>
               void action.run(
                 'verify',
@@ -262,8 +270,160 @@ function SourceCard({
             }
           />
         )}
+        <ConfirmAction
+          label="归档数据源"
+          confirmLabel="确认归档"
+          disabled={action.pending !== undefined}
+          onConfirm={() =>
+            void action.run(
+              'archive-source',
+              () =>
+                callApi<SourceStatus>(ctx, 'archiveSource', {
+                  sourceId: source.sourceId,
+                }),
+              '数据源已归档；历史学业数据保留',
+            )
+          }
+        />
       </div>
     </li>
+  )
+}
+
+function SourceForm({
+  ctx,
+  data,
+  onCreated,
+}: {
+  ctx: PageProps['ctx']
+  data: ConnectionsView
+  onCreated: () => Promise<unknown>
+}) {
+  const action = useAction(async () => {
+    await onCreated()
+  })
+  const [sourceId, setSourceId] = useState('')
+  const [engine, setEngine] = useState(data.engines[0]?.id ?? '')
+  const [displayName, setDisplayName] = useState('')
+  const [authKind, setAuthKind] = useState('token')
+  const [loginMode, setLoginMode] = useState('browser')
+  const [capabilities, setCapabilities] = useState('')
+  const [configJson, setConfigJson] = useState('{}')
+
+  const submit = async (): Promise<UiResult<SourceStatus>> => {
+    let config: Record<string, unknown>
+    try {
+      const parsed = JSON.parse(configJson || '{}') as unknown
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('配置必须是 JSON 对象')
+      }
+      config = parsed as Record<string, unknown>
+    } catch (error) {
+      return {
+        ok: false,
+        error: {
+          code: 'VALIDATION',
+          message: `配置 JSON 无效：${error instanceof Error ? error.message : String(error)}`,
+        },
+      }
+    }
+    return callApi<SourceStatus>(ctx, 'createSource', {
+      ...(sourceId.trim() ? { sourceId: sourceId.trim() } : {}),
+      engine: engine.trim(),
+      displayName: displayName.trim(),
+      authKind,
+      loginMode: loginMode === 'none' ? undefined : loginMode,
+      capabilities: capabilities
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean),
+      config,
+    })
+  }
+
+  return (
+    <form
+      className="ac-form-card"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void action.run('source', submit, '数据源已创建').then((ok) => {
+          if (ok) {
+            setSourceId('')
+            setDisplayName('')
+            setConfigJson('{}')
+          }
+        })
+      }}
+    >
+      <h3>添加数据源</h3>
+      <p className="ac-muted">
+        数据源保存在本机数据库，通过 engine + 非敏感配置描述，不需要修改应用代码。
+        凭据不要写入配置；登录或凭据会进入系统凭据库。
+      </p>
+      <div className="ac-form-grid">
+        <Field label="来源 ID（可选）">
+          <input
+            value={sourceId}
+            onChange={(event) => setSourceId(event.target.value)}
+            placeholder="my-source"
+          />
+        </Field>
+        <Field label="引擎">
+          <select value={engine} onChange={(event) => setEngine(event.target.value)} required>
+            {data.engines.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.displayName}（{entry.id}）
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="显示名称">
+          <input
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            required
+          />
+        </Field>
+        <Field label="认证方式">
+          <select value={authKind} onChange={(event) => setAuthKind(event.target.value)}>
+            <option value="none">none</option>
+            <option value="password">password</option>
+            <option value="token">token</option>
+            <option value="oauth">oauth</option>
+          </select>
+        </Field>
+        <Field label="登录方式">
+          <select value={loginMode} onChange={(event) => setLoginMode(event.target.value)}>
+            <option value="browser">browser</option>
+            <option value="manual">manual</option>
+            <option value="none">不登录</option>
+          </select>
+        </Field>
+        <Field label="能力（逗号分隔）">
+          <input
+            value={capabilities}
+            onChange={(event) => setCapabilities(event.target.value)}
+            placeholder="academic.sync"
+          />
+        </Field>
+      </div>
+      <Field label="非敏感配置（JSON）" hint="URL、选择器、规则等；禁止 password/token/cookie 字段">
+        <textarea
+          rows={6}
+          value={configJson}
+          onChange={(event) => setConfigJson(event.target.value)}
+          spellCheck={false}
+        />
+      </Field>
+      <div className="ac-form-actions">
+        <button type="submit" className="ac-button" disabled={action.pending !== undefined}>
+          {action.pending === 'source' ? '创建中…' : '创建数据源'}
+        </button>
+      </div>
+      {action.notice && (
+        <NoticeBar notice={action.notice} onDismiss={() => action.setNotice(undefined)} />
+      )}
+    </form>
   )
 }
 
@@ -280,19 +440,6 @@ export function ConnectionsPage({ ctx, active }: PageProps) {
   const [courseTerm, setCourseTerm] = useState('')
   const [courseCode, setCourseCode] = useState('')
   const [courseTitle, setCourseTitle] = useState('')
-  const [connectionSource, setConnectionSource] = useState('')
-  const [connectionName, setConnectionName] = useState('')
-  const [connectionAccount, setConnectionAccount] = useState('')
-  const [connectionScopes, setConnectionScopes] = useState('')
-
-  const authSources = (data?.sources ?? []).filter(
-    (source) =>
-      source.adapterAvailable &&
-      source.authKind !== 'none' &&
-      source.authKind !== 'unknown' &&
-      // Blackboard uses its own login-window card, not the generic token form.
-      source.sourceId !== 'ustc-blackboard',
-  )
 
   const addCourse = async (): Promise<UiResult<CommandReceipt>> => {
     if (!courseTerm.trim() || !courseCode.trim() || !courseTitle.trim()) {
@@ -308,30 +455,6 @@ export function ConnectionsPage({ ctx, active }: PageProps) {
     })
   }
 
-  const createConnection = async (): Promise<UiResult<ConnectionView>> => {
-    const source = authSources.find((candidate) => candidate.sourceId === connectionSource)
-    if (!source) {
-      return {
-        ok: false,
-        error: { code: 'CAPABILITY_UNAVAILABLE', message: '请选择当前版本支持的数据源' },
-      }
-    }
-    return callApi<ConnectionView>(ctx, 'createConnection', {
-      sourceId: source.sourceId,
-      displayName: connectionName.trim() || source.displayName,
-      authKind: source.authKind as 'password' | 'token' | 'oauth',
-      ...(connectionAccount.trim() ? { accountLabel: connectionAccount.trim() } : {}),
-      ...(connectionScopes.trim()
-        ? {
-            scopes: connectionScopes
-              .split(',')
-              .map((scope) => scope.trim())
-              .filter(Boolean),
-          }
-        : {}),
-    })
-  }
-
   return (
     <div>
       <StateBanner
@@ -343,16 +466,11 @@ export function ConnectionsPage({ ctx, active }: PageProps) {
       {action.notice && (
         <NoticeBar notice={action.notice} onDismiss={() => action.setNotice(undefined)} />
       )}
-      {!data && state.loading && <LoadingLine>正在读取连接状态…</LoadingLine>}
+      {!data && state.loading && <LoadingLine>正在读取数据源…</LoadingLine>}
 
       {data && (
         <>
           <Section title="课程" subtitle="课程身份与外部来源分开保存">
-            <ul className="ac-course-list">
-              {data.connections.length === 0 && data.sources.every((source) => !source.connection) && (
-                <li className="ac-muted">还没有用户连接；内置 Fixture 数据源可直接同步。</li>
-              )}
-            </ul>
             <form
               className="ac-form-card"
               onSubmit={(event) => {
@@ -411,90 +529,27 @@ export function ConnectionsPage({ ctx, active }: PageProps) {
           </Section>
 
           <Section
-            title="数据源连接"
-            subtitle="状态区分未配置、已保存凭据、已验证、需要认证和 Adapter 不可用"
+            title="数据源"
+            subtitle="数据库中的 source 配置 + 通用 engine；凭据与状态分开保存"
           >
-            <ul className="ac-source-grid">
-              {data.sources.map((source) => (
-                <SourceCard
-                  key={source.sourceId}
-                  ctx={ctx}
-                  source={source}
-                  timeZone={timeZone}
-                  refresh={refresh}
-                />
-              ))}
-            </ul>
-
-            {authSources.length === 0 ? (
-              <div className="ac-banner ac-banner-info" role="status">
-                <div>
-                  <strong>Blackboard 已支持应用内登录</strong>
-                  <p>
-                    在上方 Blackboard 卡片点击“登录 Blackboard”，会在新窗口完成统一认证；
-                    应用不会读取密码。课程/作业同步解析仍在接入中，其他真实平台 Adapter 尚未实现。
-                  </p>
-                </div>
-              </div>
+            {data.sources.length === 0 ? (
+              <EmptyState title="还没有数据源">
+                在下方选择 engine 并添加数据源配置。
+              </EmptyState>
             ) : (
-              <form
-                className="ac-form-card"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  void action.run('connection', createConnection, '连接已创建，请保存凭据').then(
-                    (ok) => {
-                      if (ok) {
-                        setConnectionSource('')
-                        setConnectionName('')
-                        setConnectionAccount('')
-                        setConnectionScopes('')
-                      }
-                    },
-                  )
-                }}
-              >
-                <h3>添加连接</h3>
-                <div className="ac-form-grid">
-                  <Field label="数据源">
-                    <select
-                      value={connectionSource}
-                      onChange={(event) => setConnectionSource(event.target.value)}
-                      required
-                    >
-                      <option value="">选择数据源</option>
-                      {authSources.map((source) => (
-                        <option key={source.sourceId} value={source.sourceId}>
-                          {source.displayName}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="显示名称">
-                    <input
-                      value={connectionName}
-                      onChange={(event) => setConnectionName(event.target.value)}
-                    />
-                  </Field>
-                  <Field label="账号标识（可选）">
-                    <input
-                      value={connectionAccount}
-                      onChange={(event) => setConnectionAccount(event.target.value)}
-                    />
-                  </Field>
-                  <Field label="授权范围（逗号分隔，可选）">
-                    <input
-                      value={connectionScopes}
-                      onChange={(event) => setConnectionScopes(event.target.value)}
-                    />
-                  </Field>
-                </div>
-                <div className="ac-form-actions">
-                  <button type="submit" className="ac-button" disabled={action.pending !== undefined}>
-                    创建连接
-                  </button>
-                </div>
-              </form>
+              <ul className="ac-source-grid">
+                {data.sources.map((source) => (
+                  <SourceCard
+                    key={source.sourceId}
+                    ctx={ctx}
+                    source={source}
+                    timeZone={timeZone}
+                    refresh={refresh}
+                  />
+                ))}
+              </ul>
             )}
+            <SourceForm ctx={ctx} data={data} onCreated={refresh} />
           </Section>
 
           <Section title="同步记录" subtitle="失败不会清空已有学业数据">

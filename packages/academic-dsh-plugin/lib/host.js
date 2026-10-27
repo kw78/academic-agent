@@ -20144,6 +20144,46 @@ var CapabilityRegistry = class {
   }
 };
 
+// packages/academic-contracts/src/sources.ts
+var SourceNotFoundError = class extends Error {
+  code = "NOT_FOUND";
+  constructor(sourceId) {
+    super(`Source not found: ${sourceId}`);
+    this.name = "SourceNotFoundError";
+  }
+};
+var SourceConflictError = class extends Error {
+  code = "CONFLICT";
+  constructor(message) {
+    super(message);
+    this.name = "SourceConflictError";
+  }
+};
+var SourceEngineRegistry = class {
+  #engines = /* @__PURE__ */ new Map();
+  register(engine) {
+    const id = engine.descriptor.id;
+    if (this.#engines.has(id)) {
+      throw new SourceConflictError(`Source engine already registered: ${id}`);
+    }
+    this.#engines.set(id, engine);
+    let disposed = false;
+    return {
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        if (this.#engines.get(id) === engine) this.#engines.delete(id);
+      }
+    };
+  }
+  get(engineId) {
+    return this.#engines.get(engineId);
+  }
+  list() {
+    return [...this.#engines.values()];
+  }
+};
+
 // packages/academic-connections/src/vault.ts
 import { spawn, spawnSync } from "node:child_process";
 import { createHash as createHash2 } from "node:crypto";
@@ -20516,6 +20556,341 @@ var ConnectionManager = class {
   }
 };
 
+// packages/academic-sources/src/index.ts
+var AUTH_KINDS = ["none", "password", "token", "oauth"];
+var MAX_CONFIG_BYTES = 64 * 1024;
+var FORBIDDEN_CONFIG_KEYS = /* @__PURE__ */ new Set([
+  "password",
+  "token",
+  "access_token",
+  "refresh_token",
+  "cookie",
+  "authorization",
+  "secret",
+  "credential",
+  "apikey",
+  "api_key"
+]);
+var sourceInputSchema = external_exports.object({
+  sourceId: external_exports.string().min(1).max(200).optional(),
+  engine: external_exports.string().min(1).max(100),
+  displayName: external_exports.string().min(1).max(200),
+  authKind: external_exports.enum(AUTH_KINDS),
+  loginMode: external_exports.enum(["browser", "manual"]).optional(),
+  config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
+  capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
+  enabled: external_exports.boolean().optional()
+});
+var sourceUpdateSchema = external_exports.object({
+  displayName: external_exports.string().min(1).max(200).optional(),
+  authKind: external_exports.enum(AUTH_KINDS).optional(),
+  loginMode: external_exports.enum(["browser", "manual"]).optional(),
+  config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
+  capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
+  enabled: external_exports.boolean().optional()
+});
+function assertNoSecrets(value, path = "config") {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => assertNoSecrets(entry, `${path}[${index}]`));
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+  for (const [key, entry] of Object.entries(value)) {
+    if (FORBIDDEN_CONFIG_KEYS.has(key.toLowerCase())) {
+      throw new SourceConflictError(
+        `Source config must not contain credentials (${path}.${key}); use the credential vault`
+      );
+    }
+    assertNoSecrets(entry, `${path}.${key}`);
+  }
+}
+function parseConfig(value) {
+  const config2 = value ?? {};
+  const serialized = JSON.stringify(config2);
+  if (serialized.length > MAX_CONFIG_BYTES) {
+    throw new SourceConflictError("Source config is too large");
+  }
+  assertNoSecrets(config2);
+  return serialized;
+}
+var SourceConfigStore = class {
+  #db;
+  #clock;
+  #ids;
+  constructor(options) {
+    this.#db = options.db;
+    this.#clock = options.clock;
+    this.#ids = options.ids;
+  }
+  ensure(input2) {
+    const existing = this.get(input2.sourceId);
+    return existing ?? this.create(input2);
+  }
+  create(input2) {
+    const parsed = sourceInputSchema.parse(input2);
+    const sourceId = parsed.sourceId ?? this.#ids.next();
+    if (this.get(sourceId)) {
+      throw new SourceConflictError(`Source already exists: ${sourceId}`);
+    }
+    const now = this.#clock.now();
+    try {
+      this.#db.prepare(
+        `INSERT INTO academic_sources (
+             source_id, engine, display_name, auth_kind, login_mode,
+             config_json, capabilities_json, enabled, archived, version,
+             created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
+      ).run(
+        sourceId,
+        parsed.engine,
+        parsed.displayName,
+        parsed.authKind,
+        parsed.loginMode ?? null,
+        parseConfig(parsed.config),
+        JSON.stringify(parsed.capabilities ?? []),
+        parsed.enabled === false ? 0 : 1,
+        now,
+        now
+      );
+    } catch (error62) {
+      if (String(error62).includes("UNIQUE")) {
+        throw new SourceConflictError(`Source already exists: ${sourceId}`);
+      }
+      throw error62;
+    }
+    return this.get(sourceId);
+  }
+  get(sourceId) {
+    const row = this.#db.prepare("SELECT * FROM academic_sources WHERE source_id = ?").get(sourceId);
+    return row ? this.#toConfig(row) : void 0;
+  }
+  list(options = {}) {
+    const rows = options.includeArchived ? this.#db.prepare("SELECT * FROM academic_sources ORDER BY created_at ASC, rowid ASC").all() : this.#db.prepare(
+      "SELECT * FROM academic_sources WHERE archived = 0 ORDER BY created_at ASC, rowid ASC"
+    ).all();
+    return rows.map((row) => this.#toConfig(row));
+  }
+  update(sourceId, update, expectedVersion) {
+    const current = this.get(sourceId);
+    if (!current) throw new SourceNotFoundError(sourceId);
+    if (current.archived) {
+      throw new SourceConflictError("Archived source cannot be updated");
+    }
+    if (expectedVersion !== void 0 && expectedVersion !== current.version) {
+      throw new SourceConflictError(
+        `Source version changed: expected ${expectedVersion}, got ${current.version}`
+      );
+    }
+    const parsed = sourceUpdateSchema.parse(update);
+    const next = {
+      displayName: parsed.displayName ?? current.displayName,
+      authKind: parsed.authKind ?? current.authKind,
+      loginMode: parsed.loginMode ?? current.loginMode,
+      config: parsed.config ?? current.config,
+      capabilities: parsed.capabilities ?? current.capabilities,
+      enabled: parsed.enabled ?? current.enabled
+    };
+    const now = this.#clock.now();
+    this.#db.prepare(
+      `UPDATE academic_sources SET
+           display_name = ?, auth_kind = ?, login_mode = ?,
+           config_json = ?, capabilities_json = ?, enabled = ?,
+           version = version + 1, updated_at = ?
+         WHERE source_id = ?`
+    ).run(
+      next.displayName,
+      next.authKind,
+      next.loginMode ?? null,
+      parseConfig(next.config),
+      JSON.stringify(next.capabilities),
+      next.enabled ? 1 : 0,
+      now,
+      sourceId
+    );
+    return this.get(sourceId);
+  }
+  archive(sourceId) {
+    const current = this.get(sourceId);
+    if (!current) throw new SourceNotFoundError(sourceId);
+    const now = this.#clock.now();
+    this.#db.prepare(
+      `UPDATE academic_sources SET
+           archived = 1, enabled = 0, version = version + 1, updated_at = ?
+         WHERE source_id = ?`
+    ).run(now, sourceId);
+    return this.get(sourceId);
+  }
+  #toConfig(row) {
+    return {
+      sourceId: row.source_id,
+      engine: row.engine,
+      displayName: row.display_name,
+      authKind: row.auth_kind,
+      ...row.login_mode ? { loginMode: row.login_mode } : {},
+      config: JSON.parse(row.config_json),
+      capabilities: JSON.parse(row.capabilities_json),
+      enabled: Boolean(row.enabled),
+      archived: Boolean(row.archived),
+      version: Number(row.version),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+};
+
+// packages/academic-source-browser/src/index.ts
+import { chromium } from "playwright-core";
+var browserConfigSchema = external_exports.object({
+  loginUrl: external_exports.string().url(),
+  authenticatedUrlPatterns: external_exports.array(external_exports.string().min(1)).min(1),
+  cookieDomains: external_exports.array(external_exports.string().min(1)).min(1),
+  verifyUrl: external_exports.string().url().optional(),
+  loggedOutPatterns: external_exports.array(external_exports.string().min(1)).optional(),
+  timeoutMs: external_exports.number().int().min(1e3).max(10 * 6e4).optional(),
+  channel: external_exports.enum(["msedge", "chrome"]).optional()
+});
+function matchesAny(patterns, value) {
+  return patterns.some((pattern) => {
+    try {
+      return new RegExp(pattern).test(value);
+    } catch {
+      return false;
+    }
+  });
+}
+function cookieHeader(cookies, domains) {
+  return cookies.filter((cookie) => {
+    const domain2 = cookie.domain.replace(/^\./, "");
+    return domains.some(
+      (wanted) => domain2 === wanted || domain2.endsWith(`.${wanted}`)
+    );
+  }).map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+}
+async function launch(channel) {
+  const channels = channel ? [channel] : ["msedge", "chrome"];
+  let lastError;
+  for (const candidate of channels) {
+    try {
+      return await chromium.launch({
+        channel: candidate,
+        headless: false,
+        args: ["--no-first-run", "--no-default-browser-check"]
+      });
+    } catch (error62) {
+      lastError = error62;
+    }
+  }
+  throw new Error(
+    `\u65E0\u6CD5\u542F\u52A8 Edge/Chrome \u767B\u5F55\u7A97\u53E3\uFF1A${lastError instanceof Error ? lastError.message : String(lastError)}`
+  );
+}
+async function browserLogin(config2) {
+  const browser = await launch(config2.channel);
+  let context;
+  try {
+    context = await browser.newContext({
+      locale: "zh-CN",
+      viewport: { width: 1280, height: 900 }
+    });
+    const page = await context.newPage();
+    await page.goto(config2.loginUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: 6e4
+    });
+    const deadline = Date.now() + (config2.timeoutMs ?? 4 * 6e4);
+    let loggedPage = page;
+    while (Date.now() < deadline) {
+      if (!browser.isConnected()) {
+        throw new Error("\u767B\u5F55\u7A97\u53E3\u5DF2\u5173\u95ED\uFF0C\u672A\u5B8C\u6210\u767B\u5F55");
+      }
+      const reached = context.pages().find((candidate) => {
+        try {
+          const url2 = candidate.url();
+          return !matchesAny(config2.loggedOutPatterns ?? [], url2) && matchesAny(config2.authenticatedUrlPatterns, url2);
+        } catch {
+          return false;
+        }
+      });
+      if (reached) {
+        loggedPage = reached;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    const finalUrl = loggedPage.url();
+    if (!matchesAny(config2.authenticatedUrlPatterns, finalUrl) || matchesAny(config2.loggedOutPatterns ?? [], finalUrl)) {
+      throw new Error("\u767B\u5F55\u8D85\u65F6\uFF1A\u672A\u68C0\u6D4B\u5230\u5DF2\u8BA4\u8BC1\u9875\u9762");
+    }
+    await loggedPage.waitForLoadState("domcontentloaded").catch(() => void 0);
+    const cookies = await context.cookies();
+    const header = cookieHeader(
+      cookies.map((cookie) => ({
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain
+      })),
+      config2.cookieDomains
+    );
+    if (!header) {
+      throw new Error("\u767B\u5F55\u6210\u529F\u4F46\u672A\u8BFB\u53D6\u5230\u4F1A\u8BDD Cookie");
+    }
+    return { secret: JSON.stringify({ cookie: header }) };
+  } finally {
+    await context?.close().catch(() => void 0);
+    await browser.close().catch(() => void 0);
+  }
+}
+async function verifySession(config2, secret, fetchImpl) {
+  if (!config2.verifyUrl) return { ok: true };
+  let cookie;
+  try {
+    const parsed = JSON.parse(secret);
+    cookie = typeof parsed.cookie === "string" ? parsed.cookie : secret;
+  } catch {
+    cookie = secret;
+  }
+  if (!cookie) return { ok: false, message: "\u4F1A\u8BDD Cookie \u4E3A\u7A7A" };
+  try {
+    const response = await fetchImpl(config2.verifyUrl, {
+      headers: {
+        Cookie: cookie,
+        Accept: "text/html,application/xhtml+xml"
+      },
+      redirect: "follow"
+    });
+    const html = await response.text();
+    const finalUrl = response.url || config2.verifyUrl;
+    const loggedOut = matchesAny(config2.loggedOutPatterns ?? [], finalUrl) || matchesAny(config2.loggedOutPatterns ?? [], html);
+    return loggedOut ? { ok: false, message: "\u4F1A\u8BDD\u5DF2\u5931\u6548\u6216\u88AB\u91CD\u5B9A\u5411\u5230\u767B\u5F55\u9875" } : { ok: true };
+  } catch (error62) {
+    return {
+      ok: false,
+      message: `\u6821\u9A8C\u8BF7\u6C42\u5931\u8D25\uFF1A${error62 instanceof Error ? error62.message : String(error62)}`
+    };
+  }
+}
+function createBrowserSessionEngine(options = {}) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  return {
+    descriptor: {
+      id: "browser-session",
+      displayName: "\u6D4F\u89C8\u5668\u4F1A\u8BDD",
+      description: "\u7531\u5BBF\u4E3B\u62C9\u8D77\u771F\u5B9E\u6D4F\u89C8\u5668\uFF0C\u7528\u6237\u5B8C\u6210\u767B\u5F55\u540E\u8BFB\u53D6\u914D\u7F6E\u57DF\u540D\u7684\u4F1A\u8BDD Cookie\uFF1B\u4E0D\u8BFB\u53D6\u5BC6\u7801\u3002",
+      supportsSync: false,
+      supportsLogin: true,
+      supportsVerify: true
+    },
+    async login(context) {
+      const config2 = browserConfigSchema.parse(context.config);
+      return options.loginImpl ? options.loginImpl(config2) : browserLogin(config2);
+    },
+    async verify(context, secret) {
+      const config2 = browserConfigSchema.parse(context.config);
+      return verifySession(config2, secret, fetchImpl);
+    }
+  };
+}
+
 // adapters/fixture-lms/src/index.ts
 import { createHash as createHash3 } from "node:crypto";
 import { readFileSync as readFileSync2 } from "node:fs";
@@ -20632,6 +21007,28 @@ var FixtureLmsAdapter = class {
     return fixtureSnapshotSchema.parse(raw);
   }
 };
+function createFixtureSourceEngine() {
+  return {
+    descriptor: {
+      id: "fixture",
+      displayName: "Fixture LMS",
+      description: "\u5185\u7F6E\u6D4B\u8BD5\u6570\u636E\u6E90\uFF0C\u4E0D\u9700\u8981\u51ED\u636E\u3002",
+      supportsSync: true,
+      supportsLogin: false,
+      supportsVerify: false
+    },
+    createAdapter(context) {
+      const fixturePath = typeof context.config.fixturePath === "string" ? context.config.fixturePath : void 0;
+      return new FixtureLmsAdapter({
+        sourceId: context.sourceId,
+        ...fixturePath ? { fixturePath } : {}
+      });
+    },
+    async listCourses(context) {
+      return [{ ...DEFAULT_FIXTURE_COURSE, sourceId: context.sourceId }];
+    }
+  };
+}
 
 // packages/academic-agent-tools/src/tools.ts
 var ACADEMIC_TOOL_NAMES = {
@@ -20639,6 +21036,10 @@ var ACADEMIC_TOOL_NAMES = {
   ListDueItems: "academic_list_due_items",
   GetItem: "academic_get_item",
   GetStudyPlan: "academic_get_study_plan",
+  ListSources: "academic_list_sources",
+  ListSourceEngines: "academic_list_source_engines",
+  CreateSource: "academic_create_source",
+  UpdateSource: "academic_update_source",
   UpdateTask: "academic_update_task",
   RequestReplan: "academic_request_replan"
 };
@@ -20716,6 +21117,24 @@ var requestReplanSchema = external_exports.object({
   rangeEnd: isoDateTimeSchema
 }).refine((value) => Date.parse(value.rangeEnd) > Date.parse(value.rangeStart), {
   message: "rangeEnd must be after rangeStart"
+});
+var createSourceSchema = external_exports.object({
+  sourceId: external_exports.string().min(1).max(200).optional(),
+  engine: external_exports.string().min(1).max(100),
+  displayName: external_exports.string().min(1).max(200),
+  authKind: external_exports.enum(["none", "password", "token", "oauth"]),
+  loginMode: external_exports.enum(["browser", "manual"]).optional(),
+  config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
+  capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
+  enabled: external_exports.boolean().optional()
+});
+var updateSourceSchema = external_exports.object({
+  sourceId: external_exports.string().min(1),
+  displayName: external_exports.string().min(1).max(200).optional(),
+  config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
+  capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
+  enabled: external_exports.boolean().optional(),
+  expectedVersion: external_exports.number().int().min(1).optional()
 });
 function createAcademicTools(dependencies) {
   const allowWrites = dependencies.allowWrites ?? false;
@@ -20836,7 +21255,68 @@ function createAcademicTools(dependencies) {
           status: request.status
         });
       }
-    )
+    ),
+    ...dependencies.sources && dependencies.sourceEngines ? [
+      defineTool(
+        ACADEMIC_TOOL_NAMES.ListSources,
+        "List database-backed data sources and available generic engines. Read-only; never returns credentials.",
+        external_exports.object({ includeArchived: external_exports.boolean().optional() }),
+        async (input2) => {
+          const sources = dependencies.sources.list({
+            includeArchived: input2.includeArchived ?? false
+          });
+          return success2({
+            sources: sources.map((source) => ({
+              ...source,
+              engineAvailable: dependencies.sourceEngines.get(source.engine) !== void 0
+            })),
+            engines: dependencies.sourceEngines.list().map((engine) => engine.descriptor)
+          });
+        }
+      ),
+      defineTool(
+        ACADEMIC_TOOL_NAMES.ListSourceEngines,
+        "List the stable generic source engines available in this Host. Read-only.",
+        external_exports.object({}),
+        async () => success2({
+          engines: dependencies.sourceEngines.list().map((engine) => engine.descriptor)
+        })
+      ),
+      defineTool(
+        ACADEMIC_TOOL_NAMES.CreateSource,
+        "Create a database-backed source definition from a known engine and non-secret config. The host must authorize this write; this tool cannot install code.",
+        createSourceSchema,
+        async (input2) => {
+          const rejection = await requireWriteApproval(
+            ACADEMIC_TOOL_NAMES.CreateSource,
+            { ...input2 }
+          );
+          if (rejection) return rejection;
+          if (!dependencies.sourceEngines.get(input2.engine)) {
+            return failure2("CAPABILITY_UNAVAILABLE", `Unknown source engine: ${input2.engine}`);
+          }
+          const source = dependencies.sources.create(input2);
+          return success2({ source });
+        }
+      ),
+      defineTool(
+        ACADEMIC_TOOL_NAMES.UpdateSource,
+        "Update a database-backed source definition. The host must authorize this write; secrets never belong in config.",
+        updateSourceSchema,
+        async (input2) => {
+          const rejection = await requireWriteApproval("academic_update_source", {
+            ...input2
+          });
+          if (rejection) return rejection;
+          const source = dependencies.sources.update(
+            input2.sourceId,
+            input2,
+            input2.expectedVersion
+          );
+          return success2({ source });
+        }
+      )
+    ] : []
   ];
 }
 
@@ -24544,15 +25024,27 @@ async function createAcademicApp(options) {
     capabilities: ["academic.reminder.in-app"],
     requiredPermissions: []
   });
-  const blackboardCapability = registry2.register({
-    id: "academic.adapter.ustc-blackboard",
-    kind: "adapter",
-    version: "0.1.0",
-    providerPlugin: "@academic/adapter-ustc-blackboard",
-    // Sync parsing is not implemented yet; only the session login is real.
-    capabilities: ["academic.auth.session", "academic.courses.probe"],
-    requiredPermissions: []
+  const sources = new SourceConfigStore({
+    db: store.database,
+    clock,
+    ids
   });
+  sources.ensure({
+    sourceId: "fixture-lms",
+    engine: "fixture",
+    displayName: "Fixture LMS\uFF08\u5185\u7F6E\u6F14\u793A\uFF09",
+    authKind: "none",
+    capabilities: ["academic.sync", "academic.courses.probe"],
+    config: {}
+  });
+  const sourceEngines = new SourceEngineRegistry();
+  const sourceEngineRegistrations = [
+    sourceEngines.register(createFixtureSourceEngine()),
+    sourceEngines.register(createBrowserSessionEngine()),
+    ...(options.sourceEngines ?? []).map(
+      (engine) => sourceEngines.register(engine)
+    )
+  ];
   const host = new InMemoryToolHost();
   const agentRegistration = registerAcademicTools(host, {
     queries: store.queries,
@@ -24560,13 +25052,15 @@ async function createAcademicApp(options) {
     replans,
     registry: registry2,
     ids,
+    sources,
+    sourceEngines,
     allowWrites: options.agentWrites ?? false,
     ...options.authorizeAgentWrite ? { authorizeWrite: options.authorizeAgentWrite } : {}
   });
   const disposables = [
     ...plannerCapability ? [plannerCapability] : [],
     adapterCapability,
-    blackboardCapability,
+    ...sourceEngineRegistrations,
     notificationCapability,
     agentRegistration
   ];
@@ -24748,6 +25242,8 @@ async function createAcademicApp(options) {
     scheduler,
     connectors,
     adapter,
+    sources,
+    sourceEngines,
     connections,
     replans,
     availability,
@@ -24768,6 +25264,42 @@ async function createAcademicApp(options) {
       const summary = await connectors.sync(sourceAdapter, {
         connection: { connectionId, credentials: connections }
       });
+      await dispatcher.processOnce();
+      return summary;
+    },
+    async syncSource(sourceId, connectionId) {
+      const source = sources.get(sourceId);
+      if (!source || !source.enabled || source.archived) {
+        throw new CapabilityUnavailableError(`source.${sourceId}`);
+      }
+      const engine = sourceEngines.get(source.engine);
+      if (!engine?.createAdapter) {
+        throw new CapabilityUnavailableError(`source.engine.${source.engine}`);
+      }
+      const context = { sourceId, config: source.config };
+      let credentials;
+      let connection;
+      if (connectionId) {
+        const record2 = connections.get(connectionId);
+        if (!record2) throw new Error(`Connection not found: ${connectionId}`);
+        if (record2.sourceId !== sourceId) {
+          throw new Error("Connection does not belong to the requested source");
+        }
+        credentials = await connections.openCredential(connectionId, sourceId);
+        connection = { connectionId, credentials: connections };
+      } else if (source.authKind !== "none") {
+        throw new CapabilityUnavailableError(`source.credentials.${sourceId}`);
+      }
+      if (engine.listCourses) {
+        const courses = await engine.listCourses(context, credentials);
+        for (const course2 of courses) {
+          await connectors.registerCourse({ ...course2, sourceId });
+        }
+      }
+      const summary = await connectors.sync(
+        engine.createAdapter(context),
+        connection ? { connection } : {}
+      );
       await dispatcher.processOnce();
       return summary;
     },

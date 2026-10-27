@@ -16,11 +16,6 @@ import {
   type SyncRunSummary,
 } from '@academic/contracts'
 import type { AcademicApp } from '@academic/cli'
-import {
-  loginBlackboardWithBrowser,
-  USTC_BLACKBOARD_SOURCE_ID,
-  type BlackboardLoginResult,
-} from '@academic/adapter-ustc-blackboard'
 import type { NotificationView } from '@academic/notifications'
 import { zonedDateTimeToUtc, type PlanSuggestion } from '@academic/planner-basic'
 import type { JobRun, ScheduledJob } from '@academic/scheduler'
@@ -37,6 +32,7 @@ import type {
   CoursesView,
   CreateConnectionRequest,
   CreateCourseRequest,
+  CreateSourceRequest,
   CreateTaskRequest,
   DashboardView,
   HostStatus,
@@ -51,6 +47,8 @@ import type {
   PlanView,
   PreviewPlanRequest,
   SettingsView,
+  SourceIdRequest,
+  SourceSecretRequest,
   SourceStatus,
   SyncNowRequest,
   TaskCard,
@@ -62,6 +60,7 @@ import type {
   UnlockBlockRequest,
   UpdateAvailabilityRequest,
   UpdateReminderSettingsRequest,
+  UpdateSourceRequest,
   UpdateSyncScheduleRequest,
 } from './protocol.js'
 
@@ -69,7 +68,6 @@ const MAX_TASKS = 500
 const MAX_ITEMS = 200
 const PREVIEW_TTL_MS = 10 * 60_000
 const PREVIEW_LIMIT = 20
-const FIXTURE_SOURCE_ID = 'fixture-lms'
 const FIXTURE_SYNC_JOB_ID = 'fixture-lms-sync'
 
 const emptySchema = z.object({})
@@ -134,6 +132,31 @@ const createConnectionSchema = z.object({
   authKind: z.enum(['password', 'token', 'oauth', 'none']),
   accountLabel: z.string().min(1).max(200).optional(),
   scopes: z.array(z.string().min(1).max(200)).max(50).optional(),
+})
+const createSourceSchema = z.object({
+  sourceId: z.string().min(1).max(200).optional(),
+  engine: z.string().min(1).max(100),
+  displayName: z.string().min(1).max(200),
+  authKind: z.enum(['password', 'token', 'oauth', 'none']),
+  loginMode: z.enum(['browser', 'manual']).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  capabilities: z.array(z.string().min(1).max(200)).max(50).optional(),
+  enabled: z.boolean().optional(),
+})
+const updateSourceSchema = z.object({
+  sourceId: z.string().min(1),
+  displayName: z.string().min(1).max(200).optional(),
+  authKind: z.enum(['password', 'token', 'oauth', 'none']).optional(),
+  loginMode: z.enum(['browser', 'manual']).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  capabilities: z.array(z.string().min(1).max(200)).max(50).optional(),
+  enabled: z.boolean().optional(),
+  expectedVersion: z.number().int().min(1).optional(),
+})
+const sourceIdSchema = z.object({ sourceId: z.string().min(1) })
+const sourceSecretSchema = z.object({
+  sourceId: z.string().min(1),
+  secret: z.string().min(1).max(8192),
 })
 const secretSchema = z.object({
   connectionId: z.string().min(1),
@@ -376,27 +399,19 @@ function mapRun(run: JobRun): AutomationRun {
 function sourceState(source: SourceStatus): SourceStatus['state'] {
   if (!source.adapterAvailable) return 'unavailable'
   if (source.lastSync?.status === 'partial') return 'degraded'
-  if (!source.connection) {
-    if (source.lastSync?.status === 'success') return 'connected'
-    return 'unconfigured'
-  }
+  if (!source.connection) return 'unconfigured'
   return source.connection.status
 }
 
 function sourceDetail(source: SourceStatus): string {
-  if (!source.adapterAvailable) return '当前版本没有可用的 Adapter，不能同步或验证'
+  if (!source.adapterAvailable) {
+    return source.detail ?? '当前版本未加载该数据源引擎'
+  }
   if (source.state === 'degraded') {
     return '部分数据抓取成功；旧数据保留，请查看同步警告'
   }
   if (!source.connection) {
-    if (source.lastSync?.status === 'failed' || source.lastSync?.status === 'auth-required') {
-      return source.lastSync.errorMessage ?? '最近一次同步失败；旧数据保留'
-    }
-    if (source.state === 'connected') return '最近一次内置同步成功'
-    if (source.sourceId === USTC_BLACKBOARD_SOURCE_ID) {
-      return '尚未登录；可在桌面端拉起 Blackboard 登录窗口'
-    }
-    return '尚未配置连接'
+    return source.detail ?? '尚未配置连接'
   }
   switch (source.connection.status) {
     case 'unconfigured':
@@ -420,46 +435,47 @@ function buildSources(
   syncRuns: SyncRunSummary[],
 ): SourceStatus[] {
   const catalog = new Map<string, SourceStatus>()
-  catalog.set(FIXTURE_SOURCE_ID, {
-    sourceId: FIXTURE_SOURCE_ID,
-    displayName: 'Fixture LMS（内置演示）',
-    adapterAvailable: true,
-    authKind: 'none',
-    state: 'unconfigured',
-  })
-  catalog.set(USTC_BLACKBOARD_SOURCE_ID, {
-    sourceId: USTC_BLACKBOARD_SOURCE_ID,
-    displayName: 'USTC Blackboard',
-    adapterAvailable: false,
-    authKind: 'token',
-    state: 'unavailable',
-  })
-  for (const adapter of app.registry.list('adapter')) {
-    const prefix = 'academic.adapter.'
-    const sourceId = adapter.id.startsWith(prefix)
-      ? adapter.id.slice(prefix.length)
-      : adapter.id
-    const existing = catalog.get(sourceId)
-    catalog.set(sourceId, {
-      sourceId,
-      displayName: existing?.displayName ?? sourceId,
-      adapterAvailable: true,
-      authKind: existing?.authKind ?? 'unknown',
+  for (const config of app.sources.list()) {
+    const engine = app.sourceEngines.get(config.engine)
+    const available = Boolean(engine) && config.enabled && !config.archived
+    catalog.set(config.sourceId, {
+      sourceId: config.sourceId,
+      displayName: config.displayName,
+      engine: config.engine,
+      engineKnown: Boolean(engine),
+      syncAvailable: available && Boolean(engine?.createAdapter),
+      canLogin: available && Boolean(engine?.login),
+      canVerify: available && Boolean(engine?.verify),
+      ...(config.loginMode ? { loginMode: config.loginMode } : {}),
+      capabilities: config.capabilities,
+      config: config.config,
+      enabled: config.enabled,
+      version: config.version,
+      adapterAvailable: available,
+      authKind: config.authKind,
       state: 'unconfigured',
+      ...(engine?.descriptor.description
+        ? { detail: engine.descriptor.description }
+        : {}),
     })
   }
   for (const connection of connections) {
     const existing = catalog.get(connection.sourceId)
     if (existing) {
       existing.connection = connection
-      existing.authKind = connection.authKind
-      existing.displayName = existing.displayName === existing.sourceId
-        ? connection.displayName
-        : existing.displayName
     } else {
       catalog.set(connection.sourceId, {
         sourceId: connection.sourceId,
         displayName: connection.displayName,
+        engine: '',
+        engineKnown: false,
+        syncAvailable: false,
+        canLogin: false,
+        canVerify: false,
+        capabilities: [],
+        config: {},
+        enabled: false,
+        version: 0,
         adapterAvailable: false,
         authKind: connection.authKind,
         state: 'unavailable',
@@ -475,6 +491,12 @@ function buildSources(
     if (detail) source.detail = detail
   }
   return [...catalog.values()]
+}
+
+function sourceStatusFor(app: AcademicApp, sourceId: string): SourceStatus | undefined {
+  return buildSources(app, app.connections.list(), []).find(
+    (source) => source.sourceId === sourceId,
+  )
 }
 
 function syncHealth(
@@ -562,8 +584,12 @@ export interface AcademicUiApi {
   availability(request: unknown): Promise<UiResult<AvailabilityView>>
   updateAvailability(request: unknown): Promise<UiResult<AvailabilityView>>
   connections(request: unknown): Promise<UiResult<ConnectionsView>>
+  createSource(request: unknown): Promise<UiResult<SourceStatus>>
+  updateSource(request: unknown): Promise<UiResult<SourceStatus>>
+  archiveSource(request: unknown): Promise<UiResult<SourceStatus>>
+  sourceLogin(request: unknown): Promise<UiResult<ConnectionView>>
+  sourceSetSecret(request: unknown): Promise<UiResult<ConnectionView>>
   createConnection(request: unknown): Promise<UiResult<ConnectionView>>
-  blackboardLogin(request: unknown): Promise<UiResult<ConnectionView>>
   setConnectionSecret(request: unknown): Promise<UiResult<ConnectionView>>
   verifyConnection(request: unknown): Promise<UiResult<ConnectionView>>
   disconnectConnection(request: unknown): Promise<UiResult<ConnectionView>>
@@ -586,15 +612,7 @@ export interface AcademicUiApi {
   changeTaskEstimate(request: unknown): Promise<UiResult<CommandReceipt>>
 }
 
-export interface AcademicUiApiOptions {
-  loginBlackboard?: () => Promise<BlackboardLoginResult>
-}
-
-export function createAcademicUiApi(
-  app: AcademicApp,
-  options: AcademicUiApiOptions = {},
-): AcademicUiApi {
-  const loginBlackboard = options.loginBlackboard ?? (() => loginBlackboardWithBrowser())
+export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
   const previews = new Map<string, { suggestion: PlanSuggestion; expiresAt: number }>()
 
   function rememberPreview(suggestion: PlanSuggestion): string {
@@ -907,6 +925,7 @@ export function createAcademicUiApi(
       return ok({
         sources: buildSources(app, connections, syncRuns.items),
         connections,
+        engines: app.sourceEngines.list().map((engine) => engine.descriptor),
         courses: courses.items,
         syncRuns: syncRuns.items,
         generatedAt: app.clock.now(),
@@ -932,36 +951,126 @@ export function createAcademicUiApi(
       }
     },
 
-    async blackboardLogin() {
+    async createSource(request) {
+      const parsed = parse(createSourceSchema, request)
+      if (!parsed.ok) return parsed
+      const body: CreateSourceRequest = parsed.value
+      if (!app.sourceEngines.get(body.engine)) {
+        return failure('CAPABILITY_UNAVAILABLE', '该数据源引擎尚未加载')
+      }
       try {
-        const result = await loginBlackboard()
-        const existing = app.connections
-          .list()
-          .find((connection) => connection.sourceId === USTC_BLACKBOARD_SOURCE_ID)
-        const connection =
-          existing ??
-          app.connections.create({
-            sourceId: USTC_BLACKBOARD_SOURCE_ID,
-            displayName: 'USTC Blackboard',
-            authKind: 'token',
-            scopes: ['courses', 'assignments'],
-          })
-        if (connection.authKind !== 'token') {
-          return failure('VALIDATION', '现有 Blackboard 连接不是会话凭据类型')
-        }
-        await app.connections.setSecret(
-          connection.connectionId,
-          JSON.stringify({ cookie: result.cookieHeader }),
-        )
-        await app.connections.verify(connection.connectionId, async () => ({
-          ok: true,
-        }))
-        const updated = app.connections.get(connection.connectionId)
-        return updated
-          ? ok(updated)
-          : failure('NOT_FOUND', '登录成功但连接记录未找到')
+        app.sources.create(body)
+        const source = sourceStatusFor(app, body.sourceId ?? '')
+        return source
+          ? ok(source)
+          : failure('NOT_FOUND', '数据源已创建但未能读取')
       } catch (error) {
-        return failure('ERROR', safeMessage(error))
+        return fromError(error)
+      }
+    },
+
+    async updateSource(request) {
+      const parsed = parse(updateSourceSchema, request)
+      if (!parsed.ok) return parsed
+      const body: UpdateSourceRequest = parsed.value
+      try {
+        app.sources.update(body.sourceId, body, body.expectedVersion)
+        const source = sourceStatusFor(app, body.sourceId)
+        return source ? ok(source) : failure('NOT_FOUND', '数据源不存在')
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async archiveSource(request) {
+      const parsed = parse(sourceIdSchema, request)
+      if (!parsed.ok) return parsed
+      const body: SourceIdRequest = parsed.value
+      try {
+        app.sources.archive(body.sourceId)
+        const source = sourceStatusFor(app, body.sourceId)
+        return source ? ok(source) : failure('NOT_FOUND', '数据源不存在')
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async sourceLogin(request) {
+      const parsed = parse(sourceIdSchema, request)
+      if (!parsed.ok) return parsed
+      const body: SourceIdRequest = parsed.value
+      const source = app.sources.get(body.sourceId)
+      if (!source) return failure('NOT_FOUND', '数据源不存在')
+      if (!source.enabled || source.archived) {
+        return failure('CAPABILITY_UNAVAILABLE', '数据源未启用')
+      }
+      const engine = app.sourceEngines.get(source.engine)
+      if (!engine?.login) {
+        return failure('CAPABILITY_UNAVAILABLE', '该数据源没有可用的登录流程')
+      }
+      const context = { sourceId: source.sourceId, config: source.config }
+      try {
+        const login = await engine.login(context)
+        const connection =
+          app.connections.list().find((entry) => entry.sourceId === source.sourceId) ??
+          app.connections.create({
+            sourceId: source.sourceId,
+            displayName: source.displayName,
+            authKind: source.authKind,
+            scopes: source.capabilities,
+            ...(login.accountLabel ? { accountLabel: login.accountLabel } : {}),
+          })
+        if (connection.authKind === 'none') return ok(connection)
+        await app.connections.setSecret(connection.connectionId, login.secret)
+        const verified = await app.connections.verify(
+          connection.connectionId,
+          async (secret) =>
+            engine.verify
+              ? engine.verify(context, secret)
+              : { ok: true, ...(login.accountLabel ? { accountLabel: login.accountLabel } : {}) },
+        )
+        if (verified.status === 'auth-required') {
+          return failure('AUTH_REQUIRED', verified.lastError ?? '登录会话验证失败')
+        }
+        return ok(verified)
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async sourceSetSecret(request) {
+      const parsed = parse(sourceSecretSchema, request)
+      if (!parsed.ok) return parsed
+      const body: SourceSecretRequest = parsed.value
+      const source = app.sources.get(body.sourceId)
+      if (!source) return failure('NOT_FOUND', '数据源不存在')
+      if (source.authKind === 'none') return failure('VALIDATION', '该数据源不使用凭据')
+      const engine = app.sourceEngines.get(source.engine)
+      if (!engine) return failure('CAPABILITY_UNAVAILABLE', '该数据源引擎尚未加载')
+      try {
+        const connection =
+          app.connections.list().find((entry) => entry.sourceId === source.sourceId) ??
+          app.connections.create({
+            sourceId: source.sourceId,
+            displayName: source.displayName,
+            authKind: source.authKind,
+            scopes: source.capabilities,
+          })
+        await app.connections.setSecret(connection.connectionId, body.secret)
+        if (engine.verify) {
+          const context = { sourceId: source.sourceId, config: source.config }
+          const verified = await app.connections.verify(
+            connection.connectionId,
+            async (secret) => engine.verify!(context, secret),
+          )
+          if (verified.status === 'auth-required') {
+            return failure('AUTH_REQUIRED', verified.lastError ?? '凭据验证失败')
+          }
+          return ok(verified)
+        }
+        return ok(app.connections.get(connection.connectionId)!)
+      } catch {
+        return failure('UNAVAILABLE', '系统凭据库不可用，凭据未保存')
       }
     },
 
@@ -971,19 +1080,17 @@ export function createAcademicUiApi(
       const body: ConnectionSecretRequest = parsed.value
       const connection = app.connections.get(body.connectionId)
       if (!connection) return failure('NOT_FOUND', '连接不存在')
-      const sources = buildSources(app, [connection], [])
-      const source = sources.find((candidate) => candidate.sourceId === connection.sourceId)
-      if (!source || !source.adapterAvailable) {
-        return failure('CAPABILITY_UNAVAILABLE', '当前版本不支持该数据源的认证')
+      const source = app.sources.get(connection.sourceId)
+      if (!source) return failure('NOT_FOUND', '数据源不存在')
+      if (!app.sourceEngines.get(source.engine)) {
+        return failure('CAPABILITY_UNAVAILABLE', '该数据源引擎尚未加载')
       }
       if (connection.authKind === 'none') {
         return failure('VALIDATION', '该连接不使用凭据')
       }
       try {
-        const view = await app.connections.setSecret(body.connectionId, body.secret)
-        return ok(view)
+        return ok(await app.connections.setSecret(body.connectionId, body.secret))
       } catch {
-        // Never echo vault or credential details back to the client.
         return failure('UNAVAILABLE', '系统凭据库不可用，凭据未保存')
       }
     },
@@ -994,10 +1101,24 @@ export function createAcademicUiApi(
       const body: ConnectionIdRequest = parsed.value
       const connection = app.connections.get(body.connectionId)
       if (!connection) return failure('NOT_FOUND', '连接不存在')
-      return failure(
-        'CAPABILITY_UNAVAILABLE',
-        '当前没有该数据源的真实认证验证 Adapter；已保存凭据不会被显示为已连接',
-      )
+      const source = app.sources.get(connection.sourceId)
+      if (!source) return failure('NOT_FOUND', '数据源不存在')
+      const engine = app.sourceEngines.get(source.engine)
+      if (!engine?.verify) {
+        return failure('CAPABILITY_UNAVAILABLE', '该数据源没有可用的验证流程')
+      }
+      try {
+        const context = { sourceId: source.sourceId, config: source.config }
+        const verified = await app.connections.verify(
+          connection.connectionId,
+          async (secret) => engine.verify!(context, secret),
+        )
+        return verified.status === 'auth-required'
+          ? failure('AUTH_REQUIRED', verified.lastError ?? '会话验证失败')
+          : ok(verified)
+      } catch (error) {
+        return fromError(error)
+      }
     },
 
     async disconnectConnection(request) {
@@ -1082,11 +1203,33 @@ export function createAcademicUiApi(
         if (!connection) return failure('NOT_FOUND', '连接不存在')
         sourceId = connection.sourceId
       }
-      if (sourceId && sourceId !== FIXTURE_SOURCE_ID) {
-        return failure('CAPABILITY_UNAVAILABLE', '当前版本只实现了内置 Fixture 数据源同步')
-      }
       try {
-        const summary = await app.syncFixture()
+        if (!sourceId) {
+          const candidates = app.sources
+            .list()
+            .filter(
+              (source) =>
+                source.enabled &&
+                app.sourceEngines.get(source.engine)?.createAdapter,
+            )
+          let last: SyncRunSummary | undefined
+          for (const source of candidates) {
+            const connection = app.connections
+              .list()
+              .find((entry) => entry.sourceId === source.sourceId)
+            if (source.authKind !== 'none' && !connection) continue
+            last = await app.syncSource(source.sourceId, connection?.connectionId)
+          }
+          if (!last) {
+            return failure('CAPABILITY_UNAVAILABLE', '没有可同步的数据源')
+          }
+          previews.clear()
+          return ok(last)
+        }
+        if (!app.sources.get(sourceId)) {
+          return failure('NOT_FOUND', '数据源不存在')
+        }
+        const summary = await app.syncSource(sourceId, body.connectionId)
         previews.clear()
         return ok(summary)
       } catch (error) {

@@ -19949,6 +19949,10 @@ var ACADEMIC_TOOL_NAMES = {
   ListDueItems: "academic_list_due_items",
   GetItem: "academic_get_item",
   GetStudyPlan: "academic_get_study_plan",
+  ListSources: "academic_list_sources",
+  ListSourceEngines: "academic_list_source_engines",
+  CreateSource: "academic_create_source",
+  UpdateSource: "academic_update_source",
   UpdateTask: "academic_update_task",
   RequestReplan: "academic_request_replan"
 };
@@ -19988,6 +19992,24 @@ var requestReplanSchema = external_exports.object({
   rangeEnd: isoDateTimeSchema
 }).refine((value) => Date.parse(value.rangeEnd) > Date.parse(value.rangeStart), {
   message: "rangeEnd must be after rangeStart"
+});
+var createSourceSchema = external_exports.object({
+  sourceId: external_exports.string().min(1).max(200).optional(),
+  engine: external_exports.string().min(1).max(100),
+  displayName: external_exports.string().min(1).max(200),
+  authKind: external_exports.enum(["none", "password", "token", "oauth"]),
+  loginMode: external_exports.enum(["browser", "manual"]).optional(),
+  config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
+  capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
+  enabled: external_exports.boolean().optional()
+});
+var updateSourceSchema = external_exports.object({
+  sourceId: external_exports.string().min(1),
+  displayName: external_exports.string().min(1).max(200).optional(),
+  config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
+  capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
+  enabled: external_exports.boolean().optional(),
+  expectedVersion: external_exports.number().int().min(1).optional()
 });
 
 // packages/academic-dsh-plugin/src/tools.ts
@@ -20058,6 +20080,68 @@ var TOOL_SPECS = [
       },
       rangeStart: { type: "string", required: true, description: "ISO-8601 range start" },
       rangeEnd: { type: "string", required: true, description: "ISO-8601 range end" }
+    },
+    write: true
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.ListSources,
+    description: "List database-backed data sources and available source engines. Read-only; never returns credentials.",
+    parameters: {
+      includeArchived: {
+        type: "boolean",
+        description: "Include archived source definitions"
+      }
+    },
+    write: false
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.ListSourceEngines,
+    description: "List generic source engines available in this Host. Read-only.",
+    parameters: {},
+    write: false
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.CreateSource,
+    description: "Create a database-backed source definition from a known engine and non-secret JSON config. Write; requires trusted host approval. Cannot install code.",
+    parameters: {
+      sourceId: { type: "string", description: "Optional stable source id" },
+      engine: { type: "string", required: true, description: "Engine id from academic_list_source_engines" },
+      displayName: { type: "string", required: true, description: "Human-readable source name" },
+      authKind: {
+        type: "string",
+        required: true,
+        enum: ["none", "password", "token", "oauth"],
+        description: "Credential kind; secrets belong in the vault, never config"
+      },
+      loginMode: {
+        type: "string",
+        enum: ["browser", "manual"],
+        description: "Optional login interaction mode"
+      },
+      config: {
+        type: "object",
+        additionalProperties: true,
+        description: "Non-secret engine config: URLs, selectors, rules"
+      },
+      capabilities: {
+        type: "array",
+        items: { type: "string" },
+        description: "Optional capability names"
+      },
+      enabled: { type: "boolean", description: "Default true" }
+    },
+    write: true
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.UpdateSource,
+    description: "Update a database-backed source config. Write; requires trusted host approval and optimistic version when provided.",
+    parameters: {
+      sourceId: { type: "string", required: true },
+      displayName: { type: "string" },
+      config: { type: "object", additionalProperties: true, description: "Replacement non-secret config" },
+      capabilities: { type: "array", items: { type: "string" } },
+      enabled: { type: "boolean" },
+      expectedVersion: { type: "integer", description: "Optimistic concurrency version" }
     },
     write: true
   }

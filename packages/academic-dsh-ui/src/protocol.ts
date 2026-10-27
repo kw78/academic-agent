@@ -9,6 +9,7 @@ import type {
   StudyPlanView,
   StudyTaskView,
   SyncRunSummary,
+  SourceEngineDescriptor,
 } from '@academic/contracts'
 
 export type UiErrorCode =
@@ -64,6 +65,16 @@ export interface NotificationCard {
 export interface SourceStatus {
   sourceId: string
   displayName: string
+  engine: string
+  engineKnown: boolean
+  syncAvailable: boolean
+  canLogin: boolean
+  canVerify: boolean
+  loginMode?: 'browser' | 'manual'
+  capabilities: string[]
+  config: Record<string, unknown>
+  enabled: boolean
+  version: number
   adapterAvailable: boolean
   authKind: 'password' | 'token' | 'oauth' | 'none' | 'unknown'
   state:
@@ -163,6 +174,7 @@ export interface ConnectionsView {
   connections: ConnectionView[]
   courses: CourseView[]
   syncRuns: SyncRunSummary[]
+  engines: SourceEngineDescriptor[]
   generatedAt: string
 }
 
@@ -285,6 +297,37 @@ export interface CreateCourseRequest {
   termId: string
   code: string
   title: string
+}
+
+export interface CreateSourceRequest {
+  sourceId?: string
+  engine: string
+  displayName: string
+  authKind: 'password' | 'token' | 'oauth' | 'none'
+  loginMode?: 'browser' | 'manual'
+  config?: Record<string, unknown>
+  capabilities?: string[]
+  enabled?: boolean
+}
+
+export interface UpdateSourceRequest {
+  sourceId: string
+  displayName?: string
+  authKind?: 'password' | 'token' | 'oauth' | 'none'
+  loginMode?: 'browser' | 'manual'
+  config?: Record<string, unknown>
+  capabilities?: string[]
+  enabled?: boolean
+  expectedVersion?: number
+}
+
+export interface SourceIdRequest {
+  sourceId: string
+}
+
+export interface SourceSecretRequest {
+  sourceId: string
+  secret: string
 }
 
 export interface CreateConnectionRequest {

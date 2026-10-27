@@ -19967,106 +19967,6 @@ var CapabilityUnavailableError = class extends Error {
   }
 };
 
-// adapters/ustc-blackboard/src/login.ts
-import { chromium } from "playwright-core";
-var USTC_BLACKBOARD_LOGIN_URL = "https://www.bb.ustc.edu.cn/";
-function isBlackboardUrl(url2) {
-  return url2.hostname === "www.bb.ustc.edu.cn" || url2.hostname.endsWith(".bb.ustc.edu.cn");
-}
-function isLoggedInUrl(url2) {
-  if (!isBlackboardUrl(url2)) return false;
-  return !/\/webapps\/login|\/authValidate|\/cas\//i.test(url2.pathname);
-}
-async function launchBrowser(channel) {
-  return chromium.launch({
-    channel,
-    headless: false,
-    args: ["--no-first-run", "--no-default-browser-check"]
-  });
-}
-async function loginBlackboardWithBrowser(options = {}) {
-  const channels = options.channel ? [options.channel] : ["msedge", "chrome"];
-  let browser;
-  let context;
-  let launchError;
-  for (const channel of channels) {
-    try {
-      browser = await launchBrowser(channel);
-      break;
-    } catch (error62) {
-      launchError = error62;
-    }
-  }
-  if (!browser) {
-    throw new Error(
-      `\u65E0\u6CD5\u542F\u52A8 Edge/Chrome \u767B\u5F55\u7A97\u53E3\uFF1A${launchError instanceof Error ? launchError.message : String(launchError)}`
-    );
-  }
-  try {
-    context = await browser.newContext({
-      locale: "zh-CN",
-      viewport: { width: 1280, height: 900 }
-    });
-    const page = await context.newPage();
-    await page.goto(USTC_BLACKBOARD_LOGIN_URL, {
-      waitUntil: "domcontentloaded",
-      timeout: 6e4
-    });
-    const deadline = Date.now() + (options.timeoutMs ?? 4 * 6e4);
-    let loggedPage = page;
-    while (Date.now() < deadline) {
-      if (!browser.isConnected()) {
-        throw new Error("\u767B\u5F55\u7A97\u53E3\u5DF2\u5173\u95ED\uFF0C\u672A\u5B8C\u6210 Blackboard \u767B\u5F55");
-      }
-      const reached = context.pages().find((candidate) => {
-        try {
-          return isLoggedInUrl(new URL(candidate.url()));
-        } catch {
-          return false;
-        }
-      });
-      if (reached) {
-        loggedPage = reached;
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-    let finalUrl;
-    try {
-      finalUrl = new URL(loggedPage.url());
-    } catch {
-      throw new Error("\u672A\u80FD\u8BFB\u53D6\u767B\u5F55\u540E\u7684 Blackboard \u9875\u9762");
-    }
-    if (!isLoggedInUrl(finalUrl)) {
-      throw new Error("\u767B\u5F55\u8D85\u65F6\uFF1A\u672A\u68C0\u6D4B\u5230 Blackboard \u95E8\u6237");
-    }
-    await loggedPage.waitForLoadState("domcontentloaded").catch(() => void 0);
-    const cookies = await context.cookies();
-    const blackboardCookies = cookies.filter((cookie) => {
-      const domain2 = cookie.domain.replace(/^\./, "");
-      return domain2 === "bb.ustc.edu.cn" || domain2.endsWith(".bb.ustc.edu.cn");
-    });
-    const cookieHeader = blackboardCookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
-    if (!cookieHeader) {
-      throw new Error("\u767B\u5F55\u6210\u529F\u4F46\u672A\u8BFB\u53D6\u5230 Blackboard \u4F1A\u8BDD Cookie");
-    }
-    const title = await loggedPage.title().catch(() => void 0);
-    return {
-      cookieHeader,
-      cookieCount: blackboardCookies.length,
-      finalOrigin: finalUrl.origin,
-      finalPath: finalUrl.pathname,
-      ...title ? { title } : {}
-    };
-  } finally {
-    await context?.close().catch(() => void 0);
-    await browser.close().catch(() => void 0);
-  }
-}
-
-// adapters/ustc-blackboard/src/index.ts
-var USTC_BLACKBOARD_SOURCE_ID = "ustc-blackboard";
-
 // packages/academic-planner-basic/src/time.ts
 function zoneOffsetMs(zone, instant) {
   const truncated = new Date(Math.floor(instant.getTime() / 1e3) * 1e3);
@@ -20141,7 +20041,6 @@ var MAX_TASKS = 500;
 var MAX_ITEMS = 200;
 var PREVIEW_TTL_MS = 10 * 6e4;
 var PREVIEW_LIMIT = 20;
-var FIXTURE_SOURCE_ID = "fixture-lms";
 var FIXTURE_SYNC_JOB_ID = "fixture-lms-sync";
 var emptySchema = external_exports.object({});
 var itemsSchema = external_exports.object({
@@ -20205,6 +20104,31 @@ var createConnectionSchema = external_exports.object({
   authKind: external_exports.enum(["password", "token", "oauth", "none"]),
   accountLabel: external_exports.string().min(1).max(200).optional(),
   scopes: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional()
+});
+var createSourceSchema = external_exports.object({
+  sourceId: external_exports.string().min(1).max(200).optional(),
+  engine: external_exports.string().min(1).max(100),
+  displayName: external_exports.string().min(1).max(200),
+  authKind: external_exports.enum(["password", "token", "oauth", "none"]),
+  loginMode: external_exports.enum(["browser", "manual"]).optional(),
+  config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
+  capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
+  enabled: external_exports.boolean().optional()
+});
+var updateSourceSchema = external_exports.object({
+  sourceId: external_exports.string().min(1),
+  displayName: external_exports.string().min(1).max(200).optional(),
+  authKind: external_exports.enum(["password", "token", "oauth", "none"]).optional(),
+  loginMode: external_exports.enum(["browser", "manual"]).optional(),
+  config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
+  capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
+  enabled: external_exports.boolean().optional(),
+  expectedVersion: external_exports.number().int().min(1).optional()
+});
+var sourceIdSchema = external_exports.object({ sourceId: external_exports.string().min(1) });
+var sourceSecretSchema = external_exports.object({
+  sourceId: external_exports.string().min(1),
+  secret: external_exports.string().min(1).max(8192)
 });
 var secretSchema = external_exports.object({
   connectionId: external_exports.string().min(1),
@@ -20401,26 +20325,18 @@ function mapRun(run) {
 function sourceState(source) {
   if (!source.adapterAvailable) return "unavailable";
   if (source.lastSync?.status === "partial") return "degraded";
-  if (!source.connection) {
-    if (source.lastSync?.status === "success") return "connected";
-    return "unconfigured";
-  }
+  if (!source.connection) return "unconfigured";
   return source.connection.status;
 }
 function sourceDetail(source) {
-  if (!source.adapterAvailable) return "\u5F53\u524D\u7248\u672C\u6CA1\u6709\u53EF\u7528\u7684 Adapter\uFF0C\u4E0D\u80FD\u540C\u6B65\u6216\u9A8C\u8BC1";
+  if (!source.adapterAvailable) {
+    return source.detail ?? "\u5F53\u524D\u7248\u672C\u672A\u52A0\u8F7D\u8BE5\u6570\u636E\u6E90\u5F15\u64CE";
+  }
   if (source.state === "degraded") {
     return "\u90E8\u5206\u6570\u636E\u6293\u53D6\u6210\u529F\uFF1B\u65E7\u6570\u636E\u4FDD\u7559\uFF0C\u8BF7\u67E5\u770B\u540C\u6B65\u8B66\u544A";
   }
   if (!source.connection) {
-    if (source.lastSync?.status === "failed" || source.lastSync?.status === "auth-required") {
-      return source.lastSync.errorMessage ?? "\u6700\u8FD1\u4E00\u6B21\u540C\u6B65\u5931\u8D25\uFF1B\u65E7\u6570\u636E\u4FDD\u7559";
-    }
-    if (source.state === "connected") return "\u6700\u8FD1\u4E00\u6B21\u5185\u7F6E\u540C\u6B65\u6210\u529F";
-    if (source.sourceId === USTC_BLACKBOARD_SOURCE_ID) {
-      return "\u5C1A\u672A\u767B\u5F55\uFF1B\u53EF\u5728\u684C\u9762\u7AEF\u62C9\u8D77 Blackboard \u767B\u5F55\u7A97\u53E3";
-    }
-    return "\u5C1A\u672A\u914D\u7F6E\u8FDE\u63A5";
+    return source.detail ?? "\u5C1A\u672A\u914D\u7F6E\u8FDE\u63A5";
   }
   switch (source.connection.status) {
     case "unconfigured":
@@ -20439,42 +20355,45 @@ function sourceDetail(source) {
 }
 function buildSources(app, connections, syncRuns) {
   const catalog = /* @__PURE__ */ new Map();
-  catalog.set(FIXTURE_SOURCE_ID, {
-    sourceId: FIXTURE_SOURCE_ID,
-    displayName: "Fixture LMS\uFF08\u5185\u7F6E\u6F14\u793A\uFF09",
-    adapterAvailable: true,
-    authKind: "none",
-    state: "unconfigured"
-  });
-  catalog.set(USTC_BLACKBOARD_SOURCE_ID, {
-    sourceId: USTC_BLACKBOARD_SOURCE_ID,
-    displayName: "USTC Blackboard",
-    adapterAvailable: false,
-    authKind: "token",
-    state: "unavailable"
-  });
-  for (const adapter of app.registry.list("adapter")) {
-    const prefix = "academic.adapter.";
-    const sourceId = adapter.id.startsWith(prefix) ? adapter.id.slice(prefix.length) : adapter.id;
-    const existing = catalog.get(sourceId);
-    catalog.set(sourceId, {
-      sourceId,
-      displayName: existing?.displayName ?? sourceId,
-      adapterAvailable: true,
-      authKind: existing?.authKind ?? "unknown",
-      state: "unconfigured"
+  for (const config2 of app.sources.list()) {
+    const engine = app.sourceEngines.get(config2.engine);
+    const available = Boolean(engine) && config2.enabled && !config2.archived;
+    catalog.set(config2.sourceId, {
+      sourceId: config2.sourceId,
+      displayName: config2.displayName,
+      engine: config2.engine,
+      engineKnown: Boolean(engine),
+      syncAvailable: available && Boolean(engine?.createAdapter),
+      canLogin: available && Boolean(engine?.login),
+      canVerify: available && Boolean(engine?.verify),
+      ...config2.loginMode ? { loginMode: config2.loginMode } : {},
+      capabilities: config2.capabilities,
+      config: config2.config,
+      enabled: config2.enabled,
+      version: config2.version,
+      adapterAvailable: available,
+      authKind: config2.authKind,
+      state: "unconfigured",
+      ...engine?.descriptor.description ? { detail: engine.descriptor.description } : {}
     });
   }
   for (const connection of connections) {
     const existing = catalog.get(connection.sourceId);
     if (existing) {
       existing.connection = connection;
-      existing.authKind = connection.authKind;
-      existing.displayName = existing.displayName === existing.sourceId ? connection.displayName : existing.displayName;
     } else {
       catalog.set(connection.sourceId, {
         sourceId: connection.sourceId,
         displayName: connection.displayName,
+        engine: "",
+        engineKnown: false,
+        syncAvailable: false,
+        canLogin: false,
+        canVerify: false,
+        capabilities: [],
+        config: {},
+        enabled: false,
+        version: 0,
         adapterAvailable: false,
         authKind: connection.authKind,
         state: "unavailable",
@@ -20490,6 +20409,11 @@ function buildSources(app, connections, syncRuns) {
     if (detail) source.detail = detail;
   }
   return [...catalog.values()];
+}
+function sourceStatusFor(app, sourceId) {
+  return buildSources(app, app.connections.list(), []).find(
+    (source) => source.sourceId === sourceId
+  );
 }
 function syncHealth(lastSync, now, staleAfterMs) {
   if (!lastSync) return "unknown";
@@ -20542,8 +20466,7 @@ async function loadTasks(app, options = {}) {
     ...plan ? { plan } : {}
   };
 }
-function createAcademicUiApi(app, options = {}) {
-  const loginBlackboard = options.loginBlackboard ?? (() => loginBlackboardWithBrowser());
+function createAcademicUiApi(app) {
   const previews = /* @__PURE__ */ new Map();
   function rememberPreview(suggestion) {
     const previewId = randomUUID();
@@ -20831,6 +20754,7 @@ function createAcademicUiApi(app, options = {}) {
       return ok({
         sources: buildSources(app, connections, syncRuns.items),
         connections,
+        engines: app.sourceEngines.list().map((engine) => engine.descriptor),
         courses: courses.items,
         syncRuns: syncRuns.items,
         generatedAt: app.clock.now()
@@ -20854,30 +20778,113 @@ function createAcademicUiApi(app, options = {}) {
         return fromError(error62);
       }
     },
-    async blackboardLogin() {
+    async createSource(request) {
+      const parsed = parse3(createSourceSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      if (!app.sourceEngines.get(body.engine)) {
+        return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u5F15\u64CE\u5C1A\u672A\u52A0\u8F7D");
+      }
       try {
-        const result = await loginBlackboard();
-        const existing = app.connections.list().find((connection2) => connection2.sourceId === USTC_BLACKBOARD_SOURCE_ID);
-        const connection = existing ?? app.connections.create({
-          sourceId: USTC_BLACKBOARD_SOURCE_ID,
-          displayName: "USTC Blackboard",
-          authKind: "token",
-          scopes: ["courses", "assignments"]
-        });
-        if (connection.authKind !== "token") {
-          return failure2("VALIDATION", "\u73B0\u6709 Blackboard \u8FDE\u63A5\u4E0D\u662F\u4F1A\u8BDD\u51ED\u636E\u7C7B\u578B");
-        }
-        await app.connections.setSecret(
-          connection.connectionId,
-          JSON.stringify({ cookie: result.cookieHeader })
-        );
-        await app.connections.verify(connection.connectionId, async () => ({
-          ok: true
-        }));
-        const updated = app.connections.get(connection.connectionId);
-        return updated ? ok(updated) : failure2("NOT_FOUND", "\u767B\u5F55\u6210\u529F\u4F46\u8FDE\u63A5\u8BB0\u5F55\u672A\u627E\u5230");
+        app.sources.create(body);
+        const source = sourceStatusFor(app, body.sourceId ?? "");
+        return source ? ok(source) : failure2("NOT_FOUND", "\u6570\u636E\u6E90\u5DF2\u521B\u5EFA\u4F46\u672A\u80FD\u8BFB\u53D6");
       } catch (error62) {
-        return failure2("ERROR", safeMessage(error62));
+        return fromError(error62);
+      }
+    },
+    async updateSource(request) {
+      const parsed = parse3(updateSourceSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        app.sources.update(body.sourceId, body, body.expectedVersion);
+        const source = sourceStatusFor(app, body.sourceId);
+        return source ? ok(source) : failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async archiveSource(request) {
+      const parsed = parse3(sourceIdSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        app.sources.archive(body.sourceId);
+        const source = sourceStatusFor(app, body.sourceId);
+        return source ? ok(source) : failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async sourceLogin(request) {
+      const parsed = parse3(sourceIdSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      const source = app.sources.get(body.sourceId);
+      if (!source) return failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
+      if (!source.enabled || source.archived) {
+        return failure2("CAPABILITY_UNAVAILABLE", "\u6570\u636E\u6E90\u672A\u542F\u7528");
+      }
+      const engine = app.sourceEngines.get(source.engine);
+      if (!engine?.login) {
+        return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u6CA1\u6709\u53EF\u7528\u7684\u767B\u5F55\u6D41\u7A0B");
+      }
+      const context = { sourceId: source.sourceId, config: source.config };
+      try {
+        const login = await engine.login(context);
+        const connection = app.connections.list().find((entry) => entry.sourceId === source.sourceId) ?? app.connections.create({
+          sourceId: source.sourceId,
+          displayName: source.displayName,
+          authKind: source.authKind,
+          scopes: source.capabilities,
+          ...login.accountLabel ? { accountLabel: login.accountLabel } : {}
+        });
+        if (connection.authKind === "none") return ok(connection);
+        await app.connections.setSecret(connection.connectionId, login.secret);
+        const verified = await app.connections.verify(
+          connection.connectionId,
+          async (secret) => engine.verify ? engine.verify(context, secret) : { ok: true, ...login.accountLabel ? { accountLabel: login.accountLabel } : {} }
+        );
+        if (verified.status === "auth-required") {
+          return failure2("AUTH_REQUIRED", verified.lastError ?? "\u767B\u5F55\u4F1A\u8BDD\u9A8C\u8BC1\u5931\u8D25");
+        }
+        return ok(verified);
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async sourceSetSecret(request) {
+      const parsed = parse3(sourceSecretSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      const source = app.sources.get(body.sourceId);
+      if (!source) return failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
+      if (source.authKind === "none") return failure2("VALIDATION", "\u8BE5\u6570\u636E\u6E90\u4E0D\u4F7F\u7528\u51ED\u636E");
+      const engine = app.sourceEngines.get(source.engine);
+      if (!engine) return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u5F15\u64CE\u5C1A\u672A\u52A0\u8F7D");
+      try {
+        const connection = app.connections.list().find((entry) => entry.sourceId === source.sourceId) ?? app.connections.create({
+          sourceId: source.sourceId,
+          displayName: source.displayName,
+          authKind: source.authKind,
+          scopes: source.capabilities
+        });
+        await app.connections.setSecret(connection.connectionId, body.secret);
+        if (engine.verify) {
+          const context = { sourceId: source.sourceId, config: source.config };
+          const verified = await app.connections.verify(
+            connection.connectionId,
+            async (secret) => engine.verify(context, secret)
+          );
+          if (verified.status === "auth-required") {
+            return failure2("AUTH_REQUIRED", verified.lastError ?? "\u51ED\u636E\u9A8C\u8BC1\u5931\u8D25");
+          }
+          return ok(verified);
+        }
+        return ok(app.connections.get(connection.connectionId));
+      } catch {
+        return failure2("UNAVAILABLE", "\u7CFB\u7EDF\u51ED\u636E\u5E93\u4E0D\u53EF\u7528\uFF0C\u51ED\u636E\u672A\u4FDD\u5B58");
       }
     },
     async setConnectionSecret(request) {
@@ -20886,17 +20893,16 @@ function createAcademicUiApi(app, options = {}) {
       const body = parsed.value;
       const connection = app.connections.get(body.connectionId);
       if (!connection) return failure2("NOT_FOUND", "\u8FDE\u63A5\u4E0D\u5B58\u5728");
-      const sources = buildSources(app, [connection], []);
-      const source = sources.find((candidate) => candidate.sourceId === connection.sourceId);
-      if (!source || !source.adapterAvailable) {
-        return failure2("CAPABILITY_UNAVAILABLE", "\u5F53\u524D\u7248\u672C\u4E0D\u652F\u6301\u8BE5\u6570\u636E\u6E90\u7684\u8BA4\u8BC1");
+      const source = app.sources.get(connection.sourceId);
+      if (!source) return failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
+      if (!app.sourceEngines.get(source.engine)) {
+        return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u5F15\u64CE\u5C1A\u672A\u52A0\u8F7D");
       }
       if (connection.authKind === "none") {
         return failure2("VALIDATION", "\u8BE5\u8FDE\u63A5\u4E0D\u4F7F\u7528\u51ED\u636E");
       }
       try {
-        const view = await app.connections.setSecret(body.connectionId, body.secret);
-        return ok(view);
+        return ok(await app.connections.setSecret(body.connectionId, body.secret));
       } catch {
         return failure2("UNAVAILABLE", "\u7CFB\u7EDF\u51ED\u636E\u5E93\u4E0D\u53EF\u7528\uFF0C\u51ED\u636E\u672A\u4FDD\u5B58");
       }
@@ -20907,10 +20913,22 @@ function createAcademicUiApi(app, options = {}) {
       const body = parsed.value;
       const connection = app.connections.get(body.connectionId);
       if (!connection) return failure2("NOT_FOUND", "\u8FDE\u63A5\u4E0D\u5B58\u5728");
-      return failure2(
-        "CAPABILITY_UNAVAILABLE",
-        "\u5F53\u524D\u6CA1\u6709\u8BE5\u6570\u636E\u6E90\u7684\u771F\u5B9E\u8BA4\u8BC1\u9A8C\u8BC1 Adapter\uFF1B\u5DF2\u4FDD\u5B58\u51ED\u636E\u4E0D\u4F1A\u88AB\u663E\u793A\u4E3A\u5DF2\u8FDE\u63A5"
-      );
+      const source = app.sources.get(connection.sourceId);
+      if (!source) return failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
+      const engine = app.sourceEngines.get(source.engine);
+      if (!engine?.verify) {
+        return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u6CA1\u6709\u53EF\u7528\u7684\u9A8C\u8BC1\u6D41\u7A0B");
+      }
+      try {
+        const context = { sourceId: source.sourceId, config: source.config };
+        const verified = await app.connections.verify(
+          connection.connectionId,
+          async (secret) => engine.verify(context, secret)
+        );
+        return verified.status === "auth-required" ? failure2("AUTH_REQUIRED", verified.lastError ?? "\u4F1A\u8BDD\u9A8C\u8BC1\u5931\u8D25") : ok(verified);
+      } catch (error62) {
+        return fromError(error62);
+      }
     },
     async disconnectConnection(request) {
       const parsed = parse3(connectionIdSchema, request);
@@ -20989,11 +21007,27 @@ function createAcademicUiApi(app, options = {}) {
         if (!connection) return failure2("NOT_FOUND", "\u8FDE\u63A5\u4E0D\u5B58\u5728");
         sourceId = connection.sourceId;
       }
-      if (sourceId && sourceId !== FIXTURE_SOURCE_ID) {
-        return failure2("CAPABILITY_UNAVAILABLE", "\u5F53\u524D\u7248\u672C\u53EA\u5B9E\u73B0\u4E86\u5185\u7F6E Fixture \u6570\u636E\u6E90\u540C\u6B65");
-      }
       try {
-        const summary = await app.syncFixture();
+        if (!sourceId) {
+          const candidates = app.sources.list().filter(
+            (source) => source.enabled && app.sourceEngines.get(source.engine)?.createAdapter
+          );
+          let last;
+          for (const source of candidates) {
+            const connection = app.connections.list().find((entry) => entry.sourceId === source.sourceId);
+            if (source.authKind !== "none" && !connection) continue;
+            last = await app.syncSource(source.sourceId, connection?.connectionId);
+          }
+          if (!last) {
+            return failure2("CAPABILITY_UNAVAILABLE", "\u6CA1\u6709\u53EF\u540C\u6B65\u7684\u6570\u636E\u6E90");
+          }
+          previews.clear();
+          return ok(last);
+        }
+        if (!app.sources.get(sourceId)) {
+          return failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
+        }
+        const summary = await app.syncSource(sourceId, body.connectionId);
         previews.clear();
         return ok(summary);
       } catch (error62) {
@@ -21103,7 +21137,11 @@ var REMOTE_METHODS = [
   "updateAvailability",
   "connections",
   "createConnection",
-  "blackboardLogin",
+  "createSource",
+  "updateSource",
+  "archiveSource",
+  "sourceLogin",
+  "sourceSetSecret",
   "setConnectionSecret",
   "verifyConnection",
   "disconnectConnection",
@@ -21190,8 +21228,20 @@ var AcademicUiService = class extends TypertRemoteService {
   async createConnection(request) {
     return (await this.apiReady).createConnection(request);
   }
-  async blackboardLogin(request) {
-    return (await this.apiReady).blackboardLogin(request);
+  async createSource(request) {
+    return (await this.apiReady).createSource(request);
+  }
+  async updateSource(request) {
+    return (await this.apiReady).updateSource(request);
+  }
+  async archiveSource(request) {
+    return (await this.apiReady).archiveSource(request);
+  }
+  async sourceLogin(request) {
+    return (await this.apiReady).sourceLogin(request);
+  }
+  async sourceSetSecret(request) {
+    return (await this.apiReady).sourceSetSecret(request);
   }
   async setConnectionSecret(request) {
     return (await this.apiReady).setConnectionSecret(request);

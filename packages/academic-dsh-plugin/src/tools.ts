@@ -91,6 +91,71 @@ const TOOL_SPECS: ToolSpec[] = [
     },
     write: true,
   },
+  {
+    name: ACADEMIC_TOOL_NAMES.ListSources,
+    description:
+      'List database-backed data sources and available source engines. Read-only; never returns credentials.',
+    parameters: {
+      includeArchived: {
+        type: 'boolean',
+        description: 'Include archived source definitions',
+      },
+    },
+    write: false,
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.ListSourceEngines,
+    description: 'List generic source engines available in this Host. Read-only.',
+    parameters: {},
+    write: false,
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.CreateSource,
+    description:
+      'Create a database-backed source definition from a known engine and non-secret JSON config. Write; requires trusted host approval. Cannot install code.',
+    parameters: {
+      sourceId: { type: 'string', description: 'Optional stable source id' },
+      engine: { type: 'string', required: true, description: 'Engine id from academic_list_source_engines' },
+      displayName: { type: 'string', required: true, description: 'Human-readable source name' },
+      authKind: {
+        type: 'string',
+        required: true,
+        enum: ['none', 'password', 'token', 'oauth'],
+        description: 'Credential kind; secrets belong in the vault, never config',
+      },
+      loginMode: {
+        type: 'string',
+        enum: ['browser', 'manual'],
+        description: 'Optional login interaction mode',
+      },
+      config: {
+        type: 'object',
+        additionalProperties: true,
+        description: 'Non-secret engine config: URLs, selectors, rules',
+      },
+      capabilities: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional capability names',
+      },
+      enabled: { type: 'boolean', description: 'Default true' },
+    },
+    write: true,
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.UpdateSource,
+    description:
+      'Update a database-backed source config. Write; requires trusted host approval and optimistic version when provided.',
+    parameters: {
+      sourceId: { type: 'string', required: true },
+      displayName: { type: 'string' },
+      config: { type: 'object', additionalProperties: true, description: 'Replacement non-secret config' },
+      capabilities: { type: 'array', items: { type: 'string' } },
+      enabled: { type: 'boolean' },
+      expectedVersion: { type: 'integer', description: 'Optimistic concurrency version' },
+    },
+    write: true,
+  },
 ]
 
 function toJsonValue(value: unknown): unknown {

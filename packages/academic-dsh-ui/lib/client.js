@@ -577,7 +577,8 @@ var CSS = `
 .ac-field input,
 .ac-field select,
 .ac-form-card input,
-.ac-form-card select {
+.ac-form-card select,
+.ac-form-card textarea {
   font: inherit;
   font-size: 13px;
   color: inherit;
@@ -587,12 +588,31 @@ var CSS = `
   padding: 5px 8px;
   min-width: 0;
 }
+.ac-form-card textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
 .ac-field input:focus-visible,
 .ac-field select:focus-visible,
 .ac-form-card input:focus-visible,
-.ac-form-card select:focus-visible {
+.ac-form-card select:focus-visible,
+.ac-form-card textarea:focus-visible {
   outline: 2px solid color-mix(in srgb, currentColor 40%, transparent);
   outline-offset: 1px;
+}
+.ac-config-details { margin-top: 10px; font-size: 12px; }
+.ac-config-details summary { cursor: pointer; opacity: 0.68; }
+.ac-config-details pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .ac-form-card {
   border: 1px solid color-mix(in srgb, currentColor 13%, transparent);
@@ -2341,9 +2361,9 @@ function PlanPage({ ctx, active, onNavigate }) {
 // packages/academic-dsh-ui/src/client/pages/ConnectionsPage.tsx
 var import_react6 = require("react");
 var import_jsx_runtime5 = require("react/jsx-runtime");
-function CredentialForm({
+function SourceCredentialForm({
   ctx,
-  connection,
+  source,
   onDone
 }) {
   const [secret, setSecret] = (0, import_react6.useState)("");
@@ -2358,8 +2378,8 @@ function CredentialForm({
     setSecret("");
     setPending(true);
     setMessage(void 0);
-    const result = await callApi(ctx, "setConnectionSecret", {
-      connectionId: connection.connectionId,
+    const result = await callApi(ctx, "sourceSetSecret", {
+      sourceId: source.sourceId,
       secret: value
     });
     setPending(false);
@@ -2367,14 +2387,14 @@ function CredentialForm({
       setMessage(result.error.message);
       return;
     }
-    setMessage("\u51ED\u636E\u5DF2\u4EA4\u7ED9\u672C\u673A Host \u4FDD\u5B58\uFF1B\u4ECD\u9700\u771F\u5B9E\u9A8C\u8BC1\u6216\u6210\u529F\u540C\u6B65\u540E\u624D\u4F1A\u663E\u793A\u5DF2\u8FDE\u63A5\u3002");
+    setMessage("\u51ED\u636E\u5DF2\u4EA4\u7ED9\u672C\u673A Host \u4FDD\u5B58\uFF1B\u9A8C\u8BC1\u6210\u529F\u524D\u4E0D\u4F1A\u663E\u793A\u4E3A\u5DF2\u8FDE\u63A5\u3002");
     await onDone();
   };
   return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
     /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
       Field,
       {
-        label: connection.authKind === "token" ? "Token" : "\u5BC6\u7801",
+        label: source.authKind === "token" ? "Token" : "\u5BC6\u7801",
         hint: "\u53EA\u63D0\u4EA4\u7ED9\u672C\u673A Host\uFF1B\u4E0D\u5199\u5165\u6D4F\u89C8\u5668\u5B58\u50A8\u3001URL \u6216\u65E5\u5FD7\u3002",
         children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
           "input",
@@ -2398,7 +2418,7 @@ function CredentialForm({
         className: "ac-button",
         disabled: pending,
         onClick: () => void submit(),
-        children: pending ? "\u63D0\u4EA4\u4E2D\u2026" : "\u4FDD\u5B58\u51ED\u636E"
+        children: pending ? "\u63D0\u4EA4\u4E2D\u2026" : source.connection ? "\u66F4\u65B0\u51ED\u636E" : "\u4FDD\u5B58\u51ED\u636E"
       }
     ),
     message && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: message })
@@ -2414,15 +2434,36 @@ function SourceCard({
     await refresh();
   });
   const connection = source.connection;
-  const isBlackboard = source.sourceId === "ustc-blackboard";
-  const canAuthenticate = source.adapterAvailable && connection !== void 0 && connection.authKind !== "none";
-  const canSync = source.adapterAvailable && source.sourceId === "fixture-lms";
+  const browserLogin = source.canLogin && source.loginMode === "browser";
+  const manualCredential = source.authKind !== "none" && !browserLogin;
+  const sync = async () => {
+    const result = await callApi(ctx, "syncNow", {
+      sourceId: source.sourceId,
+      ...connection ? { connectionId: connection.connectionId } : {}
+    });
+    if (!result.ok) return result;
+    if (result.value.status === "success" || result.value.status === "partial") {
+      return result;
+    }
+    return {
+      ok: false,
+      error: {
+        code: result.value.status === "auth-required" ? "AUTH_REQUIRED" : "ERROR",
+        message: result.value.errorMessage ?? `\u540C\u6B65\u672A\u6210\u529F\uFF1A${syncStatusLabel(result.value.status)}\uFF1B\u65E7\u6570\u636E\u5DF2\u4FDD\u7559`
+      }
+    };
+  };
   return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: "ac-card ac-source-card", children: [
     /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-source-main", children: [
       /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-task-title", children: [
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: source.displayName }),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Badge, { tone: sourceStateTone(source.state), children: sourceStateLabel(source.state) }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Badge, { tone: source.adapterAvailable ? "info" : "bad", children: source.adapterAvailable ? "Adapter \u53EF\u7528" : "Adapter \u4E0D\u53EF\u7528" })
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Badge, { tone: source.engineKnown ? "info" : "bad", children: [
+          "\u5F15\u64CE\uFF1A",
+          source.engine
+        ] }),
+        source.syncAvailable && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Badge, { tone: "ok", children: "\u540C\u6B65\u53EF\u7528" }),
+        source.canLogin && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Badge, { tone: "info", children: "\u767B\u5F55\u53EF\u7528" })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: source.detail }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-task-meta", children: [
@@ -2434,13 +2475,17 @@ function SourceCard({
           "\u8BA4\u8BC1\u65B9\u5F0F\uFF1A",
           source.authKind
         ] }),
+        source.loginMode && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { children: [
+          "\u767B\u5F55\u65B9\u5F0F\uFF1A",
+          source.loginMode
+        ] }),
         connection?.accountLabel && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { children: [
           "\u8D26\u53F7\uFF1A",
           connection.accountLabel
         ] }),
-        connection?.scopes && connection.scopes.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { children: [
-          "\u6388\u6743\u8303\u56F4\uFF1A",
-          connection.scopes.join("\u3001")
+        source.capabilities.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { children: [
+          "\u80FD\u529B\uFF1A",
+          source.capabilities.join("\u3001")
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { children: [
           "\u4E0A\u6B21\u9A8C\u8BC1\uFF1A",
@@ -2457,8 +2502,8 @@ function SourceCard({
       ] }),
       connection?.status === "configured" && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-warn", children: "\u5DF2\u4FDD\u5B58\u51ED\u636E\uFF0C\u4F46\u5C1A\u672A\u9A8C\u8BC1\uFF1B\u4FDD\u5B58\u51ED\u636E\u4E0D\u4EE3\u8868\u5E73\u53F0\u53EF\u7528\u3002" }),
       action.notice && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) }),
-      isBlackboard ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u5C06\u6253\u5F00 Edge/Chrome \u767B\u5F55\u7A97\u53E3\uFF1B\u8BF7\u5B8C\u6210\u7EDF\u4E00\u8BA4\u8BC1\u548C\u9A8C\u8BC1\u7801\u3002\u5E94\u7528\u4E0D\u4F1A\u8BFB\u53D6\u6216\u4FDD\u5B58\u4F60\u7684\u7EDF\u4E00\u8BA4\u8BC1\u5BC6\u7801\u3002" }),
+      browserLogin && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u5C06\u6253\u5F00 Edge/Chrome \u767B\u5F55\u7A97\u53E3\uFF1B\u8BF7\u5728\u7A97\u53E3\u4E2D\u5B8C\u6210\u767B\u5F55\u548C\u9A8C\u8BC1\u7801\u3002\u5E94\u7528\u4E0D\u4F1A\u8BFB\u53D6\u6216\u4FDD\u5B58\u5BC6\u7801\u3002" }),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
           "button",
           {
@@ -2466,16 +2511,30 @@ function SourceCard({
             className: "ac-button ac-button-primary",
             disabled: action.pending !== void 0,
             onClick: () => void action.run(
-              "bb-login",
-              () => callApi(ctx, "blackboardLogin", {}),
-              "\u767B\u5F55\u6210\u529F\uFF0CBlackboard \u4F1A\u8BDD\u5DF2\u4FDD\u5B58"
+              "source-login",
+              () => callApi(ctx, "sourceLogin", {
+                sourceId: source.sourceId
+              }),
+              "\u767B\u5F55\u6210\u529F\uFF0C\u4F1A\u8BDD\u5DF2\u4FDD\u5B58"
             ),
-            children: action.pending === "bb-login" ? "\u7B49\u5F85\u767B\u5F55\u7A97\u53E3\u2026" : connection ? "\u91CD\u65B0\u767B\u5F55 Blackboard" : "\u767B\u5F55 Blackboard"
+            children: action.pending === "source-login" ? "\u7B49\u5F85\u767B\u5F55\u7A97\u53E3\u2026" : connection ? `\u91CD\u65B0\u767B\u5F55 ${source.displayName}` : `\u767B\u5F55 ${source.displayName}`
           }
         )
-      ] }) : canAuthenticate ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(CredentialForm, { ctx, connection, onDone: async () => {
-        await refresh();
-      } }) : null
+      ] }),
+      manualCredential && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        SourceCredentialForm,
+        {
+          ctx,
+          source,
+          onDone: async () => {
+            await refresh();
+          }
+        }
+      ),
+      Object.keys(source.config).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("details", { className: "ac-config-details", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("summary", { children: "\u67E5\u770B\u975E\u654F\u611F\u914D\u7F6E" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("pre", { children: JSON.stringify(source.config, null, 2) })
+      ] })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-source-actions", children: [
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
@@ -2483,36 +2542,17 @@ function SourceCard({
         {
           type: "button",
           className: "ac-button",
-          disabled: !canSync || action.pending !== void 0,
-          onClick: () => void action.run(
-            "sync",
-            async () => {
-              const result = await callApi(ctx, "syncNow", {
-                sourceId: source.sourceId
-              });
-              if (!result.ok) return result;
-              if (result.value.status === "success" || result.value.status === "partial") {
-                return result;
-              }
-              return {
-                ok: false,
-                error: {
-                  code: result.value.status === "auth-required" ? "AUTH_REQUIRED" : "ERROR",
-                  message: result.value.errorMessage ?? `\u540C\u6B65\u672A\u6210\u529F\uFF1A${syncStatusLabel(result.value.status)}\uFF1B\u65E7\u6570\u636E\u5DF2\u4FDD\u7559`
-                }
-              };
-            },
-            "\u540C\u6B65\u5B8C\u6210"
-          ),
+          disabled: !source.syncAvailable || action.pending !== void 0,
+          onClick: () => void action.run("sync", sync, "\u540C\u6B65\u5B8C\u6210"),
           children: action.pending === "sync" ? "\u540C\u6B65\u4E2D\u2026" : "\u7ACB\u5373\u540C\u6B65"
         }
       ),
-      connection && !isBlackboard && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      connection && source.canVerify && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
         "button",
         {
           type: "button",
           className: "ac-button",
-          disabled: !canAuthenticate || action.pending !== void 0,
+          disabled: action.pending !== void 0,
           onClick: () => void action.run(
             "verify",
             () => callApi(ctx, "verifyConnection", {
@@ -2552,9 +2592,141 @@ function SourceCard({
             "\u51ED\u636E\u5DF2\u5220\u9664\uFF1B\u5B66\u4E1A\u4E8B\u4EF6\u672A\u5220\u9664"
           )
         }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        ConfirmAction,
+        {
+          label: "\u5F52\u6863\u6570\u636E\u6E90",
+          confirmLabel: "\u786E\u8BA4\u5F52\u6863",
+          disabled: action.pending !== void 0,
+          onConfirm: () => void action.run(
+            "archive-source",
+            () => callApi(ctx, "archiveSource", {
+              sourceId: source.sourceId
+            }),
+            "\u6570\u636E\u6E90\u5DF2\u5F52\u6863\uFF1B\u5386\u53F2\u5B66\u4E1A\u6570\u636E\u4FDD\u7559"
+          )
+        }
       )
     ] })
   ] });
+}
+function SourceForm({
+  ctx,
+  data,
+  onCreated
+}) {
+  const action = useAction(async () => {
+    await onCreated();
+  });
+  const [sourceId, setSourceId] = (0, import_react6.useState)("");
+  const [engine, setEngine] = (0, import_react6.useState)(data.engines[0]?.id ?? "");
+  const [displayName, setDisplayName] = (0, import_react6.useState)("");
+  const [authKind, setAuthKind] = (0, import_react6.useState)("token");
+  const [loginMode, setLoginMode] = (0, import_react6.useState)("browser");
+  const [capabilities, setCapabilities] = (0, import_react6.useState)("");
+  const [configJson, setConfigJson] = (0, import_react6.useState)("{}");
+  const submit = async () => {
+    let config;
+    try {
+      const parsed = JSON.parse(configJson || "{}");
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("\u914D\u7F6E\u5FC5\u987B\u662F JSON \u5BF9\u8C61");
+      }
+      config = parsed;
+    } catch (error) {
+      return {
+        ok: false,
+        error: {
+          code: "VALIDATION",
+          message: `\u914D\u7F6E JSON \u65E0\u6548\uFF1A${error instanceof Error ? error.message : String(error)}`
+        }
+      };
+    }
+    return callApi(ctx, "createSource", {
+      ...sourceId.trim() ? { sourceId: sourceId.trim() } : {},
+      engine: engine.trim(),
+      displayName: displayName.trim(),
+      authKind,
+      loginMode: loginMode === "none" ? void 0 : loginMode,
+      capabilities: capabilities.split(",").map((value) => value.trim()).filter(Boolean),
+      config
+    });
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+    "form",
+    {
+      className: "ac-form-card",
+      onSubmit: (event) => {
+        event.preventDefault();
+        void action.run("source", submit, "\u6570\u636E\u6E90\u5DF2\u521B\u5EFA").then((ok) => {
+          if (ok) {
+            setSourceId("");
+            setDisplayName("");
+            setConfigJson("{}");
+          }
+        });
+      },
+      children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { children: "\u6DFB\u52A0\u6570\u636E\u6E90" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u6570\u636E\u6E90\u4FDD\u5B58\u5728\u672C\u673A\u6570\u636E\u5E93\uFF0C\u901A\u8FC7 engine + \u975E\u654F\u611F\u914D\u7F6E\u63CF\u8FF0\uFF0C\u4E0D\u9700\u8981\u4FEE\u6539\u5E94\u7528\u4EE3\u7801\u3002 \u51ED\u636E\u4E0D\u8981\u5199\u5165\u914D\u7F6E\uFF1B\u767B\u5F55\u6216\u51ED\u636E\u4F1A\u8FDB\u5165\u7CFB\u7EDF\u51ED\u636E\u5E93\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-form-grid", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u6765\u6E90 ID\uFF08\u53EF\u9009\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            "input",
+            {
+              value: sourceId,
+              onChange: (event) => setSourceId(event.target.value),
+              placeholder: "my-source"
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u5F15\u64CE", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("select", { value: engine, onChange: (event) => setEngine(event.target.value), required: true, children: data.engines.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("option", { value: entry.id, children: [
+            entry.displayName,
+            "\uFF08",
+            entry.id,
+            "\uFF09"
+          ] }, entry.id)) }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u663E\u793A\u540D\u79F0", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            "input",
+            {
+              value: displayName,
+              onChange: (event) => setDisplayName(event.target.value),
+              required: true
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u8BA4\u8BC1\u65B9\u5F0F", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("select", { value: authKind, onChange: (event) => setAuthKind(event.target.value), children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "none", children: "none" }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "password", children: "password" }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "token", children: "token" }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "oauth", children: "oauth" })
+          ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u767B\u5F55\u65B9\u5F0F", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("select", { value: loginMode, onChange: (event) => setLoginMode(event.target.value), children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "browser", children: "browser" }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "manual", children: "manual" }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "none", children: "\u4E0D\u767B\u5F55" })
+          ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u80FD\u529B\uFF08\u9017\u53F7\u5206\u9694\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            "input",
+            {
+              value: capabilities,
+              onChange: (event) => setCapabilities(event.target.value),
+              placeholder: "academic.sync"
+            }
+          ) })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u975E\u654F\u611F\u914D\u7F6E\uFF08JSON\uFF09", hint: "URL\u3001\u9009\u62E9\u5668\u3001\u89C4\u5219\u7B49\uFF1B\u7981\u6B62 password/token/cookie \u5B57\u6BB5", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          "textarea",
+          {
+            rows: 6,
+            value: configJson,
+            onChange: (event) => setConfigJson(event.target.value),
+            spellCheck: false
+          }
+        ) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ac-form-actions", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "submit", className: "ac-button", disabled: action.pending !== void 0, children: action.pending === "source" ? "\u521B\u5EFA\u4E2D\u2026" : "\u521B\u5EFA\u6570\u636E\u6E90" }) }),
+        action.notice && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) })
+      ]
+    }
+  );
 }
 function ConnectionsPage({ ctx, active }) {
   const load = (0, import_react6.useCallback)(
@@ -2569,14 +2741,6 @@ function ConnectionsPage({ ctx, active }) {
   const [courseTerm, setCourseTerm] = (0, import_react6.useState)("");
   const [courseCode, setCourseCode] = (0, import_react6.useState)("");
   const [courseTitle, setCourseTitle] = (0, import_react6.useState)("");
-  const [connectionSource, setConnectionSource] = (0, import_react6.useState)("");
-  const [connectionName, setConnectionName] = (0, import_react6.useState)("");
-  const [connectionAccount, setConnectionAccount] = (0, import_react6.useState)("");
-  const [connectionScopes, setConnectionScopes] = (0, import_react6.useState)("");
-  const authSources = (data?.sources ?? []).filter(
-    (source) => source.adapterAvailable && source.authKind !== "none" && source.authKind !== "unknown" && // Blackboard uses its own login-window card, not the generic token form.
-    source.sourceId !== "ustc-blackboard"
-  );
   const addCourse = async () => {
     if (!courseTerm.trim() || !courseCode.trim() || !courseTitle.trim()) {
       return {
@@ -2590,24 +2754,6 @@ function ConnectionsPage({ ctx, active }) {
       title: courseTitle.trim()
     });
   };
-  const createConnection = async () => {
-    const source = authSources.find((candidate) => candidate.sourceId === connectionSource);
-    if (!source) {
-      return {
-        ok: false,
-        error: { code: "CAPABILITY_UNAVAILABLE", message: "\u8BF7\u9009\u62E9\u5F53\u524D\u7248\u672C\u652F\u6301\u7684\u6570\u636E\u6E90" }
-      };
-    }
-    return callApi(ctx, "createConnection", {
-      sourceId: source.sourceId,
-      displayName: connectionName.trim() || source.displayName,
-      authKind: source.authKind,
-      ...connectionAccount.trim() ? { accountLabel: connectionAccount.trim() } : {},
-      ...connectionScopes.trim() ? {
-        scopes: connectionScopes.split(",").map((scope) => scope.trim()).filter(Boolean)
-      } : {}
-    });
-  };
   return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { children: [
     /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
       StateBanner,
@@ -2619,10 +2765,9 @@ function ConnectionsPage({ ctx, active }) {
       }
     ),
     action.notice && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) }),
-    !data && state.loading && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(LoadingLine, { children: "\u6B63\u5728\u8BFB\u53D6\u8FDE\u63A5\u72B6\u6001\u2026" }),
+    !data && state.loading && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(LoadingLine, { children: "\u6B63\u5728\u8BFB\u53D6\u6570\u636E\u6E90\u2026" }),
     data && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
       /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Section, { title: "\u8BFE\u7A0B", subtitle: "\u8BFE\u7A0B\u8EAB\u4EFD\u4E0E\u5916\u90E8\u6765\u6E90\u5206\u5F00\u4FDD\u5B58", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-course-list", children: data.connections.length === 0 && data.sources.every((source) => !source.connection) && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("li", { className: "ac-muted", children: "\u8FD8\u6CA1\u6709\u7528\u6237\u8FDE\u63A5\uFF1B\u5185\u7F6E Fixture \u6570\u636E\u6E90\u53EF\u76F4\u63A5\u540C\u6B65\u3002" }) }),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
           "form",
           {
@@ -2688,10 +2833,10 @@ function ConnectionsPage({ ctx, active }) {
       /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
         Section,
         {
-          title: "\u6570\u636E\u6E90\u8FDE\u63A5",
-          subtitle: "\u72B6\u6001\u533A\u5206\u672A\u914D\u7F6E\u3001\u5DF2\u4FDD\u5B58\u51ED\u636E\u3001\u5DF2\u9A8C\u8BC1\u3001\u9700\u8981\u8BA4\u8BC1\u548C Adapter \u4E0D\u53EF\u7528",
+          title: "\u6570\u636E\u6E90",
+          subtitle: "\u6570\u636E\u5E93\u4E2D\u7684 source \u914D\u7F6E + \u901A\u7528 engine\uFF1B\u51ED\u636E\u4E0E\u72B6\u6001\u5206\u5F00\u4FDD\u5B58",
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-source-grid", children: data.sources.map((source) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            data.sources.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u6570\u636E\u6E90", children: "\u5728\u4E0B\u65B9\u9009\u62E9 engine \u5E76\u6DFB\u52A0\u6570\u636E\u6E90\u914D\u7F6E\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-source-grid", children: data.sources.map((source) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
               SourceCard,
               {
                 ctx,
@@ -2701,67 +2846,7 @@ function ConnectionsPage({ ctx, active }) {
               },
               source.sourceId
             )) }),
-            authSources.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ac-banner ac-banner-info", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: "Blackboard \u5DF2\u652F\u6301\u5E94\u7528\u5185\u767B\u5F55" }),
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { children: "\u5728\u4E0A\u65B9 Blackboard \u5361\u7247\u70B9\u51FB\u201C\u767B\u5F55 Blackboard\u201D\uFF0C\u4F1A\u5728\u65B0\u7A97\u53E3\u5B8C\u6210\u7EDF\u4E00\u8BA4\u8BC1\uFF1B \u5E94\u7528\u4E0D\u4F1A\u8BFB\u53D6\u5BC6\u7801\u3002\u8BFE\u7A0B/\u4F5C\u4E1A\u540C\u6B65\u89E3\u6790\u4ECD\u5728\u63A5\u5165\u4E2D\uFF0C\u5176\u4ED6\u771F\u5B9E\u5E73\u53F0 Adapter \u5C1A\u672A\u5B9E\u73B0\u3002" })
-            ] }) }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
-              "form",
-              {
-                className: "ac-form-card",
-                onSubmit: (event) => {
-                  event.preventDefault();
-                  void action.run("connection", createConnection, "\u8FDE\u63A5\u5DF2\u521B\u5EFA\uFF0C\u8BF7\u4FDD\u5B58\u51ED\u636E").then(
-                    (ok) => {
-                      if (ok) {
-                        setConnectionSource("");
-                        setConnectionName("");
-                        setConnectionAccount("");
-                        setConnectionScopes("");
-                      }
-                    }
-                  );
-                },
-                children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { children: "\u6DFB\u52A0\u8FDE\u63A5" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-form-grid", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u6570\u636E\u6E90", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
-                      "select",
-                      {
-                        value: connectionSource,
-                        onChange: (event) => setConnectionSource(event.target.value),
-                        required: true,
-                        children: [
-                          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "", children: "\u9009\u62E9\u6570\u636E\u6E90" }),
-                          authSources.map((source) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: source.sourceId, children: source.displayName }, source.sourceId))
-                        ]
-                      }
-                    ) }),
-                    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u663E\u793A\u540D\u79F0", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-                      "input",
-                      {
-                        value: connectionName,
-                        onChange: (event) => setConnectionName(event.target.value)
-                      }
-                    ) }),
-                    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u8D26\u53F7\u6807\u8BC6\uFF08\u53EF\u9009\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-                      "input",
-                      {
-                        value: connectionAccount,
-                        onChange: (event) => setConnectionAccount(event.target.value)
-                      }
-                    ) }),
-                    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u6388\u6743\u8303\u56F4\uFF08\u9017\u53F7\u5206\u9694\uFF0C\u53EF\u9009\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-                      "input",
-                      {
-                        value: connectionScopes,
-                        onChange: (event) => setConnectionScopes(event.target.value)
-                      }
-                    ) })
-                  ] }),
-                  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ac-form-actions", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "submit", className: "ac-button", disabled: action.pending !== void 0, children: "\u521B\u5EFA\u8FDE\u63A5" }) })
-                ]
-              }
-            )
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(SourceForm, { ctx, data, onCreated: refresh })
           ]
         }
       ),

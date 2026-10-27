@@ -5,14 +5,10 @@ import {
   type ConnectionAuthKind,
   type ConnectionView,
   type Range,
+  type SourceConfig,
   type StudyPlanView,
 } from '@academic/contracts'
 import type { WeeklySlot } from '@academic/planner-basic'
-import {
-  loginBlackboardWithBrowser,
-  probeBlackboard,
-  USTC_BLACKBOARD_SOURCE_ID,
-} from '@academic/adapter-ustc-blackboard'
 import { createAcademicApp, type AcademicApp } from './composition.js'
 
 const DATABASE_PATH = process.env.ACADEMIC_DB ?? '.data/academic.db'
@@ -567,104 +563,138 @@ async function runConnectionDeleteCredential(app: AcademicApp, connectionId: str
   printConnection(await app.connections.deleteCredential(connectionId))
 }
 
-async function runBlackboardLogin(app: AcademicApp): Promise<void> {
-  console.log('正在打开登录窗口；请在其中完成统一身份认证和验证码，登录成功后窗口会自动读取会话。')
-  const result = await loginBlackboardWithBrowser()
-  const existing = app.connections
+function printSource(app: AcademicApp, source: SourceConfig): void {
+  const engine = app.sourceEngines.get(source.engine)
+  const connection = app.connections
     .list()
-    .find((connection) => connection.sourceId === USTC_BLACKBOARD_SOURCE_ID)
-  const connection =
-    existing ??
-    app.connections.create({
-      sourceId: USTC_BLACKBOARD_SOURCE_ID,
-      displayName: 'USTC Blackboard',
-      authKind: 'token',
-      scopes: ['courses', 'assignments'],
-    })
-  if (connection.authKind === 'none' || connection.authKind === 'oauth') {
-    throw new Error('现有 Blackboard 连接不是 token 类型；请先创建新的 token 连接')
-  }
-  await app.connections.setSecret(
-    connection.connectionId,
-    JSON.stringify({ cookie: result.cookieHeader }),
-  )
-  await app.connections.verify(connection.connectionId, async () => ({ ok: true }))
+    .find((entry) => entry.sourceId === source.sourceId)
   console.log(
-    `登录成功：读取 ${result.cookieCount} 个 Blackboard Cookie · ${result.finalOrigin}${result.finalPath}`,
-  )
-  console.log(`连接：${connection.connectionId}`)
-  console.log(
-    `下一步：ACADEMIC_DB=${DATABASE_PATH} npm run demo -- blackboard probe ${connection.connectionId}`,
+    `  [${source.sourceId}] ${source.displayName} · engine=${source.engine} · auth=${source.authKind}${
+      source.loginMode ? ` · login=${source.loginMode}` : ''
+    } · engine=${engine ? 'available' : 'missing'} · connection=${connection?.status ?? 'none'}${
+      source.archived ? ' · archived' : source.enabled ? '' : ' · disabled'
+    }`,
   )
 }
 
-async function runBlackboardConnect(app: AcademicApp): Promise<void> {
-  const cookie = await promptHidden('Blackboard 会话 Cookie（输入不回显）: ')
-  if (!cookie) throw new Error('会话 Cookie 不能为空')
-  const existing = app.connections
-    .list()
-    .find((connection) => connection.sourceId === USTC_BLACKBOARD_SOURCE_ID)
-  const connection =
-    existing ??
-    app.connections.create({
-      sourceId: USTC_BLACKBOARD_SOURCE_ID,
-      displayName: 'USTC Blackboard',
-      authKind: 'token',
-      scopes: ['courses', 'assignments'],
-    })
-  if (connection.authKind === 'none' || connection.authKind === 'oauth') {
-    throw new Error('现有 Blackboard 连接不是 token 类型；请先创建新的 token 连接')
-  }
-  const updated = await app.connections.setSecret(
-    connection.connectionId,
-    // The raw Cookie header is wrapped so the vault never stores bare text.
-    JSON.stringify({ cookie }),
-  )
-  printConnection(updated)
-  console.log(
-    `下一步：ACADEMIC_DB=${DATABASE_PATH} npm run demo -- blackboard probe ${connection.connectionId}`,
-  )
-}
-
-async function runBlackboardProbe(
-  app: AcademicApp,
-  connectionId: string | undefined,
-): Promise<void> {
-  if (!connectionId) throw new Error('用法：blackboard probe <connectionId>')
-  const connection = app.connections.get(connectionId)
-  if (!connection) throw new Error(`连接不存在：${connectionId}`)
-  if (connection.sourceId !== USTC_BLACKBOARD_SOURCE_ID) {
-    throw new Error('该连接不是 USTC Blackboard 数据源')
-  }
-  const lease = await app.connections.openCredential(
-    connectionId,
-    USTC_BLACKBOARD_SOURCE_ID,
-  )
-  const secret = await lease.getSecret()
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const outputDir = `.data/bb-probe/${stamp}`
-  const result = await probeBlackboard({ cookie: secret, outputDir })
-
-  if (result.requiresLogin) {
-    await app.connections.markAuthRequired(
-      connectionId,
-      'Blackboard 会话已失效或被重定向到登录页',
+async function runSourceList(app: AcademicApp): Promise<void> {
+  const sources = app.sources.list({ includeArchived: true })
+  console.log(`数据源（${sources.length}）：`)
+  for (const source of sources) printSource(app, source)
+  console.log('\n可用引擎：')
+  for (const engine of app.sourceEngines.list()) {
+    console.log(
+      `  ${engine.descriptor.id} · ${engine.descriptor.displayName} · sync=${engine.descriptor.supportsSync} · login=${engine.descriptor.supportsLogin} · verify=${engine.descriptor.supportsVerify}`,
     )
-    console.log('Blackboard 返回登录页：会话 Cookie 无效或已过期，未保存任何课程数据。')
-    console.log(`诊断文件：${outputDir}/portal.html`)
+  }
+}
+
+async function runSourceAdd(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  const [sourceId, displayName] = positional
+  if (!sourceId || !displayName) {
+    throw new Error(
+      '用法：source add <sourceId> <displayName> --engine <id> [--auth token] [--login-mode browser] [--capabilities a,b] [--config JSON]',
+    )
+  }
+  const engineId = stringFlag(flags, 'engine')
+  if (!engineId) throw new Error('缺少 --engine')
+  if (!app.sourceEngines.get(engineId)) throw new Error(`未知 engine：${engineId}`)
+  const configValue = stringFlag(flags, 'config') ?? '{}'
+  let config: Record<string, unknown>
+  try {
+    const parsed = JSON.parse(configValue) as unknown
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('配置必须是 JSON 对象')
+    }
+    config = parsed as Record<string, unknown>
+  } catch (error) {
+    throw new Error(
+      `--config 不是有效 JSON 对象：${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  const authKind = (stringFlag(flags, 'auth') ?? 'token') as
+    | 'none'
+    | 'password'
+    | 'token'
+    | 'oauth'
+  const loginMode = stringFlag(flags, 'login-mode') as
+    | 'browser'
+    | 'manual'
+    | undefined
+  const capabilities = (stringFlag(flags, 'capabilities') ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+  const source = app.sources.create({
+    sourceId,
+    engine: engineId,
+    displayName,
+    authKind,
+    ...(loginMode ? { loginMode } : {}),
+    config,
+    capabilities,
+  })
+  printSource(app, source)
+}
+
+async function runSourceLogin(
+  app: AcademicApp,
+  sourceId: string | undefined,
+): Promise<void> {
+  if (!sourceId) throw new Error('用法：source login <sourceId>')
+  const source = app.sources.get(sourceId)
+  if (!source) throw new Error(`数据源不存在：${sourceId}`)
+  const engine = app.sourceEngines.get(source.engine)
+  if (!engine?.login) throw new Error(`数据源没有登录流程：${sourceId}`)
+  const context = { sourceId, config: source.config }
+  const login = await engine.login(context)
+  const connection =
+    app.connections.list().find((entry) => entry.sourceId === sourceId) ??
+    app.connections.create({
+      sourceId,
+      displayName: source.displayName,
+      authKind: source.authKind,
+      scopes: source.capabilities,
+      ...(login.accountLabel ? { accountLabel: login.accountLabel } : {}),
+    })
+  if (connection.authKind !== 'none') {
+    await app.connections.setSecret(connection.connectionId, login.secret)
+    const verified = await app.connections.verify(
+      connection.connectionId,
+      async (secret) =>
+        engine.verify
+          ? engine.verify(context, secret)
+          : { ok: true, ...(login.accountLabel ? { accountLabel: login.accountLabel } : {}) },
+    )
+    printConnection(verified)
+    if (verified.status === 'auth-required') {
+      throw new Error(verified.lastError ?? '登录会话验证失败')
+    }
     return
   }
+  printConnection(connection)
+}
 
-  await app.connections.verify(connectionId, async () => ({ ok: true }))
+async function runSourceSync(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  const sourceId = positional[0]
+  if (!sourceId) throw new Error('用法：source sync <sourceId> [--connection <id>]')
+  const connectionId = stringFlag(flags, 'connection')
+  const summary = await app.syncSource(sourceId, connectionId)
   console.log(
-    `Blackboard 探针：HTTP ${result.status} · ${result.title ?? '无标题'} · 课程链接 ${result.courseLinks.length}`,
+    `同步完成：${summary.status} · 抓取 ${summary.itemsSeen} · 新增 ${summary.created} · 更新 ${summary.updated}${
+      summary.errorMessage ? ` · ${summary.errorMessage}` : ''
+    }`,
   )
-  for (const course of result.courseLinks.slice(0, 10)) {
-    console.log(`  - ${course.title}: ${course.url}`)
-  }
-  for (const warning of result.warnings) console.log(`  ! ${warning}`)
-  console.log(`已保存诊断文件：${result.saved.join(', ')}`)
-  console.log('未打印 Cookie；summary.json 也不包含 Cookie。')
+}
+
+async function runSourceArchive(
+  app: AcademicApp,
+  sourceId: string | undefined,
+): Promise<void> {
+  if (!sourceId) throw new Error('用法：source archive <sourceId>')
+  printSource(app, app.sources.archive(sourceId))
 }
 
 async function runConnectionShow(app: AcademicApp, connectionId: string | undefined): Promise<void> {
@@ -767,9 +797,11 @@ function printHelp(): void {
   connection disconnect <id> [--delete-credential]
   connection delete-credential <id>
   connection show <id>
-  blackboard login                 拉起浏览器完成 SSO，自动保存 Blackboard 会话
-  blackboard connect               手动粘贴会话 Cookie（备用）
-  blackboard probe <connectionId>   用已保存的会话 Cookie 探测 BB 登录与课程页面
+  source list               列出数据库数据源与可用 engine
+  source add <id> <name> --engine <id> [--auth token] [--login-mode browser] [--config JSON]
+  source login <sourceId>    使用 engine 登录流程，会话写入凭据库
+  source sync <sourceId> [--connection ID]
+  source archive <sourceId>
   notifications [--read ID | --read-all]
   backup                    生成一致性数据库备份
   help                      显示帮助
@@ -866,12 +898,14 @@ async function main(): Promise<void> {
         break
       }
 
-      case 'blackboard': {
+      case 'source': {
         const [subcommand, ...args] = rest
-        if (subcommand === 'login') await runBlackboardLogin(app)
-        else if (subcommand === 'connect') await runBlackboardConnect(app)
-        else if (subcommand === 'probe') await runBlackboardProbe(app, args[0])
-        else throw new Error('用法：blackboard login|connect|probe <connectionId>')
+        if (subcommand === 'list') await runSourceList(app)
+        else if (subcommand === 'add') await runSourceAdd(app, args)
+        else if (subcommand === 'login') await runSourceLogin(app, args[0])
+        else if (subcommand === 'sync') await runSourceSync(app, args)
+        else if (subcommand === 'archive') await runSourceArchive(app, args[0])
+        else throw new Error('用法：source list|add|login|sync|archive')
         break
       }
 

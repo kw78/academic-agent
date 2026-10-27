@@ -17,11 +17,7 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node22',
-  external: [
-    '@deepseek-ai/cordis',
-    '@deepseek-ai/dsh-typert-protocol',
-    'playwright-core',
-  ],
+  external: ['@deepseek-ai/cordis', '@deepseek-ai/dsh-typert-protocol'],
   legalComments: 'none',
   logLevel: 'info',
 })

@@ -145,8 +145,14 @@ describe('academic UI host API', () => {
     if (!accepted.ok) expect(accepted.error.code).toBe('CONFLICT')
   })
 
-  it('never exposes credential references and refuses auth for unsupported adapters', async () => {
+  it('never exposes credential references and refuses auth for missing engines', async () => {
     const { app, api } = await setup()
+    app.sources.create({
+      sourceId: 'secure-lms',
+      engine: 'missing-engine',
+      displayName: 'Secure LMS',
+      authKind: 'password',
+    })
     const connection = app.connections.create({
       sourceId: 'secure-lms',
       displayName: 'Secure LMS',
@@ -256,36 +262,56 @@ describe('academic UI host API', () => {
   })
 })
 
-describe('Blackboard login through the UI host API', () => {
-  it('opens the login flow, stores only the session cookie and reports connected', async () => {
+describe('generic DB-backed source login', () => {
+  it('uses a registered engine, stores only the session secret and reports connected', async () => {
     const clock = fixedClock()
     const app = await createAcademicApp({
       databasePath: ':memory:',
       clock,
       credentialVault: new InMemoryCredentialVault(),
+      sourceEngines: [
+        {
+          descriptor: {
+            id: 'fake-browser',
+            displayName: 'Fake Browser',
+            supportsSync: false,
+            supportsLogin: true,
+            supportsVerify: true,
+          },
+          async login() {
+            return { secret: JSON.stringify({ cookie: 'test-session-secret' }) }
+          },
+          async verify() {
+            return { ok: true }
+          },
+        },
+      ],
     })
     cleanup.push(() => app.close())
-    const api = createAcademicUiApi(app, {
-      loginBlackboard: async () => ({
-        cookieHeader: 'BbRouter=test-session-secret; JSESSIONID=abc',
-        cookieCount: 2,
-        finalOrigin: 'https://www.bb.ustc.edu.cn',
-        finalPath: '/webapps/portal/frameset.jsp',
-      }),
+    app.sources.create({
+      sourceId: 'fake-source',
+      engine: 'fake-browser',
+      displayName: 'Fake Source',
+      authKind: 'token',
+      loginMode: 'browser',
+      capabilities: ['academic.auth.browser'],
     })
+    const api = createAcademicUiApi(app)
 
-    const result = await api.blackboardLogin({})
+    const result = await api.sourceLogin({ sourceId: 'fake-source' })
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.value.sourceId).toBe('ustc-blackboard')
+    expect(result.value.sourceId).toBe('fake-source')
     expect(result.value.status).toBe('connected')
     expect(JSON.stringify(result.value)).not.toContain('test-session-secret')
 
     const listed = await api.connections({})
     expect(listed.ok).toBe(true)
     if (!listed.ok) return
-    const source = listed.value.sources.find((entry) => entry.sourceId === 'ustc-blackboard')
+    const source = listed.value.sources.find((entry) => entry.sourceId === 'fake-source')
     expect(source?.adapterAvailable).toBe(true)
+    expect(source?.engineKnown).toBe(true)
+    expect(source?.canLogin).toBe(true)
     expect(source?.authKind).toBe('token')
     expect(JSON.stringify(listed.value)).not.toContain('test-session-secret')
   })

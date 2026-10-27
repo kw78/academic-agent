@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**105 项测试通过**（21 个测试文件）。
+当前基线：**107 项测试通过**（22 个测试文件）。
 
 ## 分层
 
@@ -84,7 +84,7 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 
 - host 创建 Academic App 并提供 `academicApp` 服务；
 - planner fiber 注册/卸载 Planner 能力；卸载后已有计划仍可查询；
-- tools fiber 注册 6 个工具；卸载后工具清零，host/store/planner 保持；
+- tools fiber 注册 10 个工具；卸载后工具清零，host/store/planner 保持；
 - 重新加载 tools/planner 后能力恢复；
 - host 卸载关闭 app。
 
@@ -128,12 +128,12 @@ dsh academic --json "hello"
 ```text
 [academic-host] loaded db=D:/project/classhelper/.data/dsh-academic.db
 [academic-planner] capability registered
-[academic-tools] tools=6 registered=true
+[academic-tools] tools=10 registered=true
 [academic-tools] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 
 - 插件在真实 DSH 进程加载；
-- 6 个工具注册到真实 `ctx.tools`；
+- 10 个工具注册到真实 `ctx.tools`；
 - 只读工具经真实 ToolRegistry 执行成功；
 - 未授权写入被权限门禁拒绝；
 - 不调用模型。

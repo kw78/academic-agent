@@ -14,6 +14,7 @@ import type {
   CoursesView,
   CreateConnectionRequest,
   CreateCourseRequest,
+  CreateSourceRequest,
   CreateTaskRequest,
   DashboardView,
   HostStatus,
@@ -25,12 +26,16 @@ import type {
   PlanMutationResult,
   PlanView,
   SettingsView,
+  SourceIdRequest,
+  SourceSecretRequest,
+  SourceStatus,
   SyncNowRequest,
   TasksView,
   UiResult,
   UnlockBlockRequest,
   UpdateAvailabilityRequest,
   UpdateReminderSettingsRequest,
+  UpdateSourceRequest,
   UpdateSyncScheduleRequest,
 } from './protocol.js'
 import type { ConnectionView, SyncRunSummary } from '@academic/contracts'
@@ -51,7 +56,11 @@ const REMOTE_METHODS = [
   'updateAvailability',
   'connections',
   'createConnection',
-  'blackboardLogin',
+  'createSource',
+  'updateSource',
+  'archiveSource',
+  'sourceLogin',
+  'sourceSetSecret',
   'setConnectionSecret',
   'verifyConnection',
   'disconnectConnection',
@@ -176,8 +185,26 @@ export class AcademicUiService extends TypertRemoteService {
     return (await this.apiReady).createConnection(request as CreateConnectionRequest)
   }
 
-  async blackboardLogin(request: unknown): Promise<UiResult<ConnectionView>> {
-    return (await this.apiReady).blackboardLogin(request)
+  async createSource(request: unknown): Promise<UiResult<SourceStatus>> {
+    return (await this.apiReady).createSource(request as CreateSourceRequest)
+  }
+
+  async updateSource(request: unknown): Promise<UiResult<SourceStatus>> {
+    return (await this.apiReady).updateSource(request as UpdateSourceRequest)
+  }
+
+  async archiveSource(request: unknown): Promise<UiResult<SourceStatus>> {
+    return (await this.apiReady).archiveSource(request as SourceIdRequest)
+  }
+
+  async sourceLogin(request: unknown): Promise<UiResult<ConnectionView>> {
+    return (await this.apiReady).sourceLogin(request as SourceIdRequest)
+  }
+
+  async sourceSetSecret(
+    request: unknown,
+  ): Promise<UiResult<ConnectionView>> {
+    return (await this.apiReady).sourceSetSecret(request as SourceSecretRequest)
   }
 
   async setConnectionSecret(

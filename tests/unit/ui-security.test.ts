@@ -38,7 +38,7 @@ describe('academic UI client security constraints', () => {
   it('clears the credential state before awaiting the Host submission', () => {
     const page = readFileSync(join(CLIENT_ROOT, 'pages/ConnectionsPage.tsx'), 'utf8')
     const clear = page.indexOf('setSecret(\'\')')
-    const submit = page.indexOf('await callApi<ConnectionView>(ctx, \'setConnectionSecret\'')
+    const submit = page.indexOf('await callApi<ConnectionView>(ctx, \'sourceSetSecret\'')
     expect(clear).toBeGreaterThan(-1)
     expect(submit).toBeGreaterThan(clear)
   })
