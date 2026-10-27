@@ -70,6 +70,7 @@ docs/adr/                      # 架构决策记录
 - 截止时间区分精确时间 / 仅日期 / 未知；不得把缺失时间猜成午夜；统一记录时区。
 - 新同步事项自动生成一个默认 `StudyTask`，使用确定性任务 ID 与事件消费者幂等创建；不得覆盖用户修改的预计时长或已完成状态。默认任务不写死截止时间，Planner 每次读取关联事项的当前截止时间。
 - 用户可用时间（时区、每周时段、临时不可用、粒度）必须持久化；Planner 不得默认全天可用。未配置时采用明确展示、可修改的保守默认值。
+- 截止提醒由持久化扫描作业生成，默认 72h/24h；每个事项最多发送当前最紧急的一档，使用稳定 dedupe key 防止重复。扫描在启动时补偿，用户可配置开关与阈值。
 - Agent 写入必须由可信宿主对每次操作授权；模型传入的 `confirmed` 等参数不能作为授权依据。默认 Agent 只读。
 - 凭据、Cookie、Token 不进入事件 payload 或日志；二进制内容只存引用/摘要。
 - 外部网页与教学资料一律视为不可信输入，其中文本不能成为系统/开发者指令。
@@ -133,7 +134,7 @@ docs/adr/                      # 架构决策记录
 | M1 | Event-Sourced Kernel、SQLite Event Store、核心投影、迁移 | 已完成（MVP 范围） |
 | M2 | fixture LMS、Connector、Scheduler、StudyTask/StudyPlan、Planner | 已完成（fixture 闭环 + 用户管理/计划锁定） |
 | M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成：宿主无关工具、DSH 工具绑定、DeepSeek 模型自然语言工具调用均通过 |
-| M4 | 生命周期、故障注入、备份恢复、迁移与性能 | 部分完成（生命周期/故障/备份/Upcaster/重启/调度与消费恢复已测；性能与迁移演练待做） |
+| M4 | 生命周期、故障注入、备份恢复、迁移与性能 | 部分完成（生命周期/故障/备份/Upcaster/重启/调度与消费恢复/提醒补偿已测；性能与迁移演练待做） |
 
 架构测试矩阵进度：
 
@@ -160,11 +161,11 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（67 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`。
+当前验证命令：`npm run typecheck`、`npm test`（70 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`。
 
-用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
+用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 
-P0 修复已验证：启动不覆盖调度配置；消费者重启续跑 checkpoint；Agent 写入需可信宿主授权；同步自动生成默认任务且不重复/不覆盖用户修改；Planner 遵守每周可用时间与临时不可用。
+P0 修复已验证：启动不覆盖调度配置；消费者重启续跑 checkpoint；Agent 写入需可信宿主授权；同步自动生成默认任务且不重复/不覆盖用户修改；Planner 遵守每周可用时间与临时不可用；72h/24h 截止提醒去重且重启补偿。
 
 DSH 实测（本机 0.2.1-rc.3，独立 `academic` profile）：
 

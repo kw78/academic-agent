@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**67 项测试通过**（14 个测试文件）。
+当前基线：**70 项测试通过**（15 个测试文件）。
 
 ## 分层
 
@@ -54,6 +54,7 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 | FIX-03 Agent 可信写入授权 | `agent-tools.test.ts`：模型 `confirmed` 不能绕过；无授权器/拒绝授权不产生事件；可信授权才写入 |
 | FIX-04 同步→默认学习任务 | `management.test.ts`：每个事项一个默认任务；重复同步不重复；用户改时长/完成后不被重置；截止变化进入 Planner |
 | FIX-05 持久化可用时间 | `availability.test.ts`：每周时段、时区换算、临时不可用、粒度；Planner 只在允许时间排程 |
+| FIX-06 周期截止提醒 | `reminders.test.ts`：72h/24h 选择、去重、设置开关/阈值、重启与调度补偿、date-only 时区 |
 
 ## MVP 用户控制
 

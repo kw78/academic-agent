@@ -8,5 +8,6 @@
 | [0004](0004-replan-request-deduplication.md) | 稳定 replanRequestId + pending 合并，避免重复计划 | 已接受 |
 | [0005](0005-dsh-bundle-integration.md) | DSH bundle 集成；本机 0.2.1-rc.3 已验证工具注册与执行 | 已接受（M0 部分） |
 | [0006](0006-mvp-reliability-fixes.md) | P0 可靠性修复：调度、checkpoint、可信写入、默认任务、可用时间 | 已接受 |
+| [0007](0007-periodic-deadline-reminders.md) | 72h/24h 截止提醒、去重与重启补偿 | 已接受 |
 
 新增决策时按 `NNNN-kebab-title.md` 命名，并更新本索引。已接受决策的契约不得静默修改；需要变更时新增 ADR 并说明迁移方案。
