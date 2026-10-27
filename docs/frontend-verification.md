@@ -99,7 +99,7 @@ npm test
 - `tests/unit/ui-security.test.ts`：客户端源码不出现 `credentialRef`/`credential_ref`、`sessionStorage`、`indexedDB`、`fetch(`、`node:`；仅保存 UI tab 偏好；凭据状态在提交前清空；
 - `tests/integration/ui-api.test.ts`：Query API 读取、Command API 任务变更、候选/确认分离、防篡改确认、凭据引用不泄露、未支持 Adapter 拒绝认证、输入校验、作业暂停/恢复、可用时间与提醒设置、通知已读、同步结果。
 
-当前基线：101 项测试通过（20 个测试文件）。
+当前基线：104 项测试通过（21 个测试文件）。
 
 ## 未完成/未验证
 

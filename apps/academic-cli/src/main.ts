@@ -8,6 +8,10 @@ import {
   type StudyPlanView,
 } from '@academic/contracts'
 import type { WeeklySlot } from '@academic/planner-basic'
+import {
+  probeBlackboard,
+  USTC_BLACKBOARD_SOURCE_ID,
+} from '@academic/adapter-ustc-blackboard'
 import { createAcademicApp, type AcademicApp } from './composition.js'
 
 const DATABASE_PATH = process.env.ACADEMIC_DB ?? '.data/academic.db'
@@ -562,6 +566,75 @@ async function runConnectionDeleteCredential(app: AcademicApp, connectionId: str
   printConnection(await app.connections.deleteCredential(connectionId))
 }
 
+async function runBlackboardConnect(app: AcademicApp): Promise<void> {
+  const cookie = await promptHidden('Blackboard 会话 Cookie（输入不回显）: ')
+  if (!cookie) throw new Error('会话 Cookie 不能为空')
+  const existing = app.connections
+    .list()
+    .find((connection) => connection.sourceId === USTC_BLACKBOARD_SOURCE_ID)
+  const connection =
+    existing ??
+    app.connections.create({
+      sourceId: USTC_BLACKBOARD_SOURCE_ID,
+      displayName: 'USTC Blackboard',
+      authKind: 'token',
+      scopes: ['courses', 'assignments'],
+    })
+  if (connection.authKind === 'none' || connection.authKind === 'oauth') {
+    throw new Error('现有 Blackboard 连接不是 token 类型；请先创建新的 token 连接')
+  }
+  const updated = await app.connections.setSecret(
+    connection.connectionId,
+    // The raw Cookie header is wrapped so the vault never stores bare text.
+    JSON.stringify({ cookie }),
+  )
+  printConnection(updated)
+  console.log(
+    `下一步：ACADEMIC_DB=${DATABASE_PATH} npm run demo -- blackboard probe ${connection.connectionId}`,
+  )
+}
+
+async function runBlackboardProbe(
+  app: AcademicApp,
+  connectionId: string | undefined,
+): Promise<void> {
+  if (!connectionId) throw new Error('用法：blackboard probe <connectionId>')
+  const connection = app.connections.get(connectionId)
+  if (!connection) throw new Error(`连接不存在：${connectionId}`)
+  if (connection.sourceId !== USTC_BLACKBOARD_SOURCE_ID) {
+    throw new Error('该连接不是 USTC Blackboard 数据源')
+  }
+  const lease = await app.connections.openCredential(
+    connectionId,
+    USTC_BLACKBOARD_SOURCE_ID,
+  )
+  const secret = await lease.getSecret()
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const outputDir = `.data/bb-probe/${stamp}`
+  const result = await probeBlackboard({ cookie: secret, outputDir })
+
+  if (result.requiresLogin) {
+    await app.connections.markAuthRequired(
+      connectionId,
+      'Blackboard 会话已失效或被重定向到登录页',
+    )
+    console.log('Blackboard 返回登录页：会话 Cookie 无效或已过期，未保存任何课程数据。')
+    console.log(`诊断文件：${outputDir}/portal.html`)
+    return
+  }
+
+  await app.connections.verify(connectionId, async () => ({ ok: true }))
+  console.log(
+    `Blackboard 探针：HTTP ${result.status} · ${result.title ?? '无标题'} · 课程链接 ${result.courseLinks.length}`,
+  )
+  for (const course of result.courseLinks.slice(0, 10)) {
+    console.log(`  - ${course.title}: ${course.url}`)
+  }
+  for (const warning of result.warnings) console.log(`  ! ${warning}`)
+  console.log(`已保存诊断文件：${result.saved.join(', ')}`)
+  console.log('未打印 Cookie；summary.json 也不包含 Cookie。')
+}
+
 async function runConnectionShow(app: AcademicApp, connectionId: string | undefined): Promise<void> {
   if (!connectionId) throw new Error('用法：connection show <connectionId>')
   const connection = app.connections.get(connectionId)
@@ -662,6 +735,8 @@ function printHelp(): void {
   connection disconnect <id> [--delete-credential]
   connection delete-credential <id>
   connection show <id>
+  blackboard connect               在本机隐藏输入 Blackboard 会话 Cookie
+  blackboard probe <connectionId>   用已保存的会话 Cookie 探测 BB 登录与课程页面
   notifications [--read ID | --read-all]
   backup                    生成一致性数据库备份
   help                      显示帮助
@@ -755,6 +830,14 @@ async function main(): Promise<void> {
         else if (subcommand === 'delete-credential') await runConnectionDeleteCredential(app, args[0])
         else if (subcommand === 'show') await runConnectionShow(app, args[0])
         else throw new Error('用法：connection list|add|connect|disconnect|delete-credential|show')
+        break
+      }
+
+      case 'blackboard': {
+        const [subcommand, ...args] = rest
+        if (subcommand === 'connect') await runBlackboardConnect(app)
+        else if (subcommand === 'probe') await runBlackboardProbe(app, args[0])
+        else throw new Error('用法：blackboard connect|probe <connectionId>')
         break
       }
 

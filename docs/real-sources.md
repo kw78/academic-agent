@@ -22,6 +22,29 @@ https://www.bb.ustc.edu.cn/webapps/portal/execute/tabs/tabAction?tab_tab_group_i
 - 返回的是 Blackboard 登录页，未登录状态无法读取课程/作业数据
 - 未提供授权会话、账号或 API 凭据；没有尝试绕过登录、验证码或访问限制
 
+## 手动会话 Cookie 探针（已实现）
+
+USTC Blackboard 没有用户名/密码表单，登录会跳转到 `id.ustc.edu.cn` CAS，并带验证码。不要自动化或绕过该流程。
+
+已实现只读探针，流程是：
+
+1. 用户在自己的浏览器完成 SSO 和验证码登录；
+2. 从浏览器 DevTools → Network → 任一 `www.bb.ustc.edu.cn` 请求 → Request Headers 复制完整 `Cookie` 值；
+3. 在本机终端用隐藏输入保存到 DPAPI，探针只下载页面并输出结构摘要。
+
+```bash
+cd D:/project/classhelper
+ACADEMIC_DB=.data/bb-probe.db \
+  npm run demo -- blackboard connect
+# 在隐藏提示处粘贴 Cookie，输入不回显
+ACADEMIC_DB=.data/bb-probe.db \
+  npm run demo -- blackboard probe <connectionId>
+```
+
+探针输出 HTTP 状态、页面标题、课程链接数和诊断文件路径；`summary.json` 不包含 Cookie。`.data/bb-probe/` 下是本地诊断 HTML，可能含课程/账号相关文本，查看后应删除。不要把 Cookie 粘贴到聊天、Issue、日志或任何远端工具。
+
+探针只验证会话可访问性和课程链接结构，**还不是正式 Adapter**；正式 Adapter 需要基于真实 HTML 实现作业/考试解析、课程注册、去重与失败保留。
+
 ## 可行接入路径
 
 按 Intent/Architecture 的优先级：

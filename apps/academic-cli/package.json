@@ -18,6 +18,7 @@
     "@academic/notifications": "0.1.0",
     "@academic/planner-basic": "0.1.0",
     "@academic/scheduler": "0.1.0",
-    "@academic/storage-sqlite": "0.1.0"
+    "@academic/storage-sqlite": "0.1.0",
+    "@academic/adapter-ustc-blackboard": "0.1.0"
   }
 }
