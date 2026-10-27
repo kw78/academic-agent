@@ -42,6 +42,8 @@ packages/
   academic-notifications/      # 应用内通知 Reaction（可卸载）
 adapters/
   fixture-lms/                 # MVP 受控测试数据源
+apps/
+  academic-cli/                # 组合根、最小 CLI/demo、备份恢复
 migrations/                    # 数据库迁移 SQL（权威位置）
 fixtures/                      # HTML / API / 历史事件样本
 tests/                         # unit / integration / replay / e2e
@@ -90,7 +92,8 @@ docs/adr/                      # 架构决策记录
 - 核心逻辑必须可测试、无外部副作用；时钟、ID 生成器可注入。
 - 测试分层：`unit`、`integration`、`replay`、`e2e`。
 - 必须覆盖架构测试矩阵（Spec §19）T01–T20；当前实现进度见 §9。
-- 每次提交前至少运行：`pnpm typecheck` 与相关测试。不要在测试失败时提交。
+- 当前使用 npm workspaces（`package.json` + 根 `package-lock.json`）；每次提交前至少运行：`npm run typecheck` 与 `npm test`。不要在测试失败时提交。
+- SQLite 使用 Node 内置 `node:sqlite`（实验性，运行时可能出现 ExperimentalWarning）；数据库文件在 `.data/`，已被 git 忽略。
 - 不引入 LLM 到同步、去重、提醒、基础规划的代码路径；T15 用调用计数验证为零。
 - 代码注释只解释“为什么”，不复述代码；不为假想需求增加抽象。
 
@@ -110,50 +113,55 @@ docs/adr/                      # 架构决策记录
 - DSH 绑定必须在 M0 单独验证并锁定版本：`inject`、Service 注册/撤销、Tool 注册/撤销、HMR/重启语义、依赖组件卸载时资源释放。
 - Agent 工具通过 `ctx.tools.register(defineTool(...))` 暴露；工具只调用领域服务，不拼 SQL、不直接追加事件。
 - 普通 Host 插件可访问宿主进程；Cordis disposer 不是安全沙箱。未审查代码不得以可信 Host 插件身份安装。
-- 在 DSH 绑定完成前，不得声称已完成 M0；`academic-agent-tools` 先提供宿主无关的工具描述与执行器。
+- 在 DSH 绑定完成前，不得声称已完成 M0；当前所有业务能力均保持宿主无关。
+- `academic-agent-tools` 目前通过 `AcademicToolHost` 契约注册工具（`InMemoryToolHost` 仅用于本地 CLI/测试）；真正的 DSH `ctx.tools.register(defineTool(...))` 适配器属于 M0 spike，未包含在当前交付中。
+- 组合根 `apps/academic-cli` 负责装配能力、注册后台作业与通知 Reaction；它不包含领域规则，也不绕过 Command API。
 
 ## 9. 里程碑与当前状态
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
-| M0 | DSH 版本锁定与框架可运行性验证 | 未开始（DSH 为 RC，需单独 spike） |
-| M1 | Event-Sourced Kernel、SQLite Event Store、核心投影、迁移 | 进行中 |
-| M2 | fixture LMS、Connector、Scheduler、StudyTask/StudyPlan、Planner | 待开始 |
-| M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 待开始 |
-| M4 | 生命周期、故障注入、备份恢复、迁移与性能 | 待开始 |
+| M0 | DSH 版本锁定与框架可运行性验证 | 未开始（DSH 仍为 RC；当前内核/工具桥保持宿主无关） |
+| M1 | Event-Sourced Kernel、SQLite Event Store、核心投影、迁移 | 已完成（MVP 范围） |
+| M2 | fixture LMS、Connector、Scheduler、StudyTask/StudyPlan、Planner | 已完成（fixture 闭环） |
+| M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成宿主无关工具与零 LLM 自动化；DSH Tool 绑定待 M0 |
+| M4 | 生命周期、故障注入、备份恢复、迁移与性能 | 部分完成（生命周期/故障/备份/Upcaster/重启已测；性能与迁移演练待做） |
 
 架构测试矩阵进度：
 
 | 编号 | 状态 | 覆盖位置 |
 |---|---|---|
-| T01 命令幂等 | 待实现 | — |
-| T02 聚合并发冲突 | 待实现 | — |
-| T03 投影失败回滚 | 待实现 | — |
-| T04 投影重建等价 | 待实现 | — |
-| T05 重复同步 no-op | 待实现 | — |
-| T06 partial 空结果不清空 | 待实现 | — |
-| T07 截止日期变更保留进度 | 待实现 | — |
-| T08 Planner 卸载 | 待实现 | — |
-| T09 Planner 重启不重复 | 待实现 | — |
-| T10 Analytics 全量重放 | 待实现 | — |
-| T11 通知不重发旧提醒 | 待实现 | — |
-| T12 调度崩溃恢复 | 待实现 | — |
-| T13 网络/凭据失败保留旧数据 | 待实现 | — |
-| T14 Agent Bridge 卸载不影响后台 | 待实现 | — |
-| T15 零模型调用 | 待实现 | — |
-| T16 未授权写入被拒 | 待实现 | — |
-| T17 插件停用资源释放 | 待实现 | — |
-| T18 备份恢复 | 待实现 | — |
-| T19 Upcaster 兼容 | 待实现 | — |
-| T20 Session 结束不影响状态 | 待实现 | — |
+| T01 命令幂等 | 已覆盖 | `tests/integration/kernel-storage.test.ts` |
+| T02 聚合并发冲突 | 已覆盖 | `tests/integration/kernel-storage.test.ts` |
+| T03 投影失败回滚 | 已覆盖 | `tests/integration/kernel-storage.test.ts` |
+| T04 投影重建等价 | 已覆盖 | `tests/integration/kernel-storage.test.ts` |
+| T05 重复同步 no-op | 已覆盖 | `tests/integration/connectors.test.ts` |
+| T06 partial 空结果不清空 | 已覆盖 | `tests/integration/connectors.test.ts` |
+| T07 截止日期变更保留进度 | 已覆盖 | `tests/integration/connectors.test.ts`、`kernel.test.ts` |
+| T08 Planner 卸载 | 已覆盖 | `tests/integration/planner.test.ts` |
+| T09 Planner 重启不重复 | 已覆盖 | `tests/integration/planner.test.ts` |
+| T10 Analytics 全量重放 | 已覆盖 | `tests/integration/dispatcher.test.ts` |
+| T11 通知不重发旧提醒 | 已覆盖 | `tests/integration/notifications.test.ts` |
+| T12 调度崩溃恢复 | 已覆盖 | `tests/integration/scheduler.test.ts` |
+| T13 网络/凭据失败保留旧数据 | 已覆盖 | `tests/integration/connectors.test.ts` |
+| T14 Agent Bridge 卸载不影响后台 | 已覆盖（宿主无关桥） | `tests/e2e/app.test.ts` |
+| T15 零模型调用 | 已覆盖（ModelUsageMeter = 0） | `tests/e2e/app.test.ts` |
+| T16 未授权写入被拒 | 已覆盖（权限+确认门禁） | `tests/integration/agent-tools.test.ts` |
+| T17 插件停用资源释放 | 部分覆盖（消费者/定时器/处理器） | dispatcher、scheduler 测试；Cordis HMR 待 M0 |
+| T18 备份恢复 | 已覆盖 | `tests/e2e/app.test.ts` |
+| T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
+| T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
+
+当前验证命令：`npm run typecheck`、`npm test`（57 项）、`ACADEMIC_DB=.data/academic.db npm run demo`。
 
 ## 10. 待确认的环境参数（不阻塞实现）
 
 - 首个真实课程平台、是否需要登录（当前用 fixture）。
-- 目标运行形态：Web / Desktop / CLI（当前先做可测试的库 + 最小 CLI/演示入口）。
+- 目标运行形态：当前选择 CLI + 本地 SQLite；Web/Desktop 待定。
 - 通知仅应用内还是系统通知（当前先应用内）。
-- 课程规模、同步频率、计划粒度（暂定 15 分钟）、资源预算。
-- DSH 锁定版本与部署方式。
+- 课程规模、同步频率（当前 15 分钟）、计划粒度（15 分钟）、资源预算。
+- DSH 锁定版本与部署方式（M0 spike）。
+- 备份保留策略与恢复演练频率。
 
 ## 11. 完成定义（Definition of Done）
 
@@ -161,6 +169,6 @@ docs/adr/                      # 架构决策记录
 
 - 遵循依赖方向与受控变更；无特性直接写 Event Store 或核心投影。
 - 关键不变量有自动化测试；相关架构矩阵项从“待实现”改为“已覆盖”。
-- `pnpm typecheck` 通过；相关测试通过；无敏感信息进入事件/日志。
+- `npm run typecheck` 与 `npm test` 通过；无敏感信息进入事件/日志。
 - 文档（ADR、README、AGENTS 状态表）同步更新。
 - 以小步、可回滚的提交落地。
