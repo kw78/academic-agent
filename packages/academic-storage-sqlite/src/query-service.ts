@@ -128,6 +128,10 @@ export class SqliteQueryService implements QueryApi {
       clauses.push('course_id = ?')
       values.push(params.courseId)
     }
+    if (params.sourceId) {
+      clauses.push('source_id = ?')
+      values.push(params.sourceId)
+    }
     if (params.dueBefore) {
       clauses.push('due_sort <= ?')
       values.push(params.dueBefore)
@@ -171,6 +175,18 @@ export class SqliteQueryService implements QueryApi {
     const row = this.#db
       .prepare('SELECT * FROM academic_items_current WHERE item_id = ?')
       .get(itemId) as SqlRow | undefined
+    return row ? { ...this.#toItem(row), meta: this.#meta() } : undefined
+  }
+
+  async getAcademicItemBySource(
+    sourceId: string,
+    externalItemId: string,
+  ): Promise<(AcademicItemView & { meta: QueryMeta }) | undefined> {
+    const row = this.#db
+      .prepare(
+        'SELECT * FROM academic_items_current WHERE source_id = ? AND external_item_id = ?',
+      )
+      .get(sourceId, externalItemId) as SqlRow | undefined
     return row ? { ...this.#toItem(row), meta: this.#meta() } : undefined
   }
 
@@ -273,13 +289,13 @@ export class SqliteQueryService implements QueryApi {
         ? this.#db
             .prepare(
               `SELECT * FROM sync_runs WHERE source_id = ?
-               ORDER BY started_at DESC, run_id DESC LIMIT ?`,
+               ORDER BY started_at DESC, rowid DESC LIMIT ?`,
             )
             .all(sourceId, bounded)
         : this.#db
             .prepare(
               `SELECT * FROM sync_runs
-               ORDER BY started_at DESC, run_id DESC LIMIT ?`,
+               ORDER BY started_at DESC, rowid DESC LIMIT ?`,
             )
             .all(bounded)
     ) as SqlRow[]

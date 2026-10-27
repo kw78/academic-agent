@@ -51,6 +51,7 @@ export interface AcademicItemView {
 
 export interface ListAcademicItemsParams {
   courseId?: string
+  sourceId?: string
   dueBefore?: string
   status?: 'active' | 'archived' | 'all'
   limit?: number
@@ -111,6 +112,10 @@ export interface QueryApi {
   listAcademicItems(params?: ListAcademicItemsParams): Promise<Page<AcademicItemView>>
   getAcademicItem(
     itemId: string,
+  ): Promise<(AcademicItemView & { meta: QueryMeta }) | undefined>
+  getAcademicItemBySource(
+    sourceId: string,
+    externalItemId: string,
   ): Promise<(AcademicItemView & { meta: QueryMeta }) | undefined>
   listStudyTasks(params?: ListStudyTasksParams): Promise<Page<StudyTaskView>>
   getActiveStudyPlan(range: Range): Promise<(StudyPlanView & { meta: QueryMeta }) | undefined>

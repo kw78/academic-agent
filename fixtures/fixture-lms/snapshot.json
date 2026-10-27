@@ -1,0 +1,41 @@
+{
+  "sourceId": "fixture-lms",
+  "fetchedAt": "2026-10-27T10:00:00.000Z",
+  "completeness": "full",
+  "warnings": [],
+  "courses": [
+    {
+      "externalCourseId": "CS101",
+      "termId": "2026-fall",
+      "code": "CS101",
+      "title": "Introduction to Computer Science"
+    }
+  ],
+  "items": [
+    {
+      "externalItemId": "assignment-1",
+      "courseExternalId": "CS101",
+      "kind": "assignment",
+      "title": "Problem Set 1",
+      "description": "Implement a linked list and write tests.",
+      "due": {
+        "kind": "instant",
+        "utc": "2026-11-01T15:00:00.000Z",
+        "zone": "Asia/Shanghai"
+      },
+      "sourceUrl": "https://lms.example.edu/courses/CS101/assignments/1",
+      "sourceUpdatedAt": "2026-10-26T09:00:00.000Z"
+    },
+    {
+      "externalItemId": "exam-1",
+      "courseExternalId": "CS101",
+      "kind": "exam",
+      "title": "Midterm Exam",
+      "due": {
+        "kind": "local-date",
+        "date": "2026-11-10",
+        "zone": "Asia/Shanghai"
+      }
+    }
+  ]
+}
