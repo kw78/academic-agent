@@ -5,14 +5,14 @@ var __export = (target, all) => {
 };
 
 // packages/academic-dsh-plugin/src/host.ts
-import { homedir } from "node:os";
-import { join as join2 } from "node:path";
+import { homedir as homedir2 } from "node:os";
+import { join as join3 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { Service } from "@deepseek-ai/cordis";
 
 // apps/academic-cli/src/composition.ts
-import { createHash as createHash5, randomUUID as randomUUID3 } from "node:crypto";
-import { mkdirSync as mkdirSync2 } from "node:fs";
+import { createHash as createHash6, randomUUID as randomUUID3 } from "node:crypto";
+import { mkdirSync as mkdirSync3 } from "node:fs";
 import { dirname as dirname2 } from "node:path";
 
 // node_modules/zod/v4/classic/external.js
@@ -20078,6 +20078,17 @@ var AdapterTransientError = class extends Error {
   }
 };
 
+// packages/academic-contracts/src/connections.ts
+var CONNECTION_AUTH_KINDS = ["password", "token", "oauth", "none"];
+var CONNECTION_STATUSES = [
+  "unconfigured",
+  "configured",
+  "connected",
+  "auth-required",
+  "error",
+  "disconnected"
+];
+
 // packages/academic-contracts/src/errors.ts
 var CapabilityUnavailableError = class extends Error {
   code = "CAPABILITY_UNAVAILABLE";
@@ -20133,9 +20144,381 @@ var CapabilityRegistry = class {
   }
 };
 
-// adapters/fixture-lms/src/index.ts
+// packages/academic-connections/src/vault.ts
+import { spawn, spawnSync } from "node:child_process";
 import { createHash as createHash2 } from "node:crypto";
-import { readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+var CredentialVaultUnavailableError = class extends Error {
+  code = "CREDENTIAL_VAULT_UNAVAILABLE";
+  constructor(message = "The operating-system credential vault is unavailable") {
+    super(message);
+    this.name = "CredentialVaultUnavailableError";
+  }
+};
+var UnavailableCredentialVault = class {
+  async set(_reference, _secret) {
+    throw new CredentialVaultUnavailableError();
+  }
+  async get(_reference) {
+    throw new CredentialVaultUnavailableError();
+  }
+  async delete(_reference) {
+    throw new CredentialVaultUnavailableError();
+  }
+};
+var DPAPI_ENTROPY = "academic-agent-v1";
+var ENCRYPT_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Security
+$plain = [Console]::In.ReadToEnd()
+$entropy = [Text.Encoding]::UTF8.GetBytes('${DPAPI_ENTROPY}')
+$bytes = [Text.Encoding]::UTF8.GetBytes($plain)
+$protected = [Security.Cryptography.ProtectedData]::Protect(
+  $bytes,
+  $entropy,
+  [Security.Cryptography.DataProtectionScope]::CurrentUser
+)
+[Console]::Out.Write([Convert]::ToBase64String($protected))
+`;
+var DECRYPT_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Security
+$encoded = [Console]::In.ReadToEnd()
+$entropy = [Text.Encoding]::UTF8.GetBytes('${DPAPI_ENTROPY}')
+$protected = [Convert]::FromBase64String($encoded)
+$bytes = [Security.Cryptography.ProtectedData]::Unprotect(
+  $protected,
+  $entropy,
+  [Security.Cryptography.DataProtectionScope]::CurrentUser
+)
+[Console]::Out.Write([Text.Encoding]::UTF8.GetString($bytes))
+`;
+function defaultVaultDirectory() {
+  const base = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
+  return join(base, "AcademicAgent", "vault");
+}
+function referenceFileName(reference) {
+  return `${createHash2("sha256").update(reference).digest("hex")}.bin`;
+}
+function runPowerShell(script, input2) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", script],
+      { windowsHide: true }
+    );
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill();
+      reject(new Error("PowerShell DPAPI operation timed out"));
+    }, 15e3);
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("error", (error62) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error62);
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (code === 0) resolve(stdout);
+      else {
+        reject(
+          new Error(
+            `PowerShell DPAPI operation failed with exit code ${code}: ${stderr.trim().slice(0, 200)}`
+          )
+        );
+      }
+    });
+    child.stdin.end(input2);
+  });
+}
+var DpapiCredentialVault = class {
+  #directory;
+  constructor(directory = defaultVaultDirectory()) {
+    this.#directory = directory;
+  }
+  static isAvailable() {
+    if (process.platform !== "win32") return false;
+    const result = spawnSync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", "exit 0"],
+      { windowsHide: true, timeout: 5e3 }
+    );
+    return result.status === 0;
+  }
+  async set(reference, secret) {
+    if (process.platform !== "win32") throw new CredentialVaultUnavailableError();
+    const encrypted = (await runPowerShell(ENCRYPT_SCRIPT, secret)).trim();
+    if (!encrypted) throw new Error("DPAPI returned an empty ciphertext");
+    mkdirSync(this.#directory, { recursive: true });
+    writeFileSync(this.#path(reference), encrypted, {
+      encoding: "utf8",
+      mode: 384
+    });
+  }
+  async get(reference) {
+    if (process.platform !== "win32") throw new CredentialVaultUnavailableError();
+    const path = this.#path(reference);
+    if (!existsSync(path)) return void 0;
+    const ciphertext = readFileSync(path, "utf8").trim();
+    if (!ciphertext) return void 0;
+    return runPowerShell(DECRYPT_SCRIPT, ciphertext);
+  }
+  async delete(reference) {
+    if (process.platform !== "win32") throw new CredentialVaultUnavailableError();
+    const path = this.#path(reference);
+    if (!existsSync(path)) return false;
+    rmSync(path, { force: true });
+    return true;
+  }
+  #path(reference) {
+    return join(this.#directory, referenceFileName(reference));
+  }
+};
+function createDefaultCredentialVault(directory) {
+  if (process.platform !== "win32") return new UnavailableCredentialVault();
+  return new DpapiCredentialVault(directory);
+}
+
+// packages/academic-connections/src/connection-manager.ts
+var ConnectionAccessError = class extends Error {
+  code = "CONNECTION_UNAVAILABLE";
+  constructor(message) {
+    super(message);
+    this.name = "ConnectionAccessError";
+  }
+};
+var createConnectionSchema = external_exports.object({
+  sourceId: external_exports.string().min(1),
+  displayName: external_exports.string().min(1),
+  authKind: external_exports.enum(CONNECTION_AUTH_KINDS),
+  accountLabel: external_exports.string().min(1).optional(),
+  scopes: external_exports.array(external_exports.string().min(1)).optional()
+});
+var ConnectionManager = class {
+  #db;
+  #vault;
+  #clock;
+  #ids;
+  constructor(options) {
+    this.#db = options.db;
+    this.#vault = options.vault;
+    this.#clock = options.clock;
+    this.#ids = options.ids;
+  }
+  create(input2) {
+    const parsed = createConnectionSchema.parse(input2);
+    const connectionId = this.#ids.next();
+    const now = this.#clock.now();
+    const credentialRef = parsed.authKind === "none" ? null : `academic-agent/connection/${connectionId}`;
+    const status = parsed.authKind === "none" ? "connected" : "unconfigured";
+    this.#db.prepare(
+      `INSERT INTO source_connections (
+           connection_id, source_id, display_name, account_label, auth_kind,
+           scopes_json, status, credential_ref, has_credential,
+           created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+    ).run(
+      connectionId,
+      parsed.sourceId,
+      parsed.displayName,
+      parsed.accountLabel ?? null,
+      parsed.authKind,
+      JSON.stringify(parsed.scopes ?? []),
+      status,
+      credentialRef,
+      now,
+      now
+    );
+    return this.#view(this.#getRecord(connectionId));
+  }
+  list() {
+    const rows = this.#db.prepare("SELECT * FROM source_connections ORDER BY created_at ASC, rowid ASC").all();
+    return rows.map((row) => this.#view(this.#record(row)));
+  }
+  get(connectionId) {
+    const record2 = this.#getRecord(connectionId);
+    return record2 ? this.#view(record2) : void 0;
+  }
+  async setSecret(connectionId, secret) {
+    const record2 = this.#getRecord(connectionId);
+    if (!record2) throw new ConnectionAccessError("Unknown connection");
+    if (record2.authKind === "none") {
+      throw new ConnectionAccessError("This connection does not use a credential");
+    }
+    if (!record2.credentialRef) {
+      throw new ConnectionAccessError("Connection has no credential reference");
+    }
+    if (!secret) throw new ConnectionAccessError("Credential must not be empty");
+    await this.#vault.set(record2.credentialRef, secret);
+    const now = this.#clock.now();
+    this.#db.prepare(
+      `UPDATE source_connections SET
+           status = 'configured', has_credential = 1, last_error = NULL, updated_at = ?
+         WHERE connection_id = ?`
+    ).run(now, connectionId);
+    return this.#view(this.#getRecord(connectionId));
+  }
+  async verify(connectionId, verifier) {
+    const record2 = this.#getRecord(connectionId);
+    if (!record2) throw new ConnectionAccessError("Unknown connection");
+    const secret = await this.#readSecret(record2);
+    if (secret === void 0) {
+      await this.markAuthRequired(connectionId, "Credential is missing");
+      return this.#view(this.#getRecord(connectionId));
+    }
+    const result = await verifier(secret, this.#view(record2));
+    const now = this.#clock.now();
+    if (result.ok) {
+      this.#db.prepare(
+        `UPDATE source_connections SET
+             status = 'connected', account_label = ?, last_verified_at = ?,
+             last_error = NULL, updated_at = ?
+           WHERE connection_id = ?`
+      ).run(
+        result.accountLabel ?? record2.accountLabel ?? null,
+        now,
+        now,
+        connectionId
+      );
+    } else {
+      this.#db.prepare(
+        `UPDATE source_connections SET
+             status = 'auth-required', last_error = ?, updated_at = ?
+           WHERE connection_id = ?`
+      ).run(result.message ?? "Credential verification failed", now, connectionId);
+    }
+    return this.#view(this.#getRecord(connectionId));
+  }
+  async disconnect(connectionId, options = {}) {
+    const record2 = this.#getRecord(connectionId);
+    if (!record2) throw new ConnectionAccessError("Unknown connection");
+    let hasCredential = record2.hasCredential;
+    if (options.deleteCredential && record2.credentialRef) {
+      await this.#vault.delete(record2.credentialRef);
+      hasCredential = false;
+    }
+    const now = this.#clock.now();
+    this.#db.prepare(
+      `UPDATE source_connections SET
+           status = 'disconnected', has_credential = ?, last_error = NULL, updated_at = ?
+         WHERE connection_id = ?`
+    ).run(Number(hasCredential), now, connectionId);
+    return this.#view(this.#getRecord(connectionId));
+  }
+  async deleteCredential(connectionId) {
+    const record2 = this.#getRecord(connectionId);
+    if (!record2) throw new ConnectionAccessError("Unknown connection");
+    if (record2.credentialRef) await this.#vault.delete(record2.credentialRef);
+    const now = this.#clock.now();
+    this.#db.prepare(
+      `UPDATE source_connections SET
+           status = 'unconfigured', has_credential = 0,
+           last_verified_at = NULL, last_error = NULL, updated_at = ?
+         WHERE connection_id = ?`
+    ).run(now, connectionId);
+    return this.#view(this.#getRecord(connectionId));
+  }
+  async markAuthRequired(connectionId, message) {
+    this.#db.prepare(
+      `UPDATE source_connections SET
+           status = 'auth-required', last_error = ?, updated_at = ?
+         WHERE connection_id = ?`
+    ).run(message, this.#clock.now(), connectionId);
+  }
+  async markSynced(connectionId, syncedAt) {
+    this.#db.prepare(
+      `UPDATE source_connections SET
+           status = 'connected', last_sync_at = ?, last_error = NULL, updated_at = ?
+         WHERE connection_id = ?`
+    ).run(syncedAt, this.#clock.now(), connectionId);
+  }
+  async openCredential(connectionId, sourceId) {
+    const record2 = this.#getRecord(connectionId);
+    if (!record2) throw new ConnectionAccessError("Unknown connection");
+    if (record2.sourceId !== sourceId) {
+      throw new ConnectionAccessError("Connection does not belong to this adapter source");
+    }
+    if (record2.status !== "configured" && record2.status !== "connected") {
+      throw new ConnectionAccessError(`Connection is not usable: ${record2.status}`);
+    }
+    if (!record2.credentialRef || !record2.hasCredential) {
+      throw new ConnectionAccessError("Connection has no stored credential");
+    }
+    return {
+      getSecret: async () => {
+        const current = this.#getRecord(connectionId);
+        if (!current || current.status !== "configured" && current.status !== "connected") {
+          throw new ConnectionAccessError("Connection is no longer usable");
+        }
+        const secret = await this.#readSecret(current);
+        if (secret === void 0) {
+          await this.markAuthRequired(connectionId, "Credential is missing");
+          throw new ConnectionAccessError("Credential is missing");
+        }
+        return secret;
+      }
+    };
+  }
+  async #readSecret(record2) {
+    if (!record2.credentialRef || !record2.hasCredential) return void 0;
+    return this.#vault.get(record2.credentialRef);
+  }
+  #getRecord(connectionId) {
+    const row = this.#db.prepare("SELECT * FROM source_connections WHERE connection_id = ?").get(connectionId);
+    return row ? this.#record(row) : void 0;
+  }
+  #record(row) {
+    const status = String(row.status);
+    if (!CONNECTION_STATUSES.includes(status)) {
+      throw new Error(`Invalid connection status: ${status}`);
+    }
+    return {
+      connectionId: String(row.connection_id),
+      sourceId: String(row.source_id),
+      displayName: String(row.display_name),
+      accountLabel: row.account_label == null ? void 0 : String(row.account_label),
+      authKind: String(row.auth_kind),
+      scopes: JSON.parse(String(row.scopes_json)),
+      status,
+      hasCredential: Boolean(row.has_credential),
+      lastVerifiedAt: row.last_verified_at == null ? void 0 : String(row.last_verified_at),
+      lastSyncAt: row.last_sync_at == null ? void 0 : String(row.last_sync_at),
+      lastError: row.last_error == null ? void 0 : String(row.last_error),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+      credentialRef: row.credential_ref == null ? void 0 : String(row.credential_ref)
+    };
+  }
+  #view(record2) {
+    const { credentialRef: _credentialRef, ...view } = record2;
+    return view;
+  }
+};
+
+// adapters/fixture-lms/src/index.ts
+import { createHash as createHash3 } from "node:crypto";
+import { readFileSync as readFileSync2 } from "node:fs";
 import { fileURLToPath } from "node:url";
 var fixtureCourseSchema = external_exports.object({
   externalCourseId: external_exports.string().min(1),
@@ -20199,7 +20582,7 @@ function contentHashForItem(sourceId, item) {
     sourceUrl: item.sourceUrl ?? null,
     sourceUpdatedAt: item.sourceUpdatedAt ?? null
   });
-  return createHash2("sha256").update(JSON.stringify(content)).digest("hex");
+  return createHash3("sha256").update(JSON.stringify(content)).digest("hex");
 }
 function normalizeFixtureSnapshot(snapshot) {
   const items = snapshot.items.map((item) => ({
@@ -20245,7 +20628,7 @@ var FixtureLmsAdapter = class {
   #loadSnapshot() {
     if (this.#snapshot) return fixtureSnapshotSchema.parse(this.#snapshot);
     const path = this.#fixturePath ?? defaultFixturePath;
-    const raw = JSON.parse(readFileSync(path, "utf8"));
+    const raw = JSON.parse(readFileSync2(path, "utf8"));
     return fixtureSnapshotSchema.parse(raw);
   }
 };
@@ -20552,11 +20935,43 @@ var ConnectorService = class {
     const runId = this.#ids.next();
     const startedAt = this.#clock.now();
     this.#insertRunningRun(runId, adapter.sourceId, startedAt);
+    let credentials;
+    if (options.connection) {
+      try {
+        credentials = await options.connection.credentials.openCredential(
+          options.connection.connectionId,
+          adapter.sourceId
+        );
+      } catch (error62) {
+        const summary = {
+          runId,
+          sourceId: adapter.sourceId,
+          status: "failed",
+          startedAt,
+          finishedAt: this.#clock.now(),
+          itemsSeen: 0,
+          created: 0,
+          updated: 0,
+          warnings: [],
+          errorCode: "CONNECTION_UNAVAILABLE",
+          errorMessage: errorMessage(error62)
+        };
+        this.#finishRun(summary);
+        return summary;
+      }
+    }
     let adapterResult;
     try {
-      adapterResult = await adapter.fetch();
+      adapterResult = await adapter.fetch(credentials ? { credentials } : void 0);
     } catch (error62) {
-      const status = error62 instanceof AdapterAuthError ? "auth-required" : "failed";
+      const authFailure = error62 instanceof AdapterAuthError;
+      if (authFailure && options.connection) {
+        await options.connection.credentials.markAuthRequired(
+          options.connection.connectionId,
+          errorMessage(error62)
+        );
+      }
+      const status = authFailure ? "auth-required" : "failed";
       const summary = {
         runId,
         sourceId: adapter.sourceId,
@@ -20567,7 +20982,7 @@ var ConnectorService = class {
         created: 0,
         updated: 0,
         warnings: [],
-        errorCode: error62 instanceof AdapterAuthError ? "AUTH_REQUIRED" : "TRANSIENT",
+        errorCode: authFailure ? "AUTH_REQUIRED" : "TRANSIENT",
         errorMessage: errorMessage(error62)
       };
       this.#finishRun(summary);
@@ -20641,6 +21056,12 @@ var ConnectorService = class {
         updated,
         warnings
       };
+      if (options.connection) {
+        await options.connection.credentials.markSynced(
+          options.connection.connectionId,
+          this.#clock.now()
+        );
+      }
       this.#finishRun(summary);
       return summary;
     } catch (error62) {
@@ -21252,7 +21673,7 @@ async function registerNotificationReaction(options) {
 }
 
 // packages/academic-notifications/src/deadline-reminders.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 var DEADLINE_REMINDER_CONSUMER_ID = "academic.notifications.deadline.v1";
 function zoneOffsetMs(zone, instant) {
   const truncated = new Date(Math.floor(instant.getTime() / 1e3) * 1e3);
@@ -21313,7 +21734,7 @@ function describeDue2(due) {
   }
 }
 function hash2(value) {
-  return createHash3("sha256").update(value).digest("hex").slice(0, 32);
+  return createHash4("sha256").update(value).digest("hex").slice(0, 32);
 }
 async function scanDeadlineReminders(dependencies) {
   const consumerId = dependencies.consumerId ?? DEADLINE_REMINDER_CONSUMER_ID;
@@ -21824,7 +22245,7 @@ function buildPlan(input2) {
 }
 
 // packages/academic-planner-basic/src/replan-store.ts
-import { createHash as createHash4, randomUUID } from "node:crypto";
+import { createHash as createHash5, randomUUID } from "node:crypto";
 function parseJson(value) {
   return JSON.parse(String(value));
 }
@@ -21851,7 +22272,7 @@ var ReplanStore = class {
            ORDER BY created_at DESC, rowid DESC LIMIT 1`
       ).get(input2.reason, rangeJson);
       if (pending) return this.#toRequest(pending);
-      const replanRequestId = input2.replanRequestId ?? `replan-${createHash4("sha256").update(input2.sourceKey ?? randomUUID()).digest("hex").slice(0, 32)}`;
+      const replanRequestId = input2.replanRequestId ?? `replan-${createHash5("sha256").update(input2.sourceKey ?? randomUUID()).digest("hex").slice(0, 32)}`;
       const now = this.#clock.now();
       this.#db.prepare(
         `INSERT OR IGNORE INTO replan_requests (
@@ -23130,8 +23551,8 @@ function replayAggregate(handler, aggregateId, events) {
 }
 
 // packages/academic-storage-sqlite/src/database.ts
-import { readFileSync as readFileSync2, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync as readFileSync3, readdirSync } from "node:fs";
+import { join as join2 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 var defaultMigrationsDir = fileURLToPath2(
@@ -23164,7 +23585,7 @@ function runMigrations(db, migrationsDir = defaultMigrationsDir) {
   const newlyApplied = [];
   for (const file2 of files) {
     if (applied.has(file2)) continue;
-    const sql = readFileSync2(join(migrationsDir, file2), "utf8");
+    const sql = readFileSync3(join2(migrationsDir, file2), "utf8");
     inTransaction4(db, () => {
       db.exec(sql);
       db.prepare("INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)").run(
@@ -24023,14 +24444,14 @@ function createAcademicStore(options) {
 }
 
 // apps/academic-cli/src/backup.ts
-import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync as existsSync2, mkdirSync as mkdirSync2, rmSync as rmSync2 } from "node:fs";
 import { dirname } from "node:path";
 function backupDatabase(store, targetPath) {
   if (targetPath === ":memory:") throw new Error("Cannot back up to :memory:");
-  if (existsSync(targetPath)) {
+  if (existsSync2(targetPath)) {
     throw new Error(`Backup target already exists: ${targetPath}`);
   }
-  mkdirSync(dirname(targetPath), { recursive: true });
+  mkdirSync2(dirname(targetPath), { recursive: true });
   store.database.prepare("VACUUM INTO ?").run(targetPath);
 }
 
@@ -24058,7 +24479,7 @@ function errorMessage3(error62) {
 }
 async function createAcademicApp(options) {
   if (options.databasePath !== ":memory:") {
-    mkdirSync2(dirname2(options.databasePath), { recursive: true });
+    mkdirSync3(dirname2(options.databasePath), { recursive: true });
   }
   const clock = options.clock ?? systemClock;
   const ids = options.ids ?? { next: () => randomUUID3() };
@@ -24097,6 +24518,12 @@ async function createAcademicApp(options) {
     db: store.database,
     commands: store.commands,
     queries: store.queries,
+    clock,
+    ids
+  });
+  const connections = new ConnectionManager({
+    db: store.database,
+    vault: options.credentialVault ?? createDefaultCredentialVault(options.credentialVaultDir),
     clock,
     ids
   });
@@ -24182,7 +24609,7 @@ async function createAcademicApp(options) {
       async handler(event) {
         if (event.type !== EVENT.AcademicItemDiscovered) return;
         const itemId = event.streamId.slice(event.streamId.indexOf("/") + 1);
-        const taskId = `task-default-${createHash5("sha256").update(itemId).digest("hex").slice(0, 32)}`;
+        const taskId = `task-default-${createHash6("sha256").update(itemId).digest("hex").slice(0, 32)}`;
         const result = await store.commands.execute(
           parseCommand({
             commandId: `default-task:${event.eventId}`,
@@ -24311,6 +24738,7 @@ async function createAcademicApp(options) {
     scheduler,
     connectors,
     adapter,
+    connections,
     replans,
     availability,
     planner,
@@ -24323,6 +24751,13 @@ async function createAcademicApp(options) {
     async syncFixture() {
       await connectors.registerCourse(DEFAULT_FIXTURE_COURSE);
       const summary = await connectors.sync(adapter);
+      await dispatcher.processOnce();
+      return summary;
+    },
+    async syncConnection(connectionId, sourceAdapter) {
+      const summary = await connectors.sync(sourceAdapter, {
+        connection: { connectionId, credentials: connections }
+      });
       await dispatcher.processOnce();
       return summary;
     },
@@ -24534,8 +24969,8 @@ async function createAcademicApp(options) {
 // packages/academic-dsh-plugin/src/host.ts
 var DEFAULT_MIGRATIONS_DIR = fileURLToPath3(new URL("../migrations/", import.meta.url));
 function defaultDatabasePath() {
-  const home = process.env.DSH_HOME ?? join2(homedir(), ".dsh");
-  return join2(home, "academic-agent", "academic.db");
+  const home = process.env.DSH_HOME ?? join3(homedir2(), ".dsh");
+  return join3(home, "academic-agent", "academic.db");
 }
 var AcademicAppService = class extends Service {
   appReady;
