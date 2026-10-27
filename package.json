@@ -22,10 +22,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "demo": "tsx apps/academic-cli/src/main.ts"
+    "demo": "tsx apps/academic-cli/src/main.ts",
+    "build:dsh": "node packages/academic-dsh-plugin/build.mjs"
   },
   "devDependencies": {
     "@types/node": "22.20.5",
+    "esbuild": "^0.28.2",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "5.0.5"

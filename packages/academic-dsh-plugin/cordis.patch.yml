@@ -1,0 +1,5 @@
+# Academic Agent DSH bundle patch: mount the host plugin under its package name.
+# The plugin defaults to $DSH_HOME/academic-agent/academic.db and read-only tools.
+- insert:
+    - id: academic-agent
+      name: '@academic/dsh-plugin'
