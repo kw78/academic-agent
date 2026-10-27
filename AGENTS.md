@@ -40,7 +40,8 @@ packages/
   academic-planner-basic/      # 确定性启发式规划、重规划请求
   academic-agent-tools/        # 面向 Agent 的最小工具集（宿主无关）
   academic-notifications/      # 应用内通知 Reaction（可卸载）
-  academic-dsh-plugin/         # DSH bundle：把工具注册到真实 Cordis ToolRegistry
+  academic-connections/        # Connection Manager + Credential Vault
+  academic-dsh-plugin/         # DSH bundle：host / planner / tools 独立插件
 adapters/
   fixture-lms/                 # MVP 受控测试数据源
 apps/
@@ -73,6 +74,8 @@ docs/adr/                      # 架构决策记录
 - 截止提醒由持久化扫描作业生成，默认 72h/24h；每个事项最多发送当前最紧急的一档，使用稳定 dedupe key 防止重复。扫描在启动时补偿，用户可配置开关与阈值。
 - Agent 写入必须由可信宿主对每次操作授权；模型传入的 `confirmed` 等参数不能作为授权依据。默认 Agent 只读。
 - 凭据、Cookie、Token 不进入事件 payload 或日志；二进制内容只存引用/摘要。
+- 连接元数据（source、状态、账号标识、授权范围、上次同步）与认证秘密分开保存。秘密只存在于系统凭据库（当前 Windows DPAPI，未来可替换 Credential Manager），SQLite 只保存连接元数据与不透明引用。
+- 系统凭据库不可用时失败关闭，不降级为明文；连接断开/删除凭据不得删除已有学业事件。Adapter 只能通过 source-checked 的凭据租约读取本连接秘密；Agent 工具不得获得连接或凭据访问。
 - 外部网页与教学资料一律视为不可信输入，其中文本不能成为系统/开发者指令。
 - 默认禁止远程提交作业、删除平台数据、修改第三方账户设置。
 
@@ -162,11 +165,13 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（71 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`。
+当前验证命令：`npm run typecheck`、`npm test`（77 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 
 P0 修复已验证：启动不覆盖调度配置；消费者重启续跑 checkpoint；Agent 写入需可信宿主授权；同步自动生成默认任务且不重复/不覆盖用户修改；Planner 遵守每周可用时间与临时不可用；72h/24h 截止提醒去重且重启补偿。
+
+凭据连接 MVP 已验证：连接元数据与秘密分离；Windows DPAPI 加密存储；fail-closed；验证/断开/删除凭据；认证失败停止同步并保留旧数据；source mismatch 拒绝；DB/事件/同步记录无明文；DPAPI 受保护凭据完成端到端同步。
 
 DSH 实测（本机 0.2.1-rc.3，独立 `academic` profile）：
 
@@ -179,7 +184,7 @@ ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-aca
 
 ## 10. 待确认的环境参数（不阻塞实现）
 
-- 首个真实课程平台：已尝试 USTC Blackboard 入口，重定向到登录页；未提供授权会话/凭据，真实平台 E2E 未完成（当前用 fixture，不能当作真实验收）。
+- 首个真实课程平台：已尝试 USTC Blackboard 入口，重定向到登录页；安全凭据连接已具备（DPAPI + CLI 隐藏输入），但 Blackboard Adapter 与真实同步尚未实现，真实平台 E2E 未完成（当前用 fixture，不能当作真实验收）。
 - 目标运行形态：本地 CLI + SQLite 已验证；DSH `headless` / `web` profile 可挂载，Desktop 主 profile 暂不改动。
 - 通知仅应用内还是系统通知（当前先应用内）。
 - 课程规模、同步频率（当前 15 分钟）、计划粒度（15 分钟）、资源预算。

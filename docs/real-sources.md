@@ -4,6 +4,8 @@
 
 **R4 尚未完成。** 目前只有 `fixture-lms`，不能作为真实平台验收。
 
+凭据连接 MVP 已具备：可创建连接、隐藏输入凭据、DPAPI 加密保存、验证/断开/删除凭据，并由 Connector 在认证失败时停止同步、保留旧数据。Blackboard Adapter 尚未实现。
+
 ## USTC Blackboard 尝试
 
 目标入口：

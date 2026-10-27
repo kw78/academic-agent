@@ -10,5 +10,6 @@
 | [0006](0006-mvp-reliability-fixes.md) | P0 可靠性修复：调度、checkpoint、可信写入、默认任务、可用时间 | 已接受 |
 | [0007](0007-periodic-deadline-reminders.md) | 72h/24h 截止提醒、去重与重启补偿 | 已接受 |
 | [0008](0008-dsh-plugin-split.md) | DSH host/planner/tools 独立 Cordis 插件与生命周期验证 | 已接受 |
+| [0009](0009-connection-manager-and-credential-vault.md) | Connection Manager、DPAPI Credential Vault 与受控凭据同步 | 已接受 |
 
 新增决策时按 `NNNN-kebab-title.md` 命名，并更新本索引。已接受决策的契约不得静默修改；需要变更时新增 ADR 并说明迁移方案。

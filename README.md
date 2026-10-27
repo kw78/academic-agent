@@ -16,6 +16,7 @@ GitHub: <https://github.com/kw78/academic-agent>
 - 用户控制已补齐：课程/任务管理、计划锁定/解锁/归档、可用时间设置、自动化状态、提醒已读。
 - P0 可靠性修复已完成：调度配置重启不被覆盖、消费者断点续跑、Agent 写入需可信宿主授权、同步自动生成学习任务、Planner 遵守持久化可用时间、72h/24h 截止提醒带去重与重启补偿。
 - DSH bundle 已拆成 `host` / `planner` / `tools` 三个独立 Cordis fiber；真实 Cordis 测试验证了 tools 与 planner 的独立卸载/重载，host 状态保持。
+- 新增凭据连接 MVP：连接元数据与秘密分离，Windows DPAPI 加密存储，CLI 隐藏输入，Agent 工具无法读取凭据；DPAPI 受保护凭据同步已通过 E2E。
 - 常规同步、去重、提醒、基础规划**不调用 LLM**；Agent 只通过受控工具读取事实或提交命令。
 - M1（事件溯源内核）与 M2（fixture 数据源 + 调度 + 规划）已完成；M3 的 Agent 工具已完成。
 - **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，6 个工具注册成功，并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
@@ -56,6 +57,10 @@ npm run demo -- availability block 2026-10-28T18:00:00 2026-10-28T19:00:00 "开�
 npm run demo -- reminders show
 npm run demo -- reminders set --enabled true --thresholds 72,24
 npm run demo -- notifications --read-all
+npm run demo -- connection list
+npm run demo -- connection add secure-lms "Secure LMS" --auth token --scopes courses,assignments
+npm run demo -- connection connect <connectionId>   # 本机隐藏输入，写入系统凭据库
+npm run demo -- connection disconnect <connectionId>
 npm run demo -- backup          # 一致性备份到 .data/backups/
 npm run demo -- help
 ```
@@ -141,6 +146,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 | `packages/academic-planner-basic` | 确定性 Planner、重规划请求去重 |
 | `packages/academic-agent-tools` | 最小 Agent 工具集与宿主无关注册契约 |
 | `packages/academic-notifications` | 应用内通知 Reaction、72h/24h 截止扫描 |
+| `packages/academic-connections` | 连接元数据、Credential Vault、授权状态 |
 | `packages/academic-dsh-plugin` | DSH bundle：host / planner / tools 独立 Cordis 插件 |
 | `adapters/fixture-lms` | 受控测试数据源 |
 | `apps/academic-cli` | 组合根、CLI 演示、备份恢复 |
@@ -149,7 +155,10 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 
 ## 数据与安全
 
-- 凭据、Cookie、Token 不进入领域事件或日志（当前 fixture 无凭据）。
+- 凭据、Cookie、Token 不进入领域事件、核心投影、普通配置或日志。
+- 连接元数据与秘密分离：秘密存入 Windows DPAPI（当前 MVP，可替换为 Credential Manager）；系统凭据库不可用时失败关闭，不降级明文。
+- Agent 工具不接收 Connection Manager 或凭据；Adapter 只能通过 source-checked 租约读取本连接秘密。
+- 断开连接默认保留已同步数据；删除凭据不删除领域事件；认证失败停止同步并提示重新认证。
 - 外部网页/教学资料视为不可信输入；Agent 输出不会未经校验成为权威事实。
 - 备份使用 SQLite `VACUUM INTO` 生成一致性快照；恢复后校验事件位置并可按需重建投影。
 - 默认不自动提交作业、不删除平台数据、不修改第三方账户。
@@ -157,7 +166,8 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 ## 已知限制与后续
 
 - **M0 剩余**：profile 级 HMR、真实 Session 生命周期、DSH 用户审批适配器（当前 Agent 写入保持拒绝）。
-- **R4 未完成**：USTC Blackboard 入口需要登录，未提供授权会话/凭据；当前只有 Fixture LMS，不能当作真实平台验收。详见 [docs/real-sources.md](docs/real-sources.md)。
+- **R4 未完成**：USTC Blackboard 入口需要登录；安全凭据连接已具备，但 Blackboard Adapter 尚未实现。提供 ICS/API 或授权会话后可继续，详见 [docs/real-sources.md](docs/real-sources.md)。
+- 系统凭据库当前为 Windows DPAPI；Credential Manager/其他 OS vault 是后续可替换实现。
 - **P1 未做**：给定 URL 自动探索、生成/安装 Adapter 插件（Intent 明确不属于 MVP）。
 - **M4**：性能基准（Spec §20）、迁移演练、故障注入扩展。
 - 真实 LMS 尚未接入；当前使用 `fixture-lms`。
@@ -172,4 +182,4 @@ npm test
 npm run build:dsh
 ```
 
-共 71 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复与真实 Cordis 插件生命周期；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry 自测。详见 [docs/testing.md](docs/testing.md)。
+共 77 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期与凭据连接；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry 自测。详见 [docs/testing.md](docs/testing.md)。

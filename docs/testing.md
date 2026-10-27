@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**71 项测试通过**（16 个测试文件）。
+当前基线：**77 项测试通过**（17 个测试文件）。
 
 ## 分层
 
@@ -55,6 +55,18 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 | FIX-04 同步→默认学习任务 | `management.test.ts`：每个事项一个默认任务；重复同步不重复；用户改时长/完成后不被重置；截止变化进入 Planner |
 | FIX-05 持久化可用时间 | `availability.test.ts`：每周时段、时区换算、临时不可用、粒度；Planner 只在允许时间排程 |
 | FIX-06 周期截止提醒 | `reminders.test.ts`：72h/24h 选择、去重、设置开关/阈值、重启与调度补偿、date-only 时区 |
+
+## CRED-01/02 凭据连接
+
+`tests/integration/connections.test.ts` 覆盖：
+
+- 连接元数据与秘密分离，DB/事件/同步记录不出现明文
+- DPAPI 受保护凭据完成 Adapter 同步；密文文件不含明文
+- 连接重启后元数据与状态恢复
+- 验证成功/失败、断开、删除凭据；删除不删领域事件
+- 认证失败标记 `auth-required` 并保留旧数据
+- source mismatch 拒绝凭据访问
+- 系统凭据库不可用时 fail-closed
 
 ## MVP 用户控制
 
@@ -133,6 +145,7 @@ ACADEMIC_DB=.data/demo.db npm run demo
 
 - DSH 已完成 bundle 加载、真实 ToolRegistry 工具注册与执行；Cordis HMR、真实 Session 生命周期、审批 UI 与带模型工具调用尚未验证。
 - 性能基线（Spec §20，例如 1000 事项 P95、10000 事件重建）尚未做正式基准。
-- USTC Blackboard 入口重定向到登录页，未提供授权会话/凭据；真实 LMS 登录、验证码、限流与凭据保管未覆盖，当前只有 fixture 适配器。详见 [real-sources.md](real-sources.md)。
+- USTC Blackboard 入口重定向到登录页；安全凭据连接已实现，但 Blackboard Adapter 尚未实现，真实 LMS 登录、验证码与限流未覆盖，当前只有 fixture 适配器。详见 [real-sources.md](real-sources.md)。
+- 系统凭据库当前为 Windows DPAPI；Credential Manager 与其他 OS vault 作为后续 CredentialVault 实现。
 - `node:sqlite` 为实验性 API；若升级 Node 需要重新验证。
 - 备份恢复测试覆盖单文件 SQLite；未做跨版本迁移演练。

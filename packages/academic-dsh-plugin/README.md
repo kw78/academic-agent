@@ -88,6 +88,10 @@ dsh academic --json "hello"
 - `startBackground`：启动通知/调度/重规划后台能力；headless 退出时定时器不会阻止进程结束。
 - `selfTest`：加载时通过 DSH ToolRegistry 执行一次只读查询和一次被拒绝的写入。
 
+## 凭据与连接
+
+Host 创建 Connection Manager 与系统凭据库适配器（当前 Windows DPAPI）。Agent 工具**不接收** Connection Manager 或任何凭据访问能力；连接通过 CLI 管理，秘密不进入 Agent Prompt、工具结果、SQLite 事件或日志。连接元数据与凭据存储共用 profile 数据库/用户目录，可用 `ACADEMIC_AGENT_DB` 指向同一数据库。
+
 ## 截止提醒
 
 应用启动后会运行 `academic.reminders.scan`（每 15 分钟），默认在截止前 72h/24h 生成应用内提醒。提醒使用持久化 dedupe key，重复扫描或重启不会重发；阈值与开关保存于同一数据库，可通过 CLI 的 `reminders` 命令修改（设置 `ACADEMIC_AGENT_DB` 指向 profile 使用的数据库）。
