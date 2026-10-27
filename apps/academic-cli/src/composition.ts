@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import {
@@ -29,6 +29,7 @@ import {
   InMemoryToolHost,
   registerAcademicTools,
   type AcademicToolRegistration,
+  type AgentWriteAuthorizer,
 } from '@academic/agent-tools'
 import { ConnectorService } from '@academic/connectors'
 import { EventDispatcher } from '@academic/event-dispatcher'
@@ -37,6 +38,7 @@ import {
   registerNotificationReaction,
 } from '@academic/notifications'
 import {
+  AvailabilityStore,
   PlannerService,
   ReplanStore,
   registerPlannerCapability,
@@ -75,8 +77,11 @@ export interface AcademicAppOptions {
   clock?: Clock
   ids?: IdGenerator
   agentWrites?: boolean
+  /** Trusted host approval for each concrete agent write. */
+  authorizeAgentWrite?: AgentWriteAuthorizer
   notificationWindowDays?: number
   replanHorizonDays?: number
+  defaultTaskEstimates?: Partial<Record<'assignment' | 'exam' | 'quiz', number>>
 }
 
 export interface AutomationStatus {
@@ -124,6 +129,7 @@ export interface AcademicApp {
   connectors: ConnectorService
   adapter: FixtureLmsAdapter
   replans: ReplanStore
+  availability: AvailabilityStore
   planner: PlannerService
   notifications: NotificationStore
   agentBridge: {
@@ -203,11 +209,13 @@ export async function createAcademicApp(
   })
   const scheduler = new Scheduler({ db: store.database, clock, ids })
   const replans = new ReplanStore(store.database, clock)
+  const availability = new AvailabilityStore(store.database, clock)
   const planner = new PlannerService({
     registry,
     queries: store.queries,
     commands: store.commands,
     replans,
+    availability,
     clock,
     ids,
   })
@@ -247,6 +255,9 @@ export async function createAcademicApp(
     registry,
     ids,
     allowWrites: options.agentWrites ?? false,
+    ...(options.authorizeAgentWrite
+      ? { authorizeWrite: options.authorizeAgentWrite }
+      : {}),
   })
 
   const disposables: DisposableRegistration[] = [
@@ -296,6 +307,57 @@ export async function createAcademicApp(
       },
     })
     disposables.push(replanTrigger)
+
+    const estimates = {
+      assignment: 60,
+      exam: 120,
+      quiz: 30,
+      ...options.defaultTaskEstimates,
+    }
+    const defaultTasks = await dispatcher.register({
+      consumerId: 'academic.tasks.default-item-task.v1',
+      eventTypes: [EVENT.AcademicItemDiscovered],
+      projectionVersion: 1,
+      // Beginning replays existing items exactly once; deterministic task ids
+      // make the backfill and every redelivery idempotent.
+      startPosition: 'beginning',
+      async handler(event) {
+        if (event.type !== EVENT.AcademicItemDiscovered) return
+        const itemId = event.streamId.slice(event.streamId.indexOf('/') + 1)
+        const taskId = `task-default-${createHash('sha256')
+          .update(itemId)
+          .digest('hex')
+          .slice(0, 32)}`
+        const result = await store.commands.execute(
+          parseCommand({
+            commandId: `default-task:${event.eventId}`,
+            type: COMMAND.StudyTaskCreate,
+            aggregateId: taskId,
+            expectedVersion: 0,
+            actor: { kind: 'automation', id: 'academic-task-automation' },
+            correlationId: event.eventId,
+            payload: {
+              title:
+                event.payload.kind === 'exam'
+                  ? `复习：${event.payload.title}`
+                  : `完成：${event.payload.title}`,
+              itemId,
+              estimateMinutes: estimates[event.payload.kind],
+              priority: event.payload.kind === 'exam' ? 2 : 1,
+              // The task intentionally has no dueAt: the planner reads the
+              // linked item's current due each run, so deadline changes flow
+              // through without rewriting user-editable tasks.
+            },
+          }),
+        )
+        if (!result.ok && result.code !== 'CONFLICT') {
+          throw new Error(
+            `Could not create default task for ${itemId}: ${result.message}`,
+          )
+        }
+      },
+    })
+    disposables.push(defaultTasks)
   } catch (error) {
     scheduler.close()
     dispatcher.close()
@@ -305,13 +367,13 @@ export async function createAcademicApp(
 
   const unsubscribe = store.onAppended(() => dispatcher.wake())
 
-  scheduler.schedule({
+  scheduler.ensureJob({
     jobId: 'fixture-lms-sync',
     kind: 'connector.sync.fixture-lms',
     nextRunAt: addMilliseconds(clock.now(), 15 * 60_000),
     policy: { intervalMs: 15 * 60_000, timeoutMs: 120_000 },
   })
-  scheduler.schedule({
+  scheduler.ensureJob({
     jobId: 'planner.process-replans',
     kind: 'planner.process-replans',
     nextRunAt: addMilliseconds(clock.now(), 60_000),
@@ -404,6 +466,7 @@ export async function createAcademicApp(
     connectors,
     adapter,
     replans,
+    availability,
     planner,
     notifications,
     agentBridge: { host, registration: agentRegistration },

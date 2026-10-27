@@ -6,6 +6,7 @@ import {
   type Range,
 } from '@academic/contracts'
 import {
+  AvailabilityStore,
   PlannerService,
   registerPlannerCapability,
   ReplanStore,
@@ -31,16 +32,36 @@ const range: Range = {
 
 const planNow = '2026-11-01T08:00:00.000Z'
 
+function allDayAvailability(
+  db: ReturnType<typeof createTestStore>['database'],
+  clock: ReturnType<typeof fixedClock>,
+) {
+  const availability = new AvailabilityStore(db, clock)
+  availability.update({
+    timeZone: 'UTC',
+    weeklySlots: Array.from({ length: 7 }, (_, weekday) => ({
+      weekday,
+      start: '00:00',
+      end: '23:59',
+    })),
+    temporaryBlocks: [],
+    granularityMinutes: 15,
+  })
+  return availability
+}
+
 function setup() {
   const clock = fixedClock()
   const store = createTestStore({ clock })
   const registry = new CapabilityRegistry()
   const replans = new ReplanStore(store.database, clock)
+  const availability = allDayAvailability(store.database, clock)
   const planner = new PlannerService({
     registry,
     queries: store.queries,
     commands: store.commands,
     replans,
+    availability,
     clock,
     ids: sequentialIds('planner'),
   })
@@ -84,6 +105,7 @@ describe('T08 planner capability lifecycle', () => {
       queries: store.queries,
       commands: store.commands,
       replans,
+      availability: allDayAvailability(store.database, clock),
       clock,
       ids: sequentialIds('planner'),
     })

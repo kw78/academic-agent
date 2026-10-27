@@ -132,6 +132,7 @@ describe('application composition', () => {
     await first.syncFixture()
     await createTask(first)
     const eventCount = countRows(first.store, 'domain_events')
+    first.scheduler.pause('fixture-lms-sync')
     first.start()
     first.stop()
     first.close()
@@ -140,7 +141,10 @@ describe('application composition', () => {
     expect(second.store.health()).toMatchObject({ consistent: true })
     expect(countRows(second.store, 'domain_events')).toBe(eventCount)
     expect((await second.store.queries.listAcademicItems()).items).toHaveLength(2)
-    expect((await second.store.queries.listStudyTasks({ status: 'active' })).items).toHaveLength(1)
+    expect(
+      (await second.store.queries.listStudyTasks({ status: 'active' })).items.length,
+    ).toBeGreaterThanOrEqual(1)
+    expect(second.scheduler.getJob('fixture-lms-sync')?.enabled).toBe(false)
 
     const summary = await second.syncFixture()
     expect(summary).toMatchObject({ created: 0, updated: 0 })

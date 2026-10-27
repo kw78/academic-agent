@@ -45,6 +45,15 @@ function zonedTimeToUtc(
   return new Date(guess - secondOffset).toISOString()
 }
 
+export function zonedDateTimeToUtc(
+  date: string,
+  hour: number,
+  minute: number,
+  zone: string,
+): string {
+  return zonedTimeToUtc(date, hour, minute, 0, 0, zone)
+}
+
 /**
  * Date-only deadlines are interpreted as the end of that day in the source
  * zone for planning purposes. The stored due value itself is never rewritten.

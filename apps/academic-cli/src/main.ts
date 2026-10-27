@@ -1,11 +1,10 @@
 import {
-  COMMAND,
   newId,
-  parseCommand,
   type CommandResult,
   type Range,
   type StudyPlanView,
 } from '@academic/contracts'
+import type { WeeklySlot } from '@academic/planner-basic'
 import { createAcademicApp, type AcademicApp } from './composition.js'
 
 const DATABASE_PATH = process.env.ACADEMIC_DB ?? '.data/academic.db'
@@ -74,49 +73,6 @@ function ensureOk(result: CommandResult, successText: string): void {
   console.log(`${successText}（版本 ${result.version}）`)
 }
 
-async function ensureStudyTasks(app: AcademicApp): Promise<void> {
-  const existing = await app.store.queries.listStudyTasks({ status: 'active' })
-  if (existing.items.length > 0) return
-
-  const items = await app.store.queries.listAcademicItems({ limit: 5, status: 'active' })
-  const now = Date.parse(app.clock.now())
-  const seeds: Array<{
-    title: string
-    itemId?: string
-    estimateMinutes: number
-    dueAt: string
-    priority: number
-  }> = items.items.slice(0, 2).map((item, index) => ({
-    title: `复习：${item.title}`,
-    itemId: item.itemId,
-    estimateMinutes: index === 0 ? 90 : 60,
-    dueAt: new Date(now + (index + 2) * 86_400_000).toISOString(),
-    priority: index === 0 ? 2 : 1,
-  }))
-  if (seeds.length === 0) {
-    seeds.push({
-      title: '整理本周课程笔记',
-      estimateMinutes: 60,
-      dueAt: new Date(now + 3 * 86_400_000).toISOString(),
-      priority: 1,
-    })
-  }
-
-  for (const seed of seeds) {
-    const command = parseCommand({
-      commandId: newId(),
-      type: COMMAND.StudyTaskCreate,
-      aggregateId: newId(),
-      expectedVersion: 0,
-      actor: { kind: 'user', id: 'cli-user' },
-      correlationId: newId(),
-      payload: seed,
-    })
-    const result = await app.store.commands.execute(command)
-    if (!result.ok) throw new Error(result.message)
-  }
-}
-
 async function printOverview(app: AcademicApp): Promise<void> {
   const items = await app.store.queries.listAcademicItems({ limit: 10 })
   console.log(`\n待办事项（${items.items.length}）：`)
@@ -182,7 +138,7 @@ async function printPlan(app: AcademicApp, plan: StudyPlanView): Promise<void> {
 }
 
 async function runPlanPreview(app: AcademicApp, accept: boolean): Promise<void> {
-  await ensureStudyTasks(app)
+  await app.dispatcher.processOnce()
   const range = nextDays(7)
   const suggestion = await app.previewPlan(range)
   const activeTasks = await app.store.queries.listStudyTasks({ status: 'active' })
@@ -329,6 +285,88 @@ async function runTaskTransition(
   }
 }
 
+const WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+function parseWeeklySlots(value: string): WeeklySlot[] {
+  if (value.trim() === '') return []
+  return value.split(',').map((entry) => {
+    const match = /^([0-6]):(\d{2}:\d{2})-(\d{2}:\d{2})$/.exec(entry.trim())
+    if (!match) {
+      throw new Error(
+        `无效时段 "${entry}"，格式应为 1:19:00-22:00（0=周日）`,
+      )
+    }
+    return {
+      weekday: Number(match[1]),
+      start: match[2]!,
+      end: match[3]!,
+    }
+  })
+}
+
+async function runAvailabilityShow(app: AcademicApp): Promise<void> {
+  const settings = app.availability.get()
+  console.log(`时区：${settings.timeZone} · 粒度：${settings.granularityMinutes} 分钟`)
+  console.log('每周可用时段：')
+  for (const slot of settings.weeklySlots) {
+    console.log(
+      `  ${WEEKDAY_NAMES[slot.weekday]} ${slot.start}-${slot.end}`,
+    )
+  }
+  if (settings.weeklySlots.length === 0) console.log('  （未设置，Planner 不会安排学习）')
+  console.log(`临时不可用（${settings.temporaryBlocks.length}）：`)
+  for (const block of settings.temporaryBlocks) {
+    console.log(
+      `  [${block.id}] ${formatTime(block.start)} - ${formatTime(block.end)} ${block.title ?? ''}`,
+    )
+  }
+}
+
+async function runAvailabilitySet(app: AcademicApp, args: string[]): Promise<void> {
+  const { flags } = parseArgs(args)
+  const timeZone = stringFlag(flags, 'tz')
+  const slotsValue = stringFlag(flags, 'slots')
+  const granularityValue = stringFlag(flags, 'granularity')
+  if (timeZone === undefined && slotsValue === undefined && granularityValue === undefined) {
+    throw new Error(
+      '用法：availability set [--tz Asia/Shanghai] [--granularity 15] [--slots "1:19:00-22:00,..."]',
+    )
+  }
+  const settings = app.availability.update({
+    ...(timeZone ? { timeZone } : {}),
+    ...(slotsValue !== undefined
+      ? { weeklySlots: parseWeeklySlots(slotsValue) }
+      : {}),
+    ...(granularityValue !== undefined
+      ? { granularityMinutes: numberFlag(flags, 'granularity') }
+      : {}),
+  })
+  console.log(`可用时间已更新：${settings.timeZone}，粒度 ${settings.granularityMinutes} 分钟`)
+  await runAvailabilityShow(app)
+}
+
+async function runAvailabilityBlock(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional } = parseArgs(args)
+  const [start, end, ...titleParts] = positional
+  if (!start || !end) {
+    throw new Error('用法：availability block <start ISO> <end ISO> [标题]')
+  }
+  const block = {
+    id: `block-${newId()}`,
+    start,
+    end,
+    ...(titleParts.length > 0 ? { title: titleParts.join(' ') } : {}),
+  }
+  app.availability.addTemporaryBlock(block)
+  console.log(`已添加临时不可用时段：${block.id}`)
+}
+
+async function runAvailabilityUnblock(app: AcademicApp, blockId: string | undefined): Promise<void> {
+  if (!blockId) throw new Error('用法：availability unblock <blockId>')
+  app.availability.removeTemporaryBlock(blockId)
+  console.log(`已移除临时不可用时段：${blockId}`)
+}
+
 async function runStatus(app: AcademicApp): Promise<void> {
   const status = await app.getAutomationStatus()
   console.log('\n运行状态：')
@@ -402,6 +440,10 @@ function printHelp(): void {
   plan lock <start ISO> <end ISO> [title]   锁定时间段并排队重规划
   plan unlock <lockId>      解除锁定
   plan archive              归档当前计划
+  availability show         查看时区、每周可用时段、临时不可用
+  availability set [--tz ZONE] [--granularity 15] [--slots "1:19:00-22:00,..."]
+  availability block <start ISO> <end ISO> [title]
+  availability unblock <blockId>
   notifications [--read ID | --read-all]
   backup                    生成一致性数据库备份
   help                      显示帮助
@@ -423,6 +465,7 @@ async function main(): Promise<void> {
     agentWrites: true,
   })
   try {
+    await app.dispatcher.processOnce()
     switch (command) {
       case 'sync':
         await runSync(app)
@@ -466,6 +509,16 @@ async function main(): Promise<void> {
         break
       }
 
+      case 'availability': {
+        const [subcommand, ...args] = rest
+        if (subcommand === 'show') await runAvailabilityShow(app)
+        else if (subcommand === 'set') await runAvailabilitySet(app, args)
+        else if (subcommand === 'block') await runAvailabilityBlock(app, args)
+        else if (subcommand === 'unblock') await runAvailabilityUnblock(app, args[0])
+        else throw new Error('用法：availability show|set|block|unblock')
+        break
+      }
+
       case 'notifications':
         await runNotifications(app, rest)
         break
@@ -480,7 +533,7 @@ async function main(): Promise<void> {
 
       case 'demo': {
         await runSync(app)
-        await ensureStudyTasks(app)
+        await app.dispatcher.processOnce()
         await app.processPendingReplans(10)
         const range = nextDays(7)
         const existing = await app.store.queries.getActiveStudyPlan(range)

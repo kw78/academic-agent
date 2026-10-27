@@ -14,6 +14,10 @@ import {
   type TimeBlock,
 } from '@academic/contracts'
 import {
+  AvailabilityStore,
+  computeUnavailableBlocks,
+} from './availability.js'
+import {
   buildPlan,
   PLANNER_ID,
   PLANNER_VERSION,
@@ -28,6 +32,7 @@ export interface PlannerServiceDependencies {
   queries: QueryApi
   commands: CommandApi
   replans: ReplanStore
+  availability: AvailabilityStore
   clock: Clock
   ids: IdGenerator
 }
@@ -86,6 +91,7 @@ export class PlannerService {
   readonly #queries: QueryApi
   readonly #commands: CommandApi
   readonly #replans: ReplanStore
+  readonly #availability: AvailabilityStore
   readonly #clock: Clock
   readonly #ids: IdGenerator
 
@@ -94,6 +100,7 @@ export class PlannerService {
     this.#queries = dependencies.queries
     this.#commands = dependencies.commands
     this.#replans = dependencies.replans
+    this.#availability = dependencies.availability
     this.#clock = dependencies.clock
     this.#ids = dependencies.ids
   }
@@ -202,6 +209,8 @@ export class PlannerService {
   async #buildInput(options: PreviewOptions): Promise<PlannerInput> {
     const tasks = await this.#queries.listStudyTasks({ status: 'active' })
     const activePlan = await this.#queries.getActiveStudyPlan(options.range)
+    const availability = this.#availability.get()
+    const unavailable = computeUnavailableBlocks(options.range, availability)
     const itemDue = new Map<string, Due | undefined>()
     const plannerTasks: PlannerTaskInput[] = []
 
@@ -231,16 +240,21 @@ export class PlannerService {
     for (const lock of options.lockedBlocks ?? []) lockedById.set(lock.id, lock)
     const lockedBlocks = [...lockedById.values()]
 
+    const busyBlocks = [
+      ...unavailable,
+      ...availability.temporaryBlocks,
+      ...(options.busyBlocks ?? []),
+    ]
+
     return {
       range: options.range,
       tasks: plannerTasks,
-      ...(options.busyBlocks ? { busyBlocks: options.busyBlocks } : {}),
+      ...(busyBlocks.length > 0 ? { busyBlocks } : {}),
       ...(lockedBlocks.length > 0 ? { lockedBlocks } : {}),
       now: options.now ?? this.#clock.now(),
-      ...(options.granularityMinutes
-        ? { granularityMinutes: options.granularityMinutes }
-        : {}),
-      ...(options.timeZone ? { timeZone: options.timeZone } : {}),
+      granularityMinutes:
+        options.granularityMinutes ?? availability.granularityMinutes,
+      timeZone: options.timeZone ?? availability.timeZone,
     }
   }
 

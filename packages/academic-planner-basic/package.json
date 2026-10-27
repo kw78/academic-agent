@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@academic/contracts": "0.1.0"
+    "@academic/contracts": "0.1.0",
+    "zod": "4.6.7"
   }
 }
