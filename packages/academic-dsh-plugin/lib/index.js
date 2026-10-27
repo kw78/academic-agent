@@ -20375,7 +20375,7 @@ function registerAcademicTools(host, dependencies) {
 }
 
 // apps/academic-cli/src/composition.ts
-import { createHash as createHash4, randomUUID as randomUUID3 } from "node:crypto";
+import { createHash as createHash5, randomUUID as randomUUID3 } from "node:crypto";
 import { mkdirSync as mkdirSync2 } from "node:fs";
 import { dirname as dirname2 } from "node:path";
 
@@ -21015,6 +21015,20 @@ function inTransaction(db, operation) {
 }
 
 // packages/academic-notifications/src/notification-store.ts
+var notificationSettingsSchema = external_exports.object({
+  enabled: external_exports.boolean(),
+  thresholdsHours: external_exports.array(external_exports.number().int().min(1).max(720)).refine(
+    (values) => new Set(values).size === values.length,
+    "thresholdsHours must not contain duplicates"
+  )
+});
+function defaultNotificationSettings(clock) {
+  return {
+    enabled: true,
+    thresholdsHours: [72, 24],
+    updatedAt: clock.now()
+  };
+}
 var NotificationStore = class {
   #db;
   #clock;
@@ -21043,8 +21057,8 @@ var NotificationStore = class {
     const result = this.#db.prepare(
       `INSERT OR IGNORE INTO notifications (
            notification_id, consumer_id, event_id, activation_position,
-           notification_type, title, body, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+           notification_type, title, body, created_at, dedupe_key
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       input2.notificationId,
       input2.consumerId,
@@ -21053,9 +21067,55 @@ var NotificationStore = class {
       input2.type,
       input2.title,
       input2.body,
-      this.#clock.now()
+      this.#clock.now(),
+      input2.dedupeKey ?? null
     );
     return Number(result.changes) > 0;
+  }
+  getSettings() {
+    const row = this.#db.prepare("SELECT * FROM notification_settings WHERE settings_id = ?").get("default");
+    if (row) {
+      return {
+        enabled: Boolean(row.enabled),
+        thresholdsHours: JSON.parse(
+          String(row.thresholds_hours_json)
+        ),
+        updatedAt: String(row.updated_at)
+      };
+    }
+    const settings = defaultNotificationSettings(this.#clock);
+    this.#writeSettings(settings);
+    return settings;
+  }
+  updateSettings(update) {
+    const current = this.getSettings();
+    const parsed = notificationSettingsSchema.parse({
+      enabled: update.enabled ?? current.enabled,
+      thresholdsHours: update.thresholdsHours ?? current.thresholdsHours
+    });
+    const settings = {
+      ...parsed,
+      updatedAt: this.#clock.now()
+    };
+    this.#writeSettings(settings);
+    return settings;
+  }
+  #writeSettings(settings) {
+    inTransaction(this.#db, () => {
+      this.#db.prepare(
+        `INSERT INTO notification_settings (
+             settings_id, enabled, thresholds_hours_json, updated_at
+           ) VALUES ('default', ?, ?, ?)
+           ON CONFLICT(settings_id) DO UPDATE SET
+             enabled = excluded.enabled,
+             thresholds_hours_json = excluded.thresholds_hours_json,
+             updated_at = excluded.updated_at`
+      ).run(
+        Number(settings.enabled),
+        JSON.stringify(settings.thresholdsHours),
+        settings.updatedAt
+      );
+    });
   }
   list(limit = 20, options = {}) {
     const bounded = Math.min(100, Math.max(1, Math.trunc(limit)));
@@ -21067,6 +21127,15 @@ var NotificationStore = class {
                ORDER BY created_at DESC, rowid DESC LIMIT ?`
     ).all(bounded);
     return rows.map((row) => this.#toView(row));
+  }
+  /** Thresholds already delivered for an item, used to avoid retroactive reminders. */
+  reminderThresholds(itemId, consumerId) {
+    const rows = this.#db.prepare(
+      `SELECT dedupe_key FROM notifications
+         WHERE consumer_id = ? AND notification_type = 'deadline-reminder'
+           AND dedupe_key LIKE ?`
+    ).all(consumerId, `deadline:${itemId}:%`);
+    return rows.map((row) => Number(String(row.dedupe_key).split(":")[2])).filter((value) => Number.isFinite(value));
   }
   unreadCount() {
     const row = this.#db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE read_at IS NULL").get();
@@ -21182,8 +21251,126 @@ async function registerNotificationReaction(options) {
   });
 }
 
-// packages/academic-planner-basic/src/time.ts
+// packages/academic-notifications/src/deadline-reminders.ts
+import { createHash as createHash3 } from "node:crypto";
+var DEADLINE_REMINDER_CONSUMER_ID = "academic.notifications.deadline.v1";
 function zoneOffsetMs(zone, instant) {
+  const truncated = new Date(Math.floor(instant.getTime() / 1e3) * 1e3);
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: zone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+  const parts = {};
+  for (const part of formatter.formatToParts(truncated)) {
+    if (part.type !== "literal") parts[part.type] = part.value;
+  }
+  const hour = parts.hour === "24" ? "00" : parts.hour;
+  return Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(hour),
+    Number(parts.minute),
+    Number(parts.second)
+  ) - truncated.getTime();
+}
+function endOfDayUtc(date5, zone) {
+  const [year, month, day] = date5.split("-").map(Number);
+  const guess = Date.UTC(year, month - 1, day, 23, 59, 59, 999);
+  const firstOffset = zoneOffsetMs(zone, new Date(guess));
+  const adjusted = guess - firstOffset;
+  const secondOffset = zoneOffsetMs(zone, new Date(adjusted));
+  return new Date(guess - secondOffset).toISOString();
+}
+function deadlineMs(due) {
+  switch (due.kind) {
+    case "instant":
+      return Date.parse(due.utc);
+    case "local-date":
+      try {
+        return Date.parse(endOfDayUtc(due.date, due.zone ?? "UTC"));
+      } catch {
+        return void 0;
+      }
+    case "unknown":
+      return void 0;
+  }
+}
+function describeDue2(due) {
+  switch (due.kind) {
+    case "instant":
+      return `${due.utc} (${due.zone})`;
+    case "local-date":
+      return `${due.date}\uFF08\u4EC5\u65E5\u671F${due.zone ? `\uFF0C${due.zone}` : ""}\uFF09`;
+    case "unknown":
+      return "\u672A\u77E5";
+  }
+}
+function hash2(value) {
+  return createHash3("sha256").update(value).digest("hex").slice(0, 32);
+}
+async function scanDeadlineReminders(dependencies) {
+  const consumerId = dependencies.consumerId ?? DEADLINE_REMINDER_CONSUMER_ID;
+  const settings = dependencies.notifications.getSettings();
+  if (!settings.enabled || settings.thresholdsHours.length === 0) {
+    return { scanned: 0, sent: 0 };
+  }
+  const thresholds = [...settings.thresholdsHours].sort((a, b) => a - b);
+  const now = Date.parse(dependencies.clock.now());
+  let scanned = 0;
+  let sent = 0;
+  let cursor;
+  do {
+    const page = await dependencies.queries.listAcademicItems({
+      status: "active",
+      limit: 200,
+      ...cursor ? { cursor } : {}
+    });
+    for (const item of page.items) {
+      scanned += 1;
+      if (item.progress.status === "done") continue;
+      const dueAt = deadlineMs(item.due);
+      if (dueAt === void 0 || dueAt <= now) continue;
+      const remainingHours = (dueAt - now) / 36e5;
+      const eligible = thresholds.filter(
+        (threshold2) => remainingHours <= threshold2
+      );
+      if (eligible.length === 0) continue;
+      const threshold = Math.min(...eligible);
+      const alreadySent = dependencies.notifications.reminderThresholds(
+        item.itemId,
+        consumerId
+      );
+      if (alreadySent.some((value) => value <= threshold)) continue;
+      const dedupeKey = `deadline:${item.itemId}:${threshold}:${hash2(
+        JSON.stringify(item.due)
+      )}`;
+      const id = `reminder:${hash2(dedupeKey)}`;
+      const inserted = dependencies.notifications.insert({
+        notificationId: id,
+        consumerId,
+        eventId: id,
+        activationPosition: 0,
+        type: "deadline-reminder",
+        title: `\u622A\u6B62\u63D0\u9192\uFF1A${item.title}`,
+        body: `\u8FD8\u6709\u7EA6 ${threshold} \u5C0F\u65F6\uFF08\u622A\u6B62 ${describeDue2(item.due)}\uFF09\u3002`,
+        dedupeKey
+      });
+      if (inserted) sent += 1;
+    }
+    cursor = page.nextCursor;
+  } while (cursor);
+  return { scanned, sent };
+}
+
+// packages/academic-planner-basic/src/time.ts
+function zoneOffsetMs2(zone, instant) {
   const truncated = new Date(Math.floor(instant.getTime() / 1e3) * 1e3);
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: zone,
@@ -21214,15 +21401,15 @@ function zonedTimeToUtc(date5, hour, minute, second, millisecond, zone) {
   const [year, month, day] = date5.split("-").map(Number);
   if (!year || !month || !day) throw new Error(`Invalid local date: ${date5}`);
   const guess = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
-  const firstOffset = zoneOffsetMs(zone, new Date(guess));
+  const firstOffset = zoneOffsetMs2(zone, new Date(guess));
   const adjusted = guess - firstOffset;
-  const secondOffset = zoneOffsetMs(zone, new Date(adjusted));
+  const secondOffset = zoneOffsetMs2(zone, new Date(adjusted));
   return new Date(guess - secondOffset).toISOString();
 }
 function zonedDateTimeToUtc(date5, hour, minute, zone) {
   return zonedTimeToUtc(date5, hour, minute, 0, 0, zone);
 }
-function endOfDayUtc(date5, zone) {
+function endOfDayUtc2(date5, zone) {
   return zonedTimeToUtc(date5, 23, 59, 59, 999, zone);
 }
 function deadlineForDue(due, fallbackZone = "UTC") {
@@ -21233,7 +21420,7 @@ function deadlineForDue(due, fallbackZone = "UTC") {
       const zone = due.zone ?? fallbackZone;
       try {
         return {
-          deadline: endOfDayUtc(due.date, zone),
+          deadline: endOfDayUtc2(due.date, zone),
           warning: `date-only deadline ${due.date} planned against end of day in ${zone}`
         };
       } catch {
@@ -21637,7 +21824,7 @@ function buildPlan(input2) {
 }
 
 // packages/academic-planner-basic/src/replan-store.ts
-import { createHash as createHash3, randomUUID } from "node:crypto";
+import { createHash as createHash4, randomUUID } from "node:crypto";
 function parseJson(value) {
   return JSON.parse(String(value));
 }
@@ -21664,7 +21851,7 @@ var ReplanStore = class {
            ORDER BY created_at DESC, rowid DESC LIMIT 1`
       ).get(input2.reason, rangeJson);
       if (pending) return this.#toRequest(pending);
-      const replanRequestId = input2.replanRequestId ?? `replan-${createHash3("sha256").update(input2.sourceKey ?? randomUUID()).digest("hex").slice(0, 32)}`;
+      const replanRequestId = input2.replanRequestId ?? `replan-${createHash4("sha256").update(input2.sourceKey ?? randomUUID()).digest("hex").slice(0, 32)}`;
       const now = this.#clock.now();
       this.#db.prepare(
         `INSERT OR IGNORE INTO replan_requests (
@@ -23900,6 +24087,11 @@ async function createAcademicApp(options) {
     ids
   });
   const notifications = new NotificationStore(store.database, clock);
+  const scanReminders = () => scanDeadlineReminders({
+    queries: store.queries,
+    notifications,
+    clock
+  });
   const adapter = new FixtureLmsAdapter();
   const connectors = new ConnectorService({
     db: store.database,
@@ -23990,7 +24182,7 @@ async function createAcademicApp(options) {
       async handler(event) {
         if (event.type !== EVENT.AcademicItemDiscovered) return;
         const itemId = event.streamId.slice(event.streamId.indexOf("/") + 1);
-        const taskId = `task-default-${createHash4("sha256").update(itemId).digest("hex").slice(0, 32)}`;
+        const taskId = `task-default-${createHash5("sha256").update(itemId).digest("hex").slice(0, 32)}`;
         const result = await store.commands.execute(
           parseCommand({
             commandId: `default-task:${event.eventId}`,
@@ -24037,6 +24229,12 @@ async function createAcademicApp(options) {
     nextRunAt: addMilliseconds2(clock.now(), 6e4),
     policy: { intervalMs: 6e4, timeoutMs: 6e4 }
   });
+  scheduler.ensureJob({
+    jobId: "academic.reminders.scan",
+    kind: "notifications.scan-deadlines",
+    nextRunAt: clock.now(),
+    policy: { intervalMs: 15 * 6e4, timeoutMs: 3e4 }
+  });
   scheduler.registerHandler("connector.sync.fixture-lms", async () => {
     await connectors.registerCourse(DEFAULT_FIXTURE_COURSE);
     const summary = await connectors.sync(adapter);
@@ -24062,6 +24260,9 @@ async function createAcademicApp(options) {
     }
     return { summary: { processed } };
   });
+  scheduler.registerHandler("notifications.scan-deadlines", async () => ({
+    summary: await scanReminders()
+  }));
   const userActor = { kind: "user", id: "local-user" };
   async function taskCommand(taskId, type, payload) {
     const task = await store.queries.getStudyTask(taskId);
@@ -24285,6 +24486,9 @@ async function createAcademicApp(options) {
     markAllNotificationsRead() {
       return notifications.markAllRead();
     },
+    scanDeadlineReminders() {
+      return scanReminders();
+    },
     async getAutomationStatus() {
       const runs = await store.queries.listSyncRuns(void 0, 5);
       return {
@@ -24304,6 +24508,7 @@ async function createAcademicApp(options) {
       started = true;
       dispatcher.start();
       scheduler.start();
+      void scanReminders().catch(() => void 0);
     },
     stop() {
       scheduler.stop();

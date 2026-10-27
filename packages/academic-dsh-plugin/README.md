@@ -74,6 +74,10 @@ dsh academic --json "hello"
 - `startBackground`：启动通知/调度/重规划后台能力；headless 退出时定时器不会阻止进程结束。
 - `selfTest`：加载时通过 DSH ToolRegistry 执行一次只读查询和一次被拒绝的写入。
 
+## 截止提醒
+
+应用启动后会运行 `academic.reminders.scan`（每 15 分钟），默认在截止前 72h/24h 生成应用内提醒。提醒使用持久化 dedupe key，重复扫描或重启不会重发；阈值与开关保存于同一数据库，可通过 CLI 的 `reminders` 命令修改（设置 `ACADEMIC_AGENT_DB` 指向 profile 使用的数据库）。
+
 ## 默认学习任务与可用时间
 
 - 新同步的学业事项会通过事件消费者自动创建一个默认 `StudyTask`（assignment 60 分钟、exam 120 分钟、quiz 30 分钟）；重复同步不会重复创建，用户修改的时长与完成状态不会被覆盖。
