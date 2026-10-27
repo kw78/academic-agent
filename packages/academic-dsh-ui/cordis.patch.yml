@@ -1,0 +1,6 @@
+# Academic Agent UI bundle. The host entry exposes the authenticated Remote API;
+# the client half registers the sidebar entry and the Academic main panel.
+# Unloading it stops neither the Academic Host nor background automation.
+- insert:
+    - id: academic-ui
+      name: '@academic/dsh-ui'
