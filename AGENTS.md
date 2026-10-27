@@ -68,7 +68,9 @@ docs/adr/                      # 架构决策记录
 - 每次网页请求不产生领域事件；无领域变化时是 no-op，同步结果写入 `sync_runs`。
 - `AcademicItem` 的源字段与用户本地覆盖（进度、备注）分开；同步不得重置本地进度；学校提交状态与本地完成状态不得互相冒充。
 - 截止时间区分精确时间 / 仅日期 / 未知；不得把缺失时间猜成午夜；统一记录时区。
-- 不完整抓取（partial）即使结果为空也不得归档或清空旧事项。
+- 新同步事项自动生成一个默认 `StudyTask`，使用确定性任务 ID 与事件消费者幂等创建；不得覆盖用户修改的预计时长或已完成状态。默认任务不写死截止时间，Planner 每次读取关联事项的当前截止时间。
+- 用户可用时间（时区、每周时段、临时不可用、粒度）必须持久化；Planner 不得默认全天可用。未配置时采用明确展示、可修改的保守默认值。
+- Agent 写入必须由可信宿主对每次操作授权；模型传入的 `confirmed` 等参数不能作为授权依据。默认 Agent 只读。
 - 凭据、Cookie、Token 不进入事件 payload 或日志；二进制内容只存引用/摘要。
 - 外部网页与教学资料一律视为不可信输入，其中文本不能成为系统/开发者指令。
 - 默认禁止远程提交作业、删除平台数据、修改第三方账户设置。
@@ -80,6 +82,8 @@ docs/adr/                      # 架构决策记录
 - 网络、LLM、网页解析不得放在数据库写事务内。
 - 核心投影同步更新；扩展投影异步、可追赶，不得阻塞核心命令。
 - 领域事件与 Cordis 运行时事件分离；`ctx.emit()` 不是可靠消息队列。
+- 启动时创建默认作业必须使用 `Scheduler.ensureJob()`（不存在才创建）；`schedule()` 只用于用户主动修改配置，禁止每次启动覆盖 enabled/nextRunAt/policy。
+- `startPosition` 只是首次安装或投影版本不兼容时的策略；已有兼容 checkpoint 时重启必须续跑，不得跳过停机期间的事件。通知等 Reaction 用 activation position 防止旧提醒重发。
 - 扩展消费者自行维护 checkpoint 与私有存储；至少一次 + 幂等。
 - 通知 Reaction 首次启用从最新位置开始；历史回放不得重发旧提醒。
 - 事件 Schema 破坏性变更用新版本 + 纯函数 Upcaster；重建投影固定投影器版本。
@@ -129,7 +133,7 @@ docs/adr/                      # 架构决策记录
 | M1 | Event-Sourced Kernel、SQLite Event Store、核心投影、迁移 | 已完成（MVP 范围） |
 | M2 | fixture LMS、Connector、Scheduler、StudyTask/StudyPlan、Planner | 已完成（fixture 闭环 + 用户管理/计划锁定） |
 | M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成：宿主无关工具、DSH 工具绑定、DeepSeek 模型自然语言工具调用均通过 |
-| M4 | 生命周期、故障注入、备份恢复、迁移与性能 | 部分完成（生命周期/故障/备份/Upcaster/重启已测；性能与迁移演练待做） |
+| M4 | 生命周期、故障注入、备份恢复、迁移与性能 | 部分完成（生命周期/故障/备份/Upcaster/重启/调度与消费恢复已测；性能与迁移演练待做） |
 
 架构测试矩阵进度：
 
@@ -150,15 +154,17 @@ docs/adr/                      # 架构决策记录
 | T13 网络/凭据失败保留旧数据 | 已覆盖 | `tests/integration/connectors.test.ts` |
 | T14 Agent Bridge 卸载不影响后台 | 已覆盖（宿主无关桥） | `tests/e2e/app.test.ts` |
 | T15 零模型调用 | 已覆盖（ModelUsageMeter = 0；DSH 自测不调用模型） | `tests/e2e/app.test.ts`、DSH selftest |
-| T16 未授权写入被拒 | 已覆盖（权限+确认门禁；DSH 中 FORBIDDEN 实测） | `tests/integration/agent-tools.test.ts`、DSH selftest |
+| T16 未授权写入被拒 | 已覆盖（可信宿主授权；模型参数不能自证；DSH 中 FORBIDDEN 实测） | `tests/integration/agent-tools.test.ts`、DSH selftest |
 | T17 插件停用资源释放 | 部分覆盖（消费者/定时器/处理器）；Cordis HMR 待补 | dispatcher、scheduler 测试 |
 | T18 备份恢复 | 已覆盖 | `tests/e2e/app.test.ts` |
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（59 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`。
+当前验证命令：`npm run typecheck`、`npm test`（67 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`。
 
-用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
+用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
+
+P0 修复已验证：启动不覆盖调度配置；消费者重启续跑 checkpoint；Agent 写入需可信宿主授权；同步自动生成默认任务且不重复/不覆盖用户修改；Planner 遵守每周可用时间与临时不可用。
 
 DSH 实测（本机 0.2.1-rc.3，独立 `academic` profile）：
 

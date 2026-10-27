@@ -13,7 +13,8 @@ GitHub: <https://github.com/kw78/academic-agent>
 ## 当前状态
 
 - 单用户、本地、CLI + SQLite 的 MVP 闭环已完成。
-- 用户控制已补齐：课程/任务管理、计划锁定/解锁/归档、自动化状态、提醒已读。
+- 用户控制已补齐：课程/任务管理、计划锁定/解锁/归档、可用时间设置、自动化状态、提醒已读。
+- P0 可靠性修复已完成：调度配置重启不被覆盖、消费者断点续跑、Agent 写入需可信宿主授权、同步自动生成学习任务、Planner 遵守持久化可用时间。
 - 常规同步、去重、提醒、基础规划**不调用 LLM**；Agent 只通过受控工具读取事实或提交命令。
 - M1（事件溯源内核）与 M2（fixture 数据源 + 调度 + 规划）已完成；M3 的 Agent 工具已完成。
 - **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，6 个工具注册成功，并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
@@ -48,6 +49,9 @@ npm run demo -- plan show       # 查看当前计划与锁定时段
 npm run demo -- plan --accept   # 生成未来 7 天计划并确认
 npm run demo -- plan lock 2026-10-27T16:30:00 2026-10-27T18:00:00 "锁定"
 npm run demo -- plan unlock <lockId>
+npm run demo -- availability show
+npm run demo -- availability set --tz Asia/Shanghai --granularity 15 --slots "1:19:00-22:00,2:19:00-22:00"
+npm run demo -- availability block 2026-10-28T18:00:00 2026-10-28T19:00:00 "开会"
 npm run demo -- notifications --read-all
 npm run demo -- backup          # 一致性备份到 .data/backups/
 npm run demo -- help
@@ -90,7 +94,9 @@ printf '%s' 'Call the tool academic_list_courses with empty arguments {}. Then r
     dsh academic --json -
 ```
 
-实测模型调用了 `academic_list_courses`，工具返回真实 SQLite 数据，最终回答包含课程 `Introduction to Computer Science` 与内部 id。若 DSH 未配置 key，headless 会报 `MISSING_CREDENTIAL`。插件默认只读，写入需在 profile 配置 `agentWrites: true`，且工具参数必须 `confirmed: true`。详见 [插件 README](packages/academic-dsh-plugin/README.md)。
+实测模型调用了 `academic_list_courses`，工具返回真实 SQLite 数据，最终回答包含课程 `Introduction to Computer Science` 与内部 id。若 DSH 未配置 key，headless 会报 `MISSING_CREDENTIAL`。
+
+**Agent 写入默认关闭，且模型参数不能自证授权。** 当前 bundle 没有接入可信的 DSH 用户审批适配器，因此 `academic_update_task` 与 `academic_request_replan` 会被拒绝（`FORBIDDEN` / `CONFIRM_REQUIRED`）；CLI 用户直接操作仍走正常 Command API。详见 [插件 README](packages/academic-dsh-plugin/README.md)。
 
 ## 架构要点
 
@@ -115,7 +121,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 - **通知安全**：Reaction 从启用时的最新事件位置开始，历史回放不会重发旧提醒。
 - **可恢复调度**：持久作业、租约、退避重试、崩溃后 `interrupted` 恢复。
 - **确定性规划**：过滤完成项 → 按截止/优先级排序 → 扣除固定与锁定时段 → 顺序填充 → 明确报告冲突。
-- **Agent 最小权限**：默认只读；任务写入需要显式授权 + 用户确认；无任意 SQL、无直接事件写入。
+- **Agent 最小权限**：默认只读；写入必须由可信宿主对每次操作授权，模型传入的 `confirmed` 不再作为授权依据；无任意 SQL、无直接事件写入。
 
 ## 包结构
 
@@ -145,7 +151,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 
 ## 已知限制与后续
 
-- **M0 剩余**：Cordis HMR、真实 Session 生命周期、带模型的自然语言工具调用与审批 UI。
+- **M0 剩余**：Cordis HMR、真实 Session 生命周期、DSH 用户审批适配器（当前 Agent 写入保持拒绝）。
 - **P1 未做**：给定 URL 自动探索、生成/安装 Adapter 插件（Intent 明确不属于 MVP）。
 - **M4**：性能基准（Spec §20）、迁移演练、故障注入扩展。
 - 真实 LMS 尚未接入；当前使用 `fixture-lms`。
@@ -160,4 +166,4 @@ npm test
 npm run build:dsh
 ```
 
-共 59 项自动化测试，覆盖 T01–T20 的宿主无关部分与用户控制闭环；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry 自测。详见 [docs/testing.md](docs/testing.md)。
+共 67 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环与 P0 可靠性修复；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry 自测。详见 [docs/testing.md](docs/testing.md)。

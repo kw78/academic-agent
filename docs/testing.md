@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**59 项测试通过**（13 个测试文件）。
+当前基线：**67 项测试通过**（14 个测试文件）。
 
 ## 分层
 
@@ -39,11 +39,21 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 | T13 | 网络/凭据失败保留旧数据并记录运行状态 | `connectors.test.ts` | 通过 |
 | T14 | Agent Bridge 卸载后后台同步/调度照常 | `tests/e2e/app.test.ts` | 通过（宿主无关桥） |
 | T15 | 常规同步与 Planner 模型调用为 0 | `tests/e2e/app.test.ts` | 通过（`ModelUsageMeter`） |
-| T16 | 未授权/未确认的 Agent 写入被拒 | `agent-tools.test.ts` | 通过（权限 + 确认门禁） |
+| T16 | 未授权/未确认的 Agent 写入被拒 | `agent-tools.test.ts` | 通过（可信宿主授权；模型参数不能自证） |
 | T17 | 停用后无残留监听器/定时器/处理器 | Dispatcher、Scheduler 测试 | 部分（Cordis HMR 待 M0） |
 | T18 | 数据库备份恢复；事件完整、投影可校验/重建 | `tests/e2e/app.test.ts` | 通过 |
 | T19 | 旧 Schema 事件经 Upcaster 正确投影 | `tests/replay/upcaster.test.ts` | 通过 |
 | T20 | 会话/应用结束不影响持久化状态与后台任务 | `tests/e2e/app.test.ts` | 通过（应用重启；DSH Session 待 M0） |
+
+## P0 修复覆盖
+
+| 修复 | 测试 |
+|---|---|
+| FIX-01 重启不覆盖调度配置 | `scheduler.test.ts`：暂停/周期在 `ensureJob` 后保持不变；应用重启后同步任务仍暂停 |
+| FIX-02 消费者断点续跑 | `dispatcher.test.ts`：停机期间事件在重启后处理；投影版本变化才重置 checkpoint |
+| FIX-03 Agent 可信写入授权 | `agent-tools.test.ts`：模型 `confirmed` 不能绕过；无授权器/拒绝授权不产生事件；可信授权才写入 |
+| FIX-04 同步→默认学习任务 | `management.test.ts`：每个事项一个默认任务；重复同步不重复；用户改时长/完成后不被重置；截止变化进入 Planner |
+| FIX-05 持久化可用时间 | `availability.test.ts`：每周时段、时区换算、临时不可用、粒度；Planner 只在允许时间排程 |
 
 ## MVP 用户控制
 
