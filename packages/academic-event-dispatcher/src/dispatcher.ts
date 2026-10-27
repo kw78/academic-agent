@@ -82,17 +82,16 @@ export class EventDispatcher {
     const maxPosition = await this.#events.maxPosition()
     const start = this.#resolveStart(consumer.startPosition, maxPosition)
 
-    const mustInitialize =
-      !existing ||
-      existing.projectionVersion !== consumer.projectionVersion ||
-      consumer.startPosition === 'latest'
+    // startPosition is an installation/version policy, not a restart policy.
+    // An existing compatible checkpoint always resumes so events committed while
+    // the consumer was stopped are not skipped.
+    const versionMismatch =
+      existing !== undefined &&
+      existing.projectionVersion !== consumer.projectionVersion
+    const mustInitialize = !existing || versionMismatch
 
     if (mustInitialize) {
-      if (
-        existing &&
-        existing.projectionVersion !== consumer.projectionVersion &&
-        consumer.onReset
-      ) {
+      if (versionMismatch && consumer.onReset) {
         await consumer.onReset()
       }
       await this.#checkpoints.setCheckpoint({

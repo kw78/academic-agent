@@ -195,6 +195,106 @@ describe('T11 activation from the latest position', () => {
   })
 })
 
+describe('FIX-02 checkpoint resume', () => {
+  it('processes events committed while a latest-position consumer was stopped', async () => {
+    const clock = fixedClock()
+    const store = createTestStore({ clock })
+    const dispatcher = new EventDispatcher({
+      events: store.events,
+      checkpoints: store.checkpoints,
+      clock,
+    })
+    cleanup.push(() => {
+      dispatcher.close()
+      store.close()
+    })
+    await seedThreeEvents(store)
+
+    const seen: string[] = []
+    let handle = await dispatcher.register({
+      consumerId: 'probe.resume.v1',
+      eventTypes: '*',
+      projectionVersion: 1,
+      startPosition: 'latest',
+      handler(event) {
+        seen.push(event.eventId)
+      },
+    })
+    expect(await dispatcher.processOnce()).toMatchObject({ processed: 0 })
+    expect(await store.checkpoints.getCheckpoint('probe.resume.v1')).toMatchObject({
+      lastPosition: 3,
+    })
+
+    await execute(
+      store,
+      makeCommand(COMMAND.CourseRename, 'course-1', { title: 'CS resumed' }),
+    )
+    handle.dispose()
+
+    handle = await dispatcher.register({
+      consumerId: 'probe.resume.v1',
+      eventTypes: '*',
+      projectionVersion: 1,
+      startPosition: 'latest',
+      handler(event) {
+        seen.push(event.eventId)
+      },
+    })
+    cleanup.push(() => handle.dispose())
+
+    expect(await dispatcher.processOnce()).toMatchObject({ processed: 1 })
+    expect(seen).toHaveLength(1)
+    expect(await store.checkpoints.getCheckpoint('probe.resume.v1')).toMatchObject({
+      lastPosition: 4,
+    })
+    teardown()
+  })
+
+  it('resets a consumer only when its projection version changes', async () => {
+    const clock = fixedClock()
+    const store = createTestStore({ clock })
+    const dispatcher = new EventDispatcher({
+      events: store.events,
+      checkpoints: store.checkpoints,
+      clock,
+    })
+    cleanup.push(() => {
+      dispatcher.close()
+      store.close()
+    })
+    await seedThreeEvents(store)
+
+    const handle = await dispatcher.register({
+      consumerId: 'probe.version.v1',
+      eventTypes: '*',
+      projectionVersion: 1,
+      startPosition: 'beginning',
+      handler() {},
+    })
+    await dispatcher.processOnce()
+    handle.dispose()
+
+    let reset = false
+    const upgraded = await dispatcher.register({
+      consumerId: 'probe.version.v1',
+      eventTypes: '*',
+      projectionVersion: 2,
+      startPosition: 'latest',
+      handler() {},
+      onReset() {
+        reset = true
+      },
+    })
+    cleanup.push(() => upgraded.dispose())
+    expect(reset).toBe(true)
+    expect(await store.checkpoints.getCheckpoint('probe.version.v1')).toMatchObject({
+      lastPosition: 3,
+      projectionVersion: 2,
+    })
+    teardown()
+  })
+})
+
 describe('consumer failure isolation and backoff', () => {
   it('keeps the checkpoint and retries after a bounded delay', async () => {
     const clock = fixedClock()
