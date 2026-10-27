@@ -15,6 +15,7 @@ GitHub: <https://github.com/kw78/academic-agent>
 - 单用户、本地、CLI + SQLite 的 MVP 闭环已完成。
 - 用户控制已补齐：课程/任务管理、计划锁定/解锁/归档、可用时间设置、自动化状态、提醒已读。
 - P0 可靠性修复已完成：调度配置重启不被覆盖、消费者断点续跑、Agent 写入需可信宿主授权、同步自动生成学习任务、Planner 遵守持久化可用时间、72h/24h 截止提醒带去重与重启补偿。
+- DSH bundle 已拆成 `host` / `planner` / `tools` 三个独立 Cordis fiber；真实 Cordis 测试验证了 tools 与 planner 的独立卸载/重载，host 状态保持。
 - 常规同步、去重、提醒、基础规划**不调用 LLM**；Agent 只通过受控工具读取事实或提交命令。
 - M1（事件溯源内核）与 M2（fixture 数据源 + 调度 + 规划）已完成；M3 的 Agent 工具已完成。
 - **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，6 个工具注册成功，并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
@@ -63,7 +64,7 @@ npm run demo -- help
 
 ## 挂到本机 DSH
 
-已在本机 **DSH 0.2.1-rc.3** 验证。使用独立 `academic` profile，不修改现有 `desktop` / `web` profile。
+已在本机 **DSH 0.2.1-rc.3** 验证。使用独立 `academic` profile，不修改现有 `desktop` / `web` profile。bundle patch 写入 `academic-host`、`academic-planner`、`academic-tools` 三行；禁用 tools 行即可卸载 Agent Bridge，禁用 planner 行则保留已有计划但停止新规划。
 
 ```bash
 npm run build:dsh
@@ -83,8 +84,10 @@ dsh academic --json "hello"
 本机实测输出：
 
 ```text
-[academic-agent] loaded ... tools=6 registered=true courses=1 items=1
-[academic-agent] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
+[academic-host] loaded db=D:/project/classhelper/.data/dsh-academic.db
+[academic-planner] capability registered
+[academic-tools] tools=6 registered=true
+[academic-tools] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 
 DeepSeek 模型实测（使用 DSH 已保存的 `DEEPSEEK_API_KEY`，不打印密钥）：
@@ -138,7 +141,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 | `packages/academic-planner-basic` | 确定性 Planner、重规划请求去重 |
 | `packages/academic-agent-tools` | 最小 Agent 工具集与宿主无关注册契约 |
 | `packages/academic-notifications` | 应用内通知 Reaction、72h/24h 截止扫描 |
-| `packages/academic-dsh-plugin` | DSH bundle：真实 Cordis ToolRegistry 工具注册 |
+| `packages/academic-dsh-plugin` | DSH bundle：host / planner / tools 独立 Cordis 插件 |
 | `adapters/fixture-lms` | 受控测试数据源 |
 | `apps/academic-cli` | 组合根、CLI 演示、备份恢复 |
 
@@ -153,7 +156,8 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 
 ## 已知限制与后续
 
-- **M0 剩余**：Cordis HMR、真实 Session 生命周期、DSH 用户审批适配器（当前 Agent 写入保持拒绝）。
+- **M0 剩余**：profile 级 HMR、真实 Session 生命周期、DSH 用户审批适配器（当前 Agent 写入保持拒绝）。
+- **R4 未完成**：USTC Blackboard 入口需要登录，未提供授权会话/凭据；当前只有 Fixture LMS，不能当作真实平台验收。详见 [docs/real-sources.md](docs/real-sources.md)。
 - **P1 未做**：给定 URL 自动探索、生成/安装 Adapter 插件（Intent 明确不属于 MVP）。
 - **M4**：性能基准（Spec §20）、迁移演练、故障注入扩展。
 - 真实 LMS 尚未接入；当前使用 `fixture-lms`。
@@ -168,4 +172,4 @@ npm test
 npm run build:dsh
 ```
 
-共 70 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环与 P0 可靠性修复；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry 自测。详见 [docs/testing.md](docs/testing.md)。
+共 71 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复与真实 Cordis 插件生命周期；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry 自测。详见 [docs/testing.md](docs/testing.md)。

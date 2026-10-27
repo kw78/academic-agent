@@ -119,7 +119,8 @@ docs/adr/                      # 架构决策记录
 - DSH 绑定继续按 M0 验证：`inject`、Service 注册/撤销、Tool 注册/撤销、HMR/重启语义、依赖组件卸载时资源释放。目前已完成加载、工具注册、ToolRegistry 执行与 DeepSeek 模型自然语言调用；HMR/Session 待补。
 - Agent 工具通过 `ctx.tools.register(defineTool(...))` 暴露；工具只调用领域服务，不拼 SQL、不直接追加事件。
 - 普通 Host 插件可访问宿主进程；Cordis disposer 不是安全沙箱。未审查代码不得以可信 Host 插件身份安装。
-- 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 通过 esbuild 打包，在独立 `academic` profile 中加载，6 个工具经真实 `ctx.tools` 注册；`academic_list_courses` 与写入拒绝路径已通过真实 ToolRegistry 自测。
+- 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 拆成 `host` / `planner` / `tools` 三个 Cordis fiber；host 提供 `academicApp` 服务，planner 与 tools 独立注入，6 个工具经真实 `ctx.tools` 注册。
+- 真实 Cordis 生命周期测试已验证：卸载 tools 后 host/scheduler/store 继续运行；卸载 planner 后旧计划仍可读、能力消失；重载二者恢复；host 卸载关闭 app。profile 级 HMR 尚未验证。
 - DSH 运行时提供 `@deepseek-ai/cordis` / `@deepseek-ai/dsh-tools`；插件保持二者 external，不另造 Harness。普通 `--patch` 直接加载工作区文件无法解析这些 peer，必须安装到 profile（或从 DSH 源码 checkout 运行）。
 - 已用 DSH 凭证中的 DeepSeek key 跑通真实自然语言工具调用：模型调用 `academic_list_courses`，工具返回真实 SQLite 数据并正确回答。
 - 尚未验证 Cordis HMR、真实 Session 生命周期与审批 UI；不得把这些说成已完成。
@@ -130,7 +131,7 @@ docs/adr/                      # 架构决策记录
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
-| M0 | DSH 版本锁定与框架可运行性验证 | 部分完成：本机 `0.2.1-rc.3` 已验证 bundle 加载、6 工具注册、真实 ToolRegistry 执行；HMR/Session 待补 |
+| M0 | DSH 版本锁定与框架可运行性验证 | 部分完成：本机 `0.2.1-rc.3` 已验证 bundle 加载、host/planner/tools 分离、真实 Cordis 独立卸载/重载、6 工具注册与执行；profile HMR/Session 待补 |
 | M1 | Event-Sourced Kernel、SQLite Event Store、核心投影、迁移 | 已完成（MVP 范围） |
 | M2 | fixture LMS、Connector、Scheduler、StudyTask/StudyPlan、Planner | 已完成（fixture 闭环 + 用户管理/计划锁定） |
 | M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成：宿主无关工具、DSH 工具绑定、DeepSeek 模型自然语言工具调用均通过 |
@@ -147,21 +148,21 @@ docs/adr/                      # 架构决策记录
 | T05 重复同步 no-op | 已覆盖 | `tests/integration/connectors.test.ts` |
 | T06 partial 空结果不清空 | 已覆盖 | `tests/integration/connectors.test.ts` |
 | T07 截止日期变更保留进度 | 已覆盖 | `tests/integration/connectors.test.ts`、`kernel.test.ts` |
-| T08 Planner 卸载 | 已覆盖 | `tests/integration/planner.test.ts` |
+| T08 Planner 卸载 | 已覆盖（能力卸载 + 真实 Cordis fiber） | `tests/integration/planner.test.ts`、`cordis-lifecycle.test.ts` |
 | T09 Planner 重启不重复 | 已覆盖 | `tests/integration/planner.test.ts` |
 | T10 Analytics 全量重放 | 已覆盖 | `tests/integration/dispatcher.test.ts` |
 | T11 通知不重发旧提醒 | 已覆盖 | `tests/integration/notifications.test.ts` |
 | T12 调度崩溃恢复 | 已覆盖 | `tests/integration/scheduler.test.ts` |
 | T13 网络/凭据失败保留旧数据 | 已覆盖 | `tests/integration/connectors.test.ts` |
-| T14 Agent Bridge 卸载不影响后台 | 已覆盖（宿主无关桥） | `tests/e2e/app.test.ts` |
+| T14 Agent Bridge 卸载不影响后台 | 已覆盖（宿主无关 + 真实 Cordis tools fiber） | `tests/e2e/app.test.ts`、`cordis-lifecycle.test.ts` |
 | T15 零模型调用 | 已覆盖（ModelUsageMeter = 0；DSH 自测不调用模型） | `tests/e2e/app.test.ts`、DSH selftest |
 | T16 未授权写入被拒 | 已覆盖（可信宿主授权；模型参数不能自证；DSH 中 FORBIDDEN 实测） | `tests/integration/agent-tools.test.ts`、DSH selftest |
-| T17 插件停用资源释放 | 部分覆盖（消费者/定时器/处理器）；Cordis HMR 待补 | dispatcher、scheduler 测试 |
+| T17 插件停用资源释放 | 部分覆盖（消费者/定时器/处理器 + 真实 Cordis tools/planner fiber）；profile HMR 待补 | dispatcher、scheduler、cordis-lifecycle 测试 |
 | T18 备份恢复 | 已覆盖 | `tests/e2e/app.test.ts` |
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（70 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`。
+当前验证命令：`npm run typecheck`、`npm test`（71 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 
@@ -174,11 +175,11 @@ dsh plugin --profile academic add D:/project/classhelper/packages/academic-dsh-p
 ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db dsh academic --json "hello"
 ```
 
-已观测：`tools=6 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`。另外使用 DSH 凭证中的 DeepSeek key 跑通真实自然语言调用：模型调用 `academic_list_courses`，返回真实 SQLite 课程并正确回答。密钥只在进程环境中注入，未写入代码或日志。
+已观测：host/planner/tools 三个 fiber 加载，`tools=6 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`；退出时 planner capability 释放。另外使用 DSH 凭证中的 DeepSeek key 跑通真实自然语言调用：模型调用 `academic_list_courses`，返回真实 SQLite 课程并正确回答。密钥只在进程环境中注入，未写入代码或日志。
 
 ## 10. 待确认的环境参数（不阻塞实现）
 
-- 首个真实课程平台、是否需要登录（当前用 fixture）。
+- 首个真实课程平台：已尝试 USTC Blackboard 入口，重定向到登录页；未提供授权会话/凭据，真实平台 E2E 未完成（当前用 fixture，不能当作真实验收）。
 - 目标运行形态：本地 CLI + SQLite 已验证；DSH `headless` / `web` profile 可挂载，Desktop 主 profile 暂不改动。
 - 通知仅应用内还是系统通知（当前先应用内）。
 - 课程规模、同步频率（当前 15 分钟）、计划粒度（15 分钟）、资源预算。

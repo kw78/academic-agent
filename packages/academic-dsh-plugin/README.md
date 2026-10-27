@@ -2,6 +2,18 @@
 
 DSH（DeepSeek Harness）bundle，把 Academic Agent 的 6 个最小工具暴露给模型。默认只读；写入必须由可信宿主对每次操作授权，模型参数（包括旧版的 `confirmed`）不能作为授权依据。当前 bundle 尚未接入 DSH 审批适配器，因此写入会被拒绝。
 
+## 插件拆分
+
+bundle 现在由三个独立 Cordis fiber 组成：
+
+- `@academic/dsh-plugin/host`：创建 Academic App（Event Store、Scheduler、Dispatcher、Notification），提供 `academicApp` 服务。
+- `@academic/dsh-plugin/planner`：注册 Planner 能力；卸载后已有计划仍可读取，新规划请求不可用。
+- `@academic/dsh-plugin/tools`：Agent Bridge，注册 6 个模型工具；卸载后后台同步、调度、提醒继续运行。
+
+`cordis.patch.yml` 按 host → planner → tools 插入三行。禁用 `academic-tools` 行即可验证 Agent Bridge 独立卸载。
+
+真实 Cordis 生命周期由 `tests/integration/cordis-lifecycle.test.ts` 覆盖：卸载 tools 后 host/store/planner 保持；卸载 planner 后旧计划仍可查询；重载二者恢复；host 卸载关闭 app。profile 级 HMR 仍待验证。
+
 ## 工具
 
 | 工具 | 类型 | 说明 |
@@ -50,8 +62,10 @@ dsh academic --json "hello"
 预期（模型调用之前）：
 
 ```text
-[academic-agent] loaded ... tools=6 registered=true courses=1 items=1
-[academic-agent] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
+[academic-host] loaded db=D:/project/classhelper/.data/dsh-academic.db
+[academic-planner] capability registered
+[academic-tools] tools=6 registered=true
+[academic-tools] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 
 模型自然语言调用需要 `DEEPSEEK_API_KEY` 或在 DSH Models 页面配置账号；本机 headless 未配置时会报 `MISSING_CREDENTIAL`，不影响上述工具自测。

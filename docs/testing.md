@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**70 项测试通过**（15 个测试文件）。
+当前基线：**71 项测试通过**（16 个测试文件）。
 
 ## 分层
 
@@ -31,16 +31,16 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 | T05 | 重复同步相同快照不新增事件/事项 | `connectors.test.ts` | 通过 |
 | T06 | partial / 默认 full 空结果不清空旧事项 | `connectors.test.ts` | 通过 |
 | T07 | 截止日期变化写入新事件，旧值可追溯，进度保留 | `connectors.test.ts`、`kernel.test.ts` | 通过 |
-| T08 | Planner 卸载后旧计划可查、无法产生新计划 | `planner.test.ts` | 通过 |
+| T08 | Planner 卸载后旧计划可查、无法产生新计划 | `planner.test.ts`、`cordis-lifecycle.test.ts` | 通过（含真实 Cordis fiber） |
 | T09 | 重规划去重；重启用后不重复计划 | `planner.test.ts` | 通过 |
 | T10 | 扩展投影从历史重建；核心状态不变 | `dispatcher.test.ts` | 通过 |
 | T11 | 通知历史回放不重发旧提醒 | `notifications.test.ts` | 通过 |
 | T12 | 调度执行中崩溃后可恢复且不重复事项 | `scheduler.test.ts` | 通过 |
 | T13 | 网络/凭据失败保留旧数据并记录运行状态 | `connectors.test.ts` | 通过 |
-| T14 | Agent Bridge 卸载后后台同步/调度照常 | `tests/e2e/app.test.ts` | 通过（宿主无关桥） |
+| T14 | Agent Bridge 卸载后后台同步/调度照常 | `tests/e2e/app.test.ts`、`cordis-lifecycle.test.ts` | 通过（宿主无关 + 真实 Cordis tools fiber） |
 | T15 | 常规同步与 Planner 模型调用为 0 | `tests/e2e/app.test.ts` | 通过（`ModelUsageMeter`） |
 | T16 | 未授权/未确认的 Agent 写入被拒 | `agent-tools.test.ts` | 通过（可信宿主授权；模型参数不能自证） |
-| T17 | 停用后无残留监听器/定时器/处理器 | Dispatcher、Scheduler 测试 | 部分（Cordis HMR 待 M0） |
+| T17 | 停用后无残留监听器/定时器/处理器 | Dispatcher、Scheduler、Cordis 生命周期测试 | 部分（profile HMR 待 M0） |
 | T18 | 数据库备份恢复；事件完整、投影可校验/重建 | `tests/e2e/app.test.ts` | 通过 |
 | T19 | 旧 Schema 事件经 Upcaster 正确投影 | `tests/replay/upcaster.test.ts` | 通过 |
 | T20 | 会话/应用结束不影响持久化状态与后台任务 | `tests/e2e/app.test.ts` | 通过（应用重启；DSH Session 待 M0） |
@@ -66,6 +66,18 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 - 锁定后旧建议失效并重新计算，新建议不占用锁定时间；
 - 解锁与计划归档。
 
+## R3 Cordis 独立生命周期
+
+`tests/integration/cordis-lifecycle.test.ts` 使用真实 `@deepseek-ai/cordis`：
+
+- host 创建 Academic App 并提供 `academicApp` 服务；
+- planner fiber 注册/卸载 Planner 能力；卸载后已有计划仍可查询；
+- tools fiber 注册 6 个工具；卸载后工具清零，host/store/planner 保持；
+- 重新加载 tools/planner 后能力恢复；
+- host 卸载关闭 app。
+
+DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日志；profile 级 HMR 尚未验证。
+
 ## DSH 实测（本机 0.2.1-rc.3）
 
 已在独立 `academic` profile（从 `headless` 模板创建）安装 `@academic/dsh-plugin`：
@@ -81,8 +93,10 @@ dsh academic --json "hello"
 实测通过：
 
 ```text
-[academic-agent] loaded ... tools=6 registered=true courses=1 items=1
-[academic-agent] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
+[academic-host] loaded db=D:/project/classhelper/.data/dsh-academic.db
+[academic-planner] capability registered
+[academic-tools] tools=6 registered=true
+[academic-tools] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 
 - 插件在真实 DSH 进程加载；
@@ -119,6 +133,6 @@ ACADEMIC_DB=.data/demo.db npm run demo
 
 - DSH 已完成 bundle 加载、真实 ToolRegistry 工具注册与执行；Cordis HMR、真实 Session 生命周期、审批 UI 与带模型工具调用尚未验证。
 - 性能基线（Spec §20，例如 1000 事项 P95、10000 事件重建）尚未做正式基准。
-- 真实 LMS 登录、验证码、限流与凭据保管未覆盖；当前只有 fixture 适配器。
+- USTC Blackboard 入口重定向到登录页，未提供授权会话/凭据；真实 LMS 登录、验证码、限流与凭据保管未覆盖，当前只有 fixture 适配器。详见 [real-sources.md](real-sources.md)。
 - `node:sqlite` 为实验性 API；若升级 Node 需要重新验证。
 - 备份恢复测试覆盖单文件 SQLite；未做跨版本迁移演练。
