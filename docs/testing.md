@@ -45,6 +45,33 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 | T19 | 旧 Schema 事件经 Upcaster 正确投影 | `tests/replay/upcaster.test.ts` | 通过 |
 | T20 | 会话/应用结束不影响持久化状态与后台任务 | `tests/e2e/app.test.ts` | 通过（应用重启；DSH Session 待 M0） |
 
+## DSH 实测（本机 0.2.1-rc.3）
+
+已在独立 `academic` profile（从 `headless` 模板创建）安装 `@academic/dsh-plugin`：
+
+```bash
+npm run build:dsh
+dsh plugin --profile academic add D:/project/classhelper/packages/academic-dsh-plugin
+ACADEMIC_AGENT_SELFTEST=1 \
+ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db \
+dsh academic --json "hello"
+```
+
+实测通过：
+
+```text
+[academic-agent] loaded ... tools=6 registered=true courses=1 items=1
+[academic-agent] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
+```
+
+- 插件在真实 DSH 进程加载；
+- 6 个工具注册到真实 `ctx.tools`；
+- 只读工具经真实 ToolRegistry 执行成功；
+- 未授权写入被权限门禁拒绝；
+- 不调用模型。
+
+带模型的自然语言调用因 headless 缺少 `DEEPSEEK_API_KEY` 未执行，报 `MISSING_CREDENTIAL`；配置 key 或 DSH Models 后可用 `dsh academic "列出我的课程"` 复测。
+
 ## 手工验收（fixture 闭环）
 
 ```bash
@@ -61,7 +88,7 @@ ACADEMIC_DB=.data/demo.db npm run demo
 
 ## 已知测试边界
 
-- DSH/Cordis 的真实 Service/Tool/HMR 生命周期尚未接入，M0 完成后需补集成测试。
+- DSH 已完成 bundle 加载、真实 ToolRegistry 工具注册与执行；Cordis HMR、真实 Session 生命周期、审批 UI 与带模型工具调用尚未验证。
 - 性能基线（Spec §20，例如 1000 事项 P95、10000 事件重建）尚未做正式基准。
 - 真实 LMS 登录、验证码、限流与凭据保管未覆盖；当前只有 fixture 适配器。
 - `node:sqlite` 为实验性 API；若升级 Node 需要重新验证。

@@ -14,8 +14,9 @@ GitHub: <https://github.com/kw78/academic-agent>
 
 - 单用户、本地、CLI + SQLite 的 MVP 闭环已完成。
 - 常规同步、去重、提醒、基础规划**不调用 LLM**；Agent 只通过受控工具读取事实或提交命令。
-- M1（事件溯源内核）与 M2（fixture 数据源 + 调度 + 规划）已完成；M3 的宿主无关 Agent 工具已完成。
-- **DSH/Cordis 绑定尚未完成**：框架仍为 `0.0.1-rc.*`，M0 spike 待做。内核与工具桥保持宿主无关，详见 [ADR 0002](docs/adr/0002-host-agnostic-core-dsh-deferred.md)。
+- M1（事件溯源内核）与 M2（fixture 数据源 + 调度 + 规划）已完成；M3 的 Agent 工具已完成。
+- **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，6 个工具注册成功，并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
+- HMR、真实 DSH Session 生命周期与带模型的自然语言工具调用仍待验证（本机 headless 缺少 API key）。
 
 ## 快速开始
 
@@ -43,6 +44,34 @@ npm run demo -- help
 ```
 
 数据库路径由 `ACADEMIC_DB` 控制，默认 `.data/academic.db`，已被 git 忽略。
+
+## 挂到本机 DSH
+
+已在本机 **DSH 0.2.1-rc.3** 验证。使用独立 `academic` profile，不修改现有 `desktop` / `web` profile。
+
+```bash
+npm run build:dsh
+dsh academic --from-default-profile headless --dump-config
+dsh plugin --profile academic add D:/project/classhelper/packages/academic-dsh-plugin
+dsh academic --dump-config   # 应出现 # == @academic/dsh-plugin
+```
+
+真实 ToolRegistry 自测（不需要模型）：
+
+```bash
+ACADEMIC_AGENT_SELFTEST=1 \
+ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db \
+dsh academic --json "hello"
+```
+
+本机实测输出：
+
+```text
+[academic-agent] loaded ... tools=6 registered=true courses=1 items=1
+[academic-agent] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
+```
+
+带模型自然语言调用需要 `DEEPSEEK_API_KEY` 或在 DSH Models 页面配置账号；否则 headless 会报 `MISSING_CREDENTIAL`。插件默认只读，写入需在 profile 配置 `agentWrites: true`，且工具参数必须 `confirmed: true`。详见 [插件 README](packages/academic-dsh-plugin/README.md)。
 
 ## 架构要点
 
@@ -82,6 +111,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 | `packages/academic-planner-basic` | 确定性 Planner、重规划请求去重 |
 | `packages/academic-agent-tools` | 最小 Agent 工具集与宿主无关注册契约 |
 | `packages/academic-notifications` | 应用内通知 Reaction |
+| `packages/academic-dsh-plugin` | DSH bundle：真实 Cordis ToolRegistry 工具注册 |
 | `adapters/fixture-lms` | 受控测试数据源 |
 | `apps/academic-cli` | 组合根、CLI 演示、备份恢复 |
 
@@ -96,17 +126,19 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 
 ## 已知限制与后续
 
-- **M0**：锁定 DSH 版本，接入 Cordis Service/Tool/HMR，补真实生命周期测试。
+- **M0 剩余**：Cordis HMR、真实 Session 生命周期、带模型的自然语言工具调用与审批 UI。
+- **P1 未做**：给定 URL 自动探索、生成/安装 Adapter 插件（Intent 明确不属于 MVP）。
 - **M4**：性能基准（Spec §20）、迁移演练、故障注入扩展。
 - 真实 LMS 尚未接入；当前使用 `fixture-lms`。
-- UI 目前为 CLI；Web/Desktop、系统通知待定。
-- `node:sqlite` 为实验性 API，升级 Node 时需重新验证。
+- DSH 主 `desktop` / `web` profile 未改动；当前只安装到独立 `academic` profile。
+- `node:sqlite` 为实验性 API，升级 Node/DSH 时需重新验证。
 
 ## 测试
 
 ```bash
 npm run typecheck
 npm test
+npm run build:dsh
 ```
 
-共 57 项测试，覆盖 T01–T20（DSH 专属部分除外）。详见 [docs/testing.md](docs/testing.md)。
+共 57 项自动化测试，覆盖 T01–T20 的宿主无关部分；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry 自测。详见 [docs/testing.md](docs/testing.md)。

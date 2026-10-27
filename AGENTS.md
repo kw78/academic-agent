@@ -40,6 +40,7 @@ packages/
   academic-planner-basic/      # 确定性启发式规划、重规划请求
   academic-agent-tools/        # 面向 Agent 的最小工具集（宿主无关）
   academic-notifications/      # 应用内通知 Reaction（可卸载）
+  academic-dsh-plugin/         # DSH bundle：把工具注册到真实 Cordis ToolRegistry
 adapters/
   fixture-lms/                 # MVP 受控测试数据源
 apps/
@@ -109,22 +110,24 @@ docs/adr/                      # 架构决策记录
 ## 8. DSH / Cordis 集成约束
 
 - 目标底座是 DSH Harness / Cordis；复用其 Agent、Tool、Session、Plugin Manager，不自造完整 Harness。
-- **当前阶段先实现宿主无关的稳定内核与功能包**，因为 Core 逻辑不依赖 Cordis；DSH 版本目前尚未锁定（npm 上为 `@deepseek-ai/*@0.0.1-rc.*`）。
-- DSH 绑定必须在 M0 单独验证并锁定版本：`inject`、Service 注册/撤销、Tool 注册/撤销、HMR/重启语义、依赖组件卸载时资源释放。
+- 稳定内核与大部分功能包保持宿主无关；DSH 绑定放在独立 bundle `@academic/dsh-plugin`。本机安装版本为 **DSH 0.2.1-rc.3**，插件 peer 范围 `>=0.2.0-rc.1 <0.3.0-0`。
+- DSH 绑定继续按 M0 验证：`inject`、Service 注册/撤销、Tool 注册/撤销、HMR/重启语义、依赖组件卸载时资源释放。目前只完成加载、工具注册与 ToolRegistry 执行验证。
 - Agent 工具通过 `ctx.tools.register(defineTool(...))` 暴露；工具只调用领域服务，不拼 SQL、不直接追加事件。
 - 普通 Host 插件可访问宿主进程；Cordis disposer 不是安全沙箱。未审查代码不得以可信 Host 插件身份安装。
-- 在 DSH 绑定完成前，不得声称已完成 M0；当前所有业务能力均保持宿主无关。
-- `academic-agent-tools` 目前通过 `AcademicToolHost` 契约注册工具（`InMemoryToolHost` 仅用于本地 CLI/测试）；真正的 DSH `ctx.tools.register(defineTool(...))` 适配器属于 M0 spike，未包含在当前交付中。
+- 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 通过 esbuild 打包，在独立 `academic` profile 中加载，6 个工具经真实 `ctx.tools` 注册；`academic_list_courses` 与写入拒绝路径已通过真实 ToolRegistry 自测。
+- DSH 运行时提供 `@deepseek-ai/cordis` / `@deepseek-ai/dsh-tools`；插件保持二者 external，不另造 Harness。普通 `--patch` 直接加载工作区文件无法解析这些 peer，必须安装到 profile（或从 DSH 源码 checkout 运行）。
+- 尚未验证 Cordis HMR、真实 Session 生命周期与带模型的自然语言工具调用（本机 headless 缺少 `DEEPSEEK_API_KEY`）；不得把这些说成已完成。
+- `academic-agent-tools` 仍保留宿主无关的 `AcademicToolHost` 契约；`InMemoryToolHost` 仅用于本地 CLI/测试，DSH 适配在 `academic-dsh-plugin`。
 - 组合根 `apps/academic-cli` 负责装配能力、注册后台作业与通知 Reaction；它不包含领域规则，也不绕过 Command API。
 
 ## 9. 里程碑与当前状态
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
-| M0 | DSH 版本锁定与框架可运行性验证 | 未开始（DSH 仍为 RC；当前内核/工具桥保持宿主无关） |
+| M0 | DSH 版本锁定与框架可运行性验证 | 部分完成：本机 `0.2.1-rc.3` 已验证 bundle 加载、6 工具注册、真实 ToolRegistry 执行；HMR/Session 待补 |
 | M1 | Event-Sourced Kernel、SQLite Event Store、核心投影、迁移 | 已完成（MVP 范围） |
 | M2 | fixture LMS、Connector、Scheduler、StudyTask/StudyPlan、Planner | 已完成（fixture 闭环） |
-| M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成宿主无关工具与零 LLM 自动化；DSH Tool 绑定待 M0 |
+| M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成宿主无关工具与 DSH 工具绑定；带模型自然语言调用待 API key |
 | M4 | 生命周期、故障注入、备份恢复、迁移与性能 | 部分完成（生命周期/故障/备份/Upcaster/重启已测；性能与迁移演练待做） |
 
 架构测试矩阵进度：
@@ -145,22 +148,31 @@ docs/adr/                      # 架构决策记录
 | T12 调度崩溃恢复 | 已覆盖 | `tests/integration/scheduler.test.ts` |
 | T13 网络/凭据失败保留旧数据 | 已覆盖 | `tests/integration/connectors.test.ts` |
 | T14 Agent Bridge 卸载不影响后台 | 已覆盖（宿主无关桥） | `tests/e2e/app.test.ts` |
-| T15 零模型调用 | 已覆盖（ModelUsageMeter = 0） | `tests/e2e/app.test.ts` |
-| T16 未授权写入被拒 | 已覆盖（权限+确认门禁） | `tests/integration/agent-tools.test.ts` |
-| T17 插件停用资源释放 | 部分覆盖（消费者/定时器/处理器） | dispatcher、scheduler 测试；Cordis HMR 待 M0 |
+| T15 零模型调用 | 已覆盖（ModelUsageMeter = 0；DSH 自测不调用模型） | `tests/e2e/app.test.ts`、DSH selftest |
+| T16 未授权写入被拒 | 已覆盖（权限+确认门禁；DSH 中 FORBIDDEN 实测） | `tests/integration/agent-tools.test.ts`、DSH selftest |
+| T17 插件停用资源释放 | 部分覆盖（消费者/定时器/处理器）；Cordis HMR 待补 | dispatcher、scheduler 测试 |
 | T18 备份恢复 | 已覆盖 | `tests/e2e/app.test.ts` |
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（57 项）、`ACADEMIC_DB=.data/academic.db npm run demo`。
+当前验证命令：`npm run typecheck`、`npm test`（57 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`。
+
+DSH 实测（本机 0.2.1-rc.3，独立 `academic` profile）：
+
+```bash
+dsh plugin --profile academic add D:/project/classhelper/packages/academic-dsh-plugin
+ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db dsh academic --json "hello"
+```
+
+已观测：`tools=6 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`。带模型的自然语言调用因 headless 缺少 `DEEPSEEK_API_KEY` 未执行。
 
 ## 10. 待确认的环境参数（不阻塞实现）
 
 - 首个真实课程平台、是否需要登录（当前用 fixture）。
-- 目标运行形态：当前选择 CLI + 本地 SQLite；Web/Desktop 待定。
+- 目标运行形态：本地 CLI + SQLite 已验证；DSH `headless` / `web` profile 可挂载，Desktop 主 profile 暂不改动。
 - 通知仅应用内还是系统通知（当前先应用内）。
 - 课程规模、同步频率（当前 15 分钟）、计划粒度（15 分钟）、资源预算。
-- DSH 锁定版本与部署方式（M0 spike）。
+- DSH 版本升级策略（当前固定 0.2.1-rc.3 验证；升级需重跑 bundle/工具自测）。
 - 备份保留策略与恢复演练频率。
 
 ## 11. 完成定义（Definition of Done）

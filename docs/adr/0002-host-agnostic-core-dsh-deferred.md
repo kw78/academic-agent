@@ -1,6 +1,8 @@
 # 0002 — 先构建宿主无关内核，DSH/Cordis 绑定延后到 M0
 
-- 状态：已接受
+> 更新（2026-10-27）：已通过 [ADR 0005](0005-dsh-bundle-integration.md) 在本机 DSH `0.2.1-rc.3` 完成 bundle 加载、工具注册与 ToolRegistry 执行验证；HMR/Session 与带模型调用仍待补。
+
+- 状态：已接受（部分被 ADR 0005 落实）
 - 日期：2026-10-27
 - 相关：Architecture Spec §2、§8、§9、§18；AGENTS §8
 
