@@ -58,6 +58,16 @@ export function useLoad<T>(
     }
   }, [active, intervalMs, refresh])
 
+  // A stopped or restarting Host is recoverable. Keep a bounded retry alive
+  // while the page is visible so the panel returns without a manual reload.
+  useEffect(() => {
+    if (!active || state.failure?.code !== 'UNAVAILABLE') return undefined
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === 'visible') void refresh()
+    }, 5000)
+    return () => window.clearTimeout(timer)
+  }, [active, state.failure?.code, refresh])
+
   return { state, refresh }
 }
 

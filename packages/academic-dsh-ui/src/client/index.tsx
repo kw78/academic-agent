@@ -85,6 +85,21 @@ function AcademicPanel({ ctx }: { ctx: Context }) {
     void loadStatus()
   }, [loadStatus])
 
+  useEffect(() => {
+    if (!statusError) return undefined
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === 'visible') void loadStatus()
+    }, 5000)
+    return () => window.clearTimeout(timer)
+  }, [loadStatus, statusError])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadStatus()
+    }, 15_000)
+    return () => window.clearInterval(timer)
+  }, [loadStatus])
+
   const navigate = (next: TabId) => {
     setTab(next)
     writeTab(next)

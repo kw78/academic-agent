@@ -57,7 +57,10 @@ function failure(error) {
 async function callApi(ctx, method, request = {}, signal) {
   const rpc = ctx.connection?.rpc;
   if (!rpc?.call) {
-    return failure({ code: "UNAVAILABLE", message: "DSH Host \u8FDE\u63A5\u4E0D\u53EF\u7528" });
+    return failure({
+      code: "UNAVAILABLE",
+      message: "DSH Host \u8FDE\u63A5\u5C1A\u672A\u5EFA\u7ACB\uFF1B\u8BF7\u786E\u8BA4 DSH Host \u5DF2\u542F\u52A8\uFF0C\u6062\u590D\u540E\u4F1A\u81EA\u52A8\u91CD\u8BD5\u3002"
+    });
   }
   try {
     const response = await rpc.call(
@@ -67,8 +70,15 @@ async function callApi(ctx, method, request = {}, signal) {
       signal
     );
     if (!response.ok) {
+      const rpcCode = response.error?.code;
+      if (rpcCode === "gateway/invocation-unavailable" || rpcCode === "gateway/binding-invalid" || rpcCode === "gateway/method-unavailable") {
+        return failure({
+          code: "UNAVAILABLE",
+          message: "Academic Host \u672A\u52A0\u8F7D\u6216\u7248\u672C\u4E0D\u5339\u914D\uFF1A\u8BF7\u786E\u8BA4 DSH \u4E2D academic-host \u4E0E academic-ui \u63D2\u4EF6\u5DF2\u542F\u7528\uFF0C\u7136\u540E\u5237\u65B0\u9875\u9762\u3002"
+        });
+      }
       return failure({
-        code: mapRpcCode(response.error?.code),
+        code: mapRpcCode(rpcCode),
         message: response.error?.message ?? "Host \u8BF7\u6C42\u5931\u8D25"
       });
     }
@@ -76,7 +86,7 @@ async function callApi(ctx, method, request = {}, signal) {
   } catch {
     return failure({
       code: "UNAVAILABLE",
-      message: "\u65E0\u6CD5\u8FDE\u63A5 Academic Host\uFF0C\u8BF7\u786E\u8BA4 Host \u63D2\u4EF6\u5DF2\u52A0\u8F7D"
+      message: "\u65E0\u6CD5\u8FDE\u63A5 Academic Host\u3002\u8BF7\u786E\u8BA4 DSH Host \u4ECD\u5728\u8FD0\u884C\u4E14 @academic/dsh-ui \u5DF2\u52A0\u8F7D\uFF1B\u6062\u590D\u540E\u4F1A\u81EA\u52A8\u91CD\u8BD5\u3002"
     });
   }
 }
@@ -859,6 +869,13 @@ function useLoad(load, active, intervalMs = 0) {
       inFlight.current?.abort();
     };
   }, [active, intervalMs, refresh]);
+  (0, import_react2.useEffect)(() => {
+    if (!active || state.failure?.code !== "UNAVAILABLE") return void 0;
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === "visible") void refresh();
+    }, 5e3);
+    return () => window.clearTimeout(timer);
+  }, [active, state.failure?.code, refresh]);
   return { state, refresh };
 }
 function useAction(onDone) {
@@ -3427,6 +3444,19 @@ function AcademicPanel({ ctx }) {
   }, [ctx]);
   (0, import_react9.useEffect)(() => {
     void loadStatus();
+  }, [loadStatus]);
+  (0, import_react9.useEffect)(() => {
+    if (!statusError) return void 0;
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === "visible") void loadStatus();
+    }, 5e3);
+    return () => window.clearTimeout(timer);
+  }, [loadStatus, statusError]);
+  (0, import_react9.useEffect)(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadStatus();
+    }, 15e3);
+    return () => window.clearInterval(timer);
   }, [loadStatus]);
   const navigate = (next) => {
     setTab(next);
