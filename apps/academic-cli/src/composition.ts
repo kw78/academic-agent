@@ -36,6 +36,8 @@ import { EventDispatcher } from '@academic/event-dispatcher'
 import {
   NotificationStore,
   registerNotificationReaction,
+  scanDeadlineReminders,
+  type DeadlineScanResult,
 } from '@academic/notifications'
 import {
   AvailabilityStore,
@@ -161,6 +163,7 @@ export interface AcademicApp {
   archivePlan(): Promise<CommandResult>
   markNotificationRead(notificationId: string): boolean
   markAllNotificationsRead(): number
+  scanDeadlineReminders(): Promise<DeadlineScanResult>
   getAutomationStatus(): Promise<AutomationStatus>
   backup(targetPath: string): void
   start(): void
@@ -220,6 +223,12 @@ export async function createAcademicApp(
     ids,
   })
   const notifications = new NotificationStore(store.database, clock)
+  const scanReminders = (): Promise<DeadlineScanResult> =>
+    scanDeadlineReminders({
+      queries: store.queries,
+      notifications,
+      clock,
+    })
   const adapter = new FixtureLmsAdapter()
   const connectors = new ConnectorService({
     db: store.database,
@@ -379,6 +388,12 @@ export async function createAcademicApp(
     nextRunAt: addMilliseconds(clock.now(), 60_000),
     policy: { intervalMs: 60_000, timeoutMs: 60_000 },
   })
+  scheduler.ensureJob({
+    jobId: 'academic.reminders.scan',
+    kind: 'notifications.scan-deadlines',
+    nextRunAt: clock.now(),
+    policy: { intervalMs: 15 * 60_000, timeoutMs: 30_000 },
+  })
   scheduler.registerHandler('connector.sync.fixture-lms', async () => {
     await connectors.registerCourse(DEFAULT_FIXTURE_COURSE)
     const summary = await connectors.sync(adapter)
@@ -404,6 +419,9 @@ export async function createAcademicApp(
     }
     return { summary: { processed } }
   })
+  scheduler.registerHandler('notifications.scan-deadlines', async () => ({
+    summary: await scanReminders(),
+  }))
 
   const userActor = { kind: 'user' as const, id: 'local-user' }
 
@@ -659,6 +677,10 @@ export async function createAcademicApp(
       return notifications.markAllRead()
     },
 
+    scanDeadlineReminders() {
+      return scanReminders()
+    },
+
     async getAutomationStatus() {
       const runs = await store.queries.listSyncRuns(undefined, 5)
       return {
@@ -680,6 +702,8 @@ export async function createAcademicApp(
       started = true
       dispatcher.start()
       scheduler.start()
+      // Compensation for reminders whose threshold passed while DSH was off.
+      void scanReminders().catch(() => undefined)
     },
 
     stop() {

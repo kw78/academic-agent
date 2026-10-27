@@ -114,6 +114,8 @@ async function runSync(app: AcademicApp): Promise<void> {
     const processed = await app.processPendingReplans(5)
     console.log(`重规划请求：处理 ${processed} 条`)
   }
+  const reminders = await app.scanDeadlineReminders()
+  if (reminders.sent > 0) console.log(`截止提醒：新增 ${reminders.sent} 条`)
 }
 
 async function printPlan(app: AcademicApp, plan: StudyPlanView): Promise<void> {
@@ -367,6 +369,46 @@ async function runAvailabilityUnblock(app: AcademicApp, blockId: string | undefi
   console.log(`已移除临时不可用时段：${blockId}`)
 }
 
+async function runRemindersShow(app: AcademicApp): Promise<void> {
+  const settings = app.notifications.getSettings()
+  console.log(
+    `截止提醒：${settings.enabled ? '已启用' : '已停用'} · 阈值 ${settings.thresholdsHours.join('h / ')}h`,
+  )
+}
+
+async function runRemindersSet(app: AcademicApp, args: string[]): Promise<void> {
+  const { flags } = parseArgs(args)
+  const enabledValue = flags.get('enabled')
+  const thresholdsValue = stringFlag(flags, 'thresholds')
+  if (enabledValue === undefined && thresholdsValue === undefined) {
+    throw new Error('用法：reminders set [--enabled true|false] [--thresholds 72,24]')
+  }
+  let enabled: boolean | undefined
+  if (enabledValue === true) enabled = true
+  else if (typeof enabledValue === 'string') {
+    if (enabledValue !== 'true' && enabledValue !== 'false') {
+      throw new Error('--enabled 只能是 true 或 false')
+    }
+    enabled = enabledValue === 'true'
+  }
+  const thresholds =
+    thresholdsValue === undefined
+      ? undefined
+      : thresholdsValue
+          .split(',')
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+          .map((value) => Number(value))
+  if (thresholds?.some((value) => !Number.isInteger(value))) {
+    throw new Error('--thresholds 必须是逗号分隔的整数小时')
+  }
+  app.notifications.updateSettings({
+    ...(enabled !== undefined ? { enabled } : {}),
+    ...(thresholds ? { thresholdsHours: thresholds } : {}),
+  })
+  await runRemindersShow(app)
+}
+
 async function runStatus(app: AcademicApp): Promise<void> {
   const status = await app.getAutomationStatus()
   console.log('\n运行状态：')
@@ -383,6 +425,10 @@ async function runStatus(app: AcademicApp): Promise<void> {
     console.log('  最近同步：无')
   }
   console.log(`  未读提醒：${status.unreadNotifications}`)
+  const reminderSettings = app.notifications.getSettings()
+  console.log(
+    `  截止提醒：${reminderSettings.enabled ? '启用' : '停用'} · 阈值 ${reminderSettings.thresholdsHours.join('h / ')}h`,
+  )
   console.log(`  定时任务（${status.jobs.length}）：`)
   for (const job of status.jobs) {
     console.log(
@@ -444,6 +490,8 @@ function printHelp(): void {
   availability set [--tz ZONE] [--granularity 15] [--slots "1:19:00-22:00,..."]
   availability block <start ISO> <end ISO> [title]
   availability unblock <blockId>
+  reminders show            查看截止提醒开关与阈值
+  reminders set [--enabled true|false] [--thresholds 72,24]
   notifications [--read ID | --read-all]
   backup                    生成一致性数据库备份
   help                      显示帮助
@@ -466,6 +514,7 @@ async function main(): Promise<void> {
   })
   try {
     await app.dispatcher.processOnce()
+    await app.scanDeadlineReminders()
     switch (command) {
       case 'sync':
         await runSync(app)
@@ -516,6 +565,14 @@ async function main(): Promise<void> {
         else if (subcommand === 'block') await runAvailabilityBlock(app, args)
         else if (subcommand === 'unblock') await runAvailabilityUnblock(app, args[0])
         else throw new Error('用法：availability show|set|block|unblock')
+        break
+      }
+
+      case 'reminders': {
+        const [subcommand, ...args] = rest
+        if (subcommand === 'show') await runRemindersShow(app)
+        else if (subcommand === 'set') await runRemindersSet(app, args)
+        else throw new Error('用法：reminders show|set')
         break
       }
 

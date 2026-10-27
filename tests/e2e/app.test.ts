@@ -78,7 +78,11 @@ describe('application composition', () => {
     })
     const runs = await app.scheduler.runDueJobs(app.clock.now())
     expect(ran).toBe(true)
-    expect(runs).toMatchObject([{ jobId: 'probe-job', status: 'succeeded' }])
+    expect(runs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ jobId: 'probe-job', status: 'succeeded' }),
+      ]),
+    )
 
     await app.processPendingReplans()
     expect(app.modelUsage.count()).toBe(0)
