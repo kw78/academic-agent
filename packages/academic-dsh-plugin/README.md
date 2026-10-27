@@ -1,6 +1,6 @@
 # @academic/dsh-plugin
 
-DSH（DeepSeek Harness）bundle，把 Academic Agent 的 6 个最小工具暴露给模型。默认只读；任务写入需要 profile 配置 `agentWrites: true`，并且工具调用必须显式 `confirmed: true`。
+DSH（DeepSeek Harness）bundle，把 Academic Agent 的 6 个最小工具暴露给模型。默认只读；写入必须由可信宿主对每次操作授权，模型参数（包括旧版的 `confirmed`）不能作为授权依据。当前 bundle 尚未接入 DSH 审批适配器，因此写入会被拒绝。
 
 ## 工具
 
@@ -10,8 +10,8 @@ DSH（DeepSeek Harness）bundle，把 Academic Agent 的 6 个最小工具暴露
 | `academic_list_due_items` | 只读 | 按截止时间列出学业事项 |
 | `academic_get_item` | 只读 | 按内部 ID 取事项 |
 | `academic_get_study_plan` | 只读 | 取与时间范围重叠的生效计划 |
-| `academic_update_task` | 写入 | 完成/重开/修改预计时长；需授权 + 确认 |
-| `academic_request_replan` | 运行控制 | 排队重规划请求；需 planner 能力 |
+| `academic_update_task` | 写入 | 完成/重开/修改预计时长；需可信宿主授权 |
+| `academic_request_replan` | 运行控制 | 排队重规划请求；需可信宿主授权 + planner 能力 |
 
 工具只调用 `@academic/agent-tools` 的宿主无关工具层，最终仍走 Kernel Command API；不拼 SQL、不直接追加事件。
 
@@ -70,9 +70,14 @@ dsh academic --json "hello"
     selfTest: false
 ```
 
-- `agentWrites`：默认 false；为 true 时仍要求工具参数 `confirmed: true`。
+- `agentWrites`：仅表示部署是否允许 Agent 请求写入；默认 false。即使为 true，没有可信宿主授权适配器时仍会返回 `CONFIRM_REQUIRED`，不会产生领域事件。
 - `startBackground`：启动通知/调度/重规划后台能力；headless 退出时定时器不会阻止进程结束。
 - `selfTest`：加载时通过 DSH ToolRegistry 执行一次只读查询和一次被拒绝的写入。
+
+## 默认学习任务与可用时间
+
+- 新同步的学业事项会通过事件消费者自动创建一个默认 `StudyTask`（assignment 60 分钟、exam 120 分钟、quiz 30 分钟）；重复同步不会重复创建，用户修改的时长与完成状态不会被覆盖。
+- Planner 使用持久化的可用时间：时区、每周可用时段、临时不可用、15 分钟默认粒度。首次使用会生成保守默认值（工作日 19:00-22:00，周末 09:00-12:00、14:00-18:00），可通过 CLI `availability` 命令修改。
 
 ## 边界
 

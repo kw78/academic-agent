@@ -20195,8 +20195,7 @@ var flatRangeSchema = external_exports.object({
 var updateTaskSchema = external_exports.object({
   taskId: external_exports.string().min(1),
   action: external_exports.enum(["complete", "reopen", "change-estimate"]),
-  estimateMinutes: external_exports.number().int().min(5).max(1440).optional(),
-  confirmed: external_exports.boolean().optional()
+  estimateMinutes: external_exports.number().int().min(5).max(1440).optional()
 }).superRefine((value, context) => {
   if (value.action === "change-estimate" && value.estimateMinutes === void 0) {
     context.addIssue({
@@ -20215,6 +20214,19 @@ var requestReplanSchema = external_exports.object({
 });
 function createAcademicTools(dependencies) {
   const allowWrites = dependencies.allowWrites ?? false;
+  async function requireWriteApproval(tool, args) {
+    if (!allowWrites) {
+      return failure2("FORBIDDEN", "Agent write access is not enabled");
+    }
+    if (!dependencies.authorizeWrite) {
+      return failure2(
+        "CONFIRM_REQUIRED",
+        "No trusted user-approval channel is available for this write"
+      );
+    }
+    const approved = await dependencies.authorizeWrite({ tool, arguments: args });
+    return approved ? void 0 : failure2("CONFIRM_REQUIRED", "The user did not approve this write");
+  }
   return [
     defineTool(
       ACADEMIC_TOOL_NAMES.ListCourses,
@@ -20267,18 +20279,14 @@ function createAcademicTools(dependencies) {
     ),
     defineTool(
       ACADEMIC_TOOL_NAMES.UpdateTask,
-      "Complete, reopen, or change the estimate of a study task. Requires write permission and explicit user confirmation.",
+      "Complete, reopen, or change the estimate of a study task. The host must authorize each write; no model-provided flag can approve it.",
       updateTaskSchema,
       async (input2) => {
-        if (!allowWrites) {
-          return failure2("FORBIDDEN", "Agent write access is not enabled");
-        }
-        if (input2.confirmed !== true) {
-          return failure2(
-            "CONFIRM_REQUIRED",
-            "Ask the user for confirmation before changing task state"
-          );
-        }
+        const rejection = await requireWriteApproval(
+          ACADEMIC_TOOL_NAMES.UpdateTask,
+          { ...input2 }
+        );
+        if (rejection) return rejection;
         const task = await dependencies.queries.getStudyTask(input2.taskId);
         if (!task) return failure2("NOT_FOUND", `Study task not found: ${input2.taskId}`);
         const type = input2.action === "complete" ? COMMAND.StudyTaskComplete : input2.action === "reopen" ? COMMAND.StudyTaskReopen : COMMAND.StudyTaskChangeEstimate;
@@ -20303,12 +20311,14 @@ function createAcademicTools(dependencies) {
     ),
     defineTool(
       ACADEMIC_TOOL_NAMES.RequestReplan,
-      "Queue a replan request for a time range. Requires write permission and an available planner.",
+      "Queue a replan request for a time range. The host must authorize the request; an available planner is also required.",
       requestReplanSchema,
       async (input2) => {
-        if (!allowWrites) {
-          return failure2("FORBIDDEN", "Agent write access is not enabled");
-        }
+        const rejection = await requireWriteApproval(
+          ACADEMIC_TOOL_NAMES.RequestReplan,
+          { ...input2 }
+        );
+        if (rejection) return rejection;
         dependencies.registry.require(PLANNER_CAPABILITY_ID);
         const reason = input2.reason ?? "manual";
         const request = dependencies.replans.enqueue({
@@ -20365,7 +20375,7 @@ function registerAcademicTools(host, dependencies) {
 }
 
 // apps/academic-cli/src/composition.ts
-import { randomUUID as randomUUID3 } from "node:crypto";
+import { createHash as createHash4, randomUUID as randomUUID3 } from "node:crypto";
 import { mkdirSync as mkdirSync2 } from "node:fs";
 import { dirname as dirname2 } from "node:path";
 
@@ -20829,9 +20839,10 @@ var EventDispatcher = class {
     const existing = await this.#checkpoints.getCheckpoint(consumer.consumerId);
     const maxPosition = await this.#events.maxPosition();
     const start = this.#resolveStart(consumer.startPosition, maxPosition);
-    const mustInitialize = !existing || existing.projectionVersion !== consumer.projectionVersion || consumer.startPosition === "latest";
+    const versionMismatch = existing !== void 0 && existing.projectionVersion !== consumer.projectionVersion;
+    const mustInitialize = !existing || versionMismatch;
     if (mustInitialize) {
-      if (existing && existing.projectionVersion !== consumer.projectionVersion && consumer.onReset) {
+      if (versionMismatch && consumer.onReset) {
         await consumer.onReset();
       }
       await this.#checkpoints.setCheckpoint({
@@ -21208,6 +21219,9 @@ function zonedTimeToUtc(date5, hour, minute, second, millisecond, zone) {
   const secondOffset = zoneOffsetMs(zone, new Date(adjusted));
   return new Date(guess - secondOffset).toISOString();
 }
+function zonedDateTimeToUtc(date5, hour, minute, zone) {
+  return zonedTimeToUtc(date5, hour, minute, 0, 0, zone);
+}
 function endOfDayUtc(date5, zone) {
   return zonedTimeToUtc(date5, 23, 59, 59, 999, zone);
 }
@@ -21229,6 +21243,254 @@ function deadlineForDue(due, fallbackZone = "UTC") {
     case "unknown":
       return { warning: "deadline is unknown; task is planned without a deadline" };
   }
+}
+
+// packages/academic-planner-basic/src/database.ts
+function inTransaction2(db, operation) {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = operation();
+    db.exec("COMMIT");
+    return result;
+  } catch (error62) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+    }
+    throw error62;
+  }
+}
+
+// packages/academic-planner-basic/src/availability.ts
+var AVAILABILITY_ID = "default";
+var DAY_MS = 864e5;
+var WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+var timeOfDay = external_exports.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:mm");
+var weeklySlotSchema = external_exports.object({
+  weekday: external_exports.number().int().min(0).max(6),
+  start: timeOfDay,
+  end: timeOfDay
+}).refine((slot) => minutesOfDay(slot.end) > minutesOfDay(slot.start), {
+  message: "Weekly slot end must be after start"
+});
+var availabilitySettingsSchema = external_exports.object({
+  timeZone: external_exports.string().min(1).refine(isValidTimeZone, "Invalid IANA time zone"),
+  weeklySlots: external_exports.array(weeklySlotSchema),
+  temporaryBlocks: external_exports.array(lockedBlockSchema),
+  granularityMinutes: external_exports.number().int().min(5).max(60)
+});
+function minutesOfDay(value) {
+  const [hour, minute] = value.split(":").map(Number);
+  return (hour ?? 0) * 60 + (minute ?? 0);
+}
+function isValidTimeZone(zone) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone }).format();
+    return true;
+  } catch {
+    return false;
+  }
+}
+function overlaps(left, right) {
+  return Date.parse(left.start) < Date.parse(right.end) && Date.parse(right.start) < Date.parse(left.end);
+}
+function defaultSettings(clock) {
+  const timeZone = new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const weeklySlots = [];
+  for (const weekday of [1, 2, 3, 4, 5]) {
+    weeklySlots.push({ weekday, start: "19:00", end: "22:00" });
+  }
+  for (const weekday of [0, 6]) {
+    weeklySlots.push({ weekday, start: "09:00", end: "12:00" });
+    weeklySlots.push({ weekday, start: "14:00", end: "18:00" });
+  }
+  return {
+    timeZone,
+    weeklySlots,
+    temporaryBlocks: [],
+    granularityMinutes: 15,
+    updatedAt: clock.now()
+  };
+}
+var AvailabilityStore = class {
+  #db;
+  #clock;
+  constructor(db, clock) {
+    this.#db = db;
+    this.#clock = clock;
+  }
+  get() {
+    const row = this.#db.prepare("SELECT * FROM user_availability WHERE availability_id = ?").get(AVAILABILITY_ID);
+    if (row) return this.#toSettings(row);
+    const defaults = defaultSettings(this.#clock);
+    this.#write(defaults);
+    return defaults;
+  }
+  update(update) {
+    const current = this.get();
+    const next = availabilitySettingsSchema.parse({
+      timeZone: update.timeZone ?? current.timeZone,
+      weeklySlots: update.weeklySlots ?? current.weeklySlots,
+      temporaryBlocks: update.temporaryBlocks ?? current.temporaryBlocks,
+      granularityMinutes: update.granularityMinutes ?? current.granularityMinutes
+    });
+    for (let index = 0; index < next.temporaryBlocks.length; index += 1) {
+      for (let other = index + 1; other < next.temporaryBlocks.length; other += 1) {
+        if (overlaps(next.temporaryBlocks[index], next.temporaryBlocks[other])) {
+          throw new Error("Temporary unavailable blocks overlap");
+        }
+      }
+    }
+    const settings = {
+      ...next,
+      updatedAt: this.#clock.now()
+    };
+    this.#write(settings);
+    return settings;
+  }
+  addTemporaryBlock(block) {
+    const current = this.get();
+    return this.update({
+      temporaryBlocks: [...current.temporaryBlocks, block]
+    });
+  }
+  removeTemporaryBlock(blockId) {
+    const current = this.get();
+    if (!current.temporaryBlocks.some((block) => block.id === blockId)) {
+      throw new Error(`Temporary block not found: ${blockId}`);
+    }
+    return this.update({
+      temporaryBlocks: current.temporaryBlocks.filter(
+        (block) => block.id !== blockId
+      )
+    });
+  }
+  #write(settings) {
+    inTransaction2(this.#db, () => {
+      this.#db.prepare(
+        `INSERT INTO user_availability (
+             availability_id, time_zone, weekly_slots_json,
+             temporary_blocks_json, granularity_minutes, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(availability_id) DO UPDATE SET
+             time_zone = excluded.time_zone,
+             weekly_slots_json = excluded.weekly_slots_json,
+             temporary_blocks_json = excluded.temporary_blocks_json,
+             granularity_minutes = excluded.granularity_minutes,
+             updated_at = excluded.updated_at`
+      ).run(
+        AVAILABILITY_ID,
+        settings.timeZone,
+        JSON.stringify(settings.weeklySlots),
+        JSON.stringify(settings.temporaryBlocks),
+        settings.granularityMinutes,
+        settings.updatedAt
+      );
+    });
+  }
+  #toSettings(row) {
+    return {
+      timeZone: String(row.time_zone),
+      weeklySlots: JSON.parse(String(row.weekly_slots_json)),
+      temporaryBlocks: JSON.parse(
+        String(row.temporary_blocks_json)
+      ),
+      granularityMinutes: Number(row.granularity_minutes),
+      updatedAt: String(row.updated_at)
+    };
+  }
+};
+function localDateAndWeekday(zone, instant) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: zone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short"
+  });
+  const parts = {};
+  for (const part of formatter.formatToParts(instant)) {
+    if (part.type !== "literal") parts[part.type] = part.value;
+  }
+  const weekday = WEEKDAYS.indexOf(
+    parts.weekday
+  );
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    weekday: weekday >= 0 ? weekday : 0
+  };
+}
+function computeUnavailableBlocks(range, settings) {
+  const rangeStart = Date.parse(range.start);
+  const rangeEnd = Date.parse(range.end);
+  if (!Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd) || rangeEnd <= rangeStart) {
+    throw new Error("Invalid planning range");
+  }
+  const byWeekday = /* @__PURE__ */ new Map();
+  for (const slot of settings.weeklySlots) {
+    const entries = byWeekday.get(slot.weekday) ?? [];
+    entries.push(slot);
+    byWeekday.set(slot.weekday, entries);
+  }
+  const allowed = [];
+  const days = Math.ceil((rangeEnd - rangeStart) / DAY_MS) + 3;
+  for (let offset = -1; offset <= days; offset += 1) {
+    const instant = new Date(rangeStart + offset * DAY_MS);
+    const local = localDateAndWeekday(settings.timeZone, instant);
+    for (const slot of byWeekday.get(local.weekday) ?? []) {
+      const start = Date.parse(
+        zonedDateTimeToUtc(
+          local.date,
+          ...splitTime(slot.start),
+          settings.timeZone
+        )
+      );
+      const end = Date.parse(
+        zonedDateTimeToUtc(
+          local.date,
+          ...splitTime(slot.end),
+          settings.timeZone
+        )
+      );
+      if (end <= rangeStart || start >= rangeEnd) continue;
+      allowed.push({
+        start: Math.max(start, rangeStart),
+        end: Math.min(end, rangeEnd)
+      });
+    }
+  }
+  allowed.sort((left, right) => left.start - right.start || left.end - right.end);
+  const merged = [];
+  for (const interval of allowed) {
+    const previous = merged[merged.length - 1];
+    if (previous && interval.start <= previous.end) {
+      previous.end = Math.max(previous.end, interval.end);
+    } else {
+      merged.push({ ...interval });
+    }
+  }
+  const unavailable = [];
+  let cursor = rangeStart;
+  for (const interval of merged) {
+    if (interval.start > cursor) {
+      unavailable.push({
+        start: new Date(cursor).toISOString(),
+        end: new Date(interval.start).toISOString()
+      });
+    }
+    cursor = Math.max(cursor, interval.end);
+  }
+  if (cursor < rangeEnd) {
+    unavailable.push({
+      start: new Date(cursor).toISOString(),
+      end: new Date(rangeEnd).toISOString()
+    });
+  }
+  return unavailable;
+}
+function splitTime(value) {
+  const [hour, minute] = value.split(":").map(Number);
+  return [hour ?? 0, minute ?? 0];
 }
 
 // packages/academic-planner-basic/src/planner.ts
@@ -21376,24 +21638,6 @@ function buildPlan(input2) {
 
 // packages/academic-planner-basic/src/replan-store.ts
 import { createHash as createHash3, randomUUID } from "node:crypto";
-
-// packages/academic-planner-basic/src/database.ts
-function inTransaction2(db, operation) {
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    const result = operation();
-    db.exec("COMMIT");
-    return result;
-  } catch (error62) {
-    try {
-      db.exec("ROLLBACK");
-    } catch {
-    }
-    throw error62;
-  }
-}
-
-// packages/academic-planner-basic/src/replan-store.ts
 function parseJson(value) {
   return JSON.parse(String(value));
 }
@@ -21531,6 +21775,7 @@ var PlannerService = class {
   #queries;
   #commands;
   #replans;
+  #availability;
   #clock;
   #ids;
   constructor(dependencies) {
@@ -21538,6 +21783,7 @@ var PlannerService = class {
     this.#queries = dependencies.queries;
     this.#commands = dependencies.commands;
     this.#replans = dependencies.replans;
+    this.#availability = dependencies.availability;
     this.#clock = dependencies.clock;
     this.#ids = dependencies.ids;
   }
@@ -21628,6 +21874,8 @@ var PlannerService = class {
   async #buildInput(options) {
     const tasks = await this.#queries.listStudyTasks({ status: "active" });
     const activePlan = await this.#queries.getActiveStudyPlan(options.range);
+    const availability = this.#availability.get();
+    const unavailable = computeUnavailableBlocks(options.range, availability);
     const itemDue = /* @__PURE__ */ new Map();
     const plannerTasks = [];
     for (const task of tasks.items) {
@@ -21654,14 +21902,19 @@ var PlannerService = class {
     for (const lock of activePlan?.lockedBlocks ?? []) lockedById.set(lock.id, lock);
     for (const lock of options.lockedBlocks ?? []) lockedById.set(lock.id, lock);
     const lockedBlocks = [...lockedById.values()];
+    const busyBlocks = [
+      ...unavailable,
+      ...availability.temporaryBlocks,
+      ...options.busyBlocks ?? []
+    ];
     return {
       range: options.range,
       tasks: plannerTasks,
-      ...options.busyBlocks ? { busyBlocks: options.busyBlocks } : {},
+      ...busyBlocks.length > 0 ? { busyBlocks } : {},
       ...lockedBlocks.length > 0 ? { lockedBlocks } : {},
       now: options.now ?? this.#clock.now(),
-      ...options.granularityMinutes ? { granularityMinutes: options.granularityMinutes } : {},
-      ...options.timeZone ? { timeZone: options.timeZone } : {}
+      granularityMinutes: options.granularityMinutes ?? availability.granularityMinutes,
+      timeZone: options.timeZone ?? availability.timeZone
     };
   }
   #assertAvailable() {
@@ -21763,6 +22016,18 @@ var Scheduler = class {
       }
     };
   }
+  /**
+   * Installs a default job only when it does not exist yet. Startup wiring must
+   * use this instead of schedule(), otherwise saved enabled/nextRunAt/policy
+   * values are overwritten on every restart.
+   */
+  ensureJob(input2) {
+    const jobId = input2.jobId ?? this.#ids.next();
+    const existing = this.getJob(jobId);
+    if (existing) return existing;
+    return this.schedule({ ...input2, jobId });
+  }
+  /** Explicit create-or-update. User-initiated configuration changes use this. */
   schedule(input2) {
     const now = this.#clock.now();
     const jobId = input2.jobId ?? this.#ids.next();
@@ -22480,7 +22745,7 @@ var studyTaskHandler = {
 };
 
 // packages/academic-kernel/src/aggregates/study-plan.ts
-function overlaps(left, right) {
+function overlaps2(left, right) {
   return Date.parse(left.start) < Date.parse(right.end) && Date.parse(right.start) < Date.parse(left.end);
 }
 function sortByStart(blocks) {
@@ -22498,21 +22763,21 @@ function validatePlan(range, blocks, lockedBlocks) {
   }
   for (let index = 0; index < blocks.length; index += 1) {
     for (let other = index + 1; other < blocks.length; other += 1) {
-      if (overlaps(blocks[index], blocks[other])) {
+      if (overlaps2(blocks[index], blocks[other])) {
         return "Plan blocks overlap";
       }
     }
   }
   for (const block of blocks) {
     for (const locked of lockedBlocks) {
-      if (overlaps(block, locked)) {
+      if (overlaps2(block, locked)) {
         return "Plan block overlaps a locked time block";
       }
     }
   }
   for (let index = 0; index < lockedBlocks.length; index += 1) {
     for (let other = index + 1; other < lockedBlocks.length; other += 1) {
-      if (overlaps(lockedBlocks[index], lockedBlocks[other])) {
+      if (overlaps2(lockedBlocks[index], lockedBlocks[other])) {
         return "Locked time blocks overlap";
       }
     }
@@ -23624,11 +23889,13 @@ async function createAcademicApp(options) {
   });
   const scheduler = new Scheduler({ db: store.database, clock, ids });
   const replans = new ReplanStore(store.database, clock);
+  const availability = new AvailabilityStore(store.database, clock);
   const planner = new PlannerService({
     registry: registry2,
     queries: store.queries,
     commands: store.commands,
     replans,
+    availability,
     clock,
     ids
   });
@@ -23665,7 +23932,8 @@ async function createAcademicApp(options) {
     replans,
     registry: registry2,
     ids,
-    allowWrites: options.agentWrites ?? false
+    allowWrites: options.agentWrites ?? false,
+    ...options.authorizeAgentWrite ? { authorizeWrite: options.authorizeAgentWrite } : {}
   });
   const disposables = [
     plannerCapability,
@@ -23706,6 +23974,50 @@ async function createAcademicApp(options) {
       }
     });
     disposables.push(replanTrigger);
+    const estimates = {
+      assignment: 60,
+      exam: 120,
+      quiz: 30,
+      ...options.defaultTaskEstimates
+    };
+    const defaultTasks = await dispatcher.register({
+      consumerId: "academic.tasks.default-item-task.v1",
+      eventTypes: [EVENT.AcademicItemDiscovered],
+      projectionVersion: 1,
+      // Beginning replays existing items exactly once; deterministic task ids
+      // make the backfill and every redelivery idempotent.
+      startPosition: "beginning",
+      async handler(event) {
+        if (event.type !== EVENT.AcademicItemDiscovered) return;
+        const itemId = event.streamId.slice(event.streamId.indexOf("/") + 1);
+        const taskId = `task-default-${createHash4("sha256").update(itemId).digest("hex").slice(0, 32)}`;
+        const result = await store.commands.execute(
+          parseCommand({
+            commandId: `default-task:${event.eventId}`,
+            type: COMMAND.StudyTaskCreate,
+            aggregateId: taskId,
+            expectedVersion: 0,
+            actor: { kind: "automation", id: "academic-task-automation" },
+            correlationId: event.eventId,
+            payload: {
+              title: event.payload.kind === "exam" ? `\u590D\u4E60\uFF1A${event.payload.title}` : `\u5B8C\u6210\uFF1A${event.payload.title}`,
+              itemId,
+              estimateMinutes: estimates[event.payload.kind],
+              priority: event.payload.kind === "exam" ? 2 : 1
+              // The task intentionally has no dueAt: the planner reads the
+              // linked item's current due each run, so deadline changes flow
+              // through without rewriting user-editable tasks.
+            }
+          })
+        );
+        if (!result.ok && result.code !== "CONFLICT") {
+          throw new Error(
+            `Could not create default task for ${itemId}: ${result.message}`
+          );
+        }
+      }
+    });
+    disposables.push(defaultTasks);
   } catch (error62) {
     scheduler.close();
     dispatcher.close();
@@ -23713,13 +24025,13 @@ async function createAcademicApp(options) {
     throw error62;
   }
   const unsubscribe = store.onAppended(() => dispatcher.wake());
-  scheduler.schedule({
+  scheduler.ensureJob({
     jobId: "fixture-lms-sync",
     kind: "connector.sync.fixture-lms",
     nextRunAt: addMilliseconds2(clock.now(), 15 * 6e4),
     policy: { intervalMs: 15 * 6e4, timeoutMs: 12e4 }
   });
-  scheduler.schedule({
+  scheduler.ensureJob({
     jobId: "planner.process-replans",
     kind: "planner.process-replans",
     nextRunAt: addMilliseconds2(clock.now(), 6e4),
@@ -23799,6 +24111,7 @@ async function createAcademicApp(options) {
     connectors,
     adapter,
     replans,
+    availability,
     planner,
     notifications,
     agentBridge: { host, registration: agentRegistration },
@@ -24056,7 +24369,7 @@ var TOOL_SPECS = [
   },
   {
     name: ACADEMIC_TOOL_NAMES.UpdateTask,
-    description: "Complete, reopen, or change the estimate of a study task. This is a write. Set confirmed=true only after the user explicitly agrees.",
+    description: "Complete, reopen, or change the estimate of a study task. This is a write; the host must obtain trusted user approval for each call.",
     parameters: {
       taskId: { type: "string", required: true, description: "Internal study task id" },
       action: {
@@ -24068,10 +24381,6 @@ var TOOL_SPECS = [
       estimateMinutes: {
         type: "integer",
         description: "Required for change-estimate; 5-1440 minutes"
-      },
-      confirmed: {
-        type: "boolean",
-        description: "Must be true; confirms the user approved the write"
       }
     },
     write: true

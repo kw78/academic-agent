@@ -74,7 +74,7 @@ const TOOL_SPECS: ToolSpec[] = [
   {
     name: ACADEMIC_TOOL_NAMES.UpdateTask,
     description:
-      'Complete, reopen, or change the estimate of a study task. This is a write. Set confirmed=true only after the user explicitly agrees.',
+      'Complete, reopen, or change the estimate of a study task. This is a write; the host must obtain trusted user approval for each call.',
     parameters: {
       taskId: { type: 'string', required: true, description: 'Internal study task id' },
       action: {
@@ -86,10 +86,6 @@ const TOOL_SPECS: ToolSpec[] = [
       estimateMinutes: {
         type: 'integer',
         description: 'Required for change-estimate; 5-1440 minutes',
-      },
-      confirmed: {
-        type: 'boolean',
-        description: 'Must be true; confirms the user approved the write',
       },
     },
     write: true,

@@ -2,7 +2,7 @@
   "id": "academic-agent",
   "version": "0.1.0",
   "main": "lib/index.js",
-  "description": "Academic Agent query and task tools for DSH. Read-only by default; task writes require explicit user confirmation.",
+  "description": "Academic Agent query and task tools for DSH. Read-only by default; writes require trusted host authorization.",
   "engines": {
     "dsh": ">=0.2.0-rc.1 <0.3.0-0"
   },
