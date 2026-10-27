@@ -9,6 +9,7 @@ GitHub: <https://github.com/kw78/academic-agent>
 - 工程准则与状态：[AGENTS.md](AGENTS.md)
 - 架构决策：[docs/adr](docs/adr)
 - 测试与验收矩阵：[docs/testing.md](docs/testing.md)
+- 前端验证记录：[docs/frontend-verification.md](docs/frontend-verification.md)
 
 ## 当前状态
 
@@ -21,7 +22,8 @@ GitHub: <https://github.com/kw78/academic-agent>
 - M1（事件溯源内核）与 M2（fixture 数据源 + 调度 + 规划）已完成；M3 的 Agent 工具已完成。
 - **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，6 个工具注册成功，并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
 - 已用 DSH 中保存的 DeepSeek key 跑通真实自然语言工具调用：模型调用 `academic_list_courses` 并正确回答课程。
-- HMR、真实 DSH Session 生命周期与审批 UI 仍待验证。
+- **DSH 客户端 UI 已落地**：`/dsh-ui` 在真实 DSH Web profile 中注册“学业”入口，提供总览、任务、计划、连接、自动化与设置；任务完成、候选计划确认、锁定、可用时间、作业启停和提醒已读均经 Host Remote API 生效。
+- 已通过 DSH Plugins 页面禁用/启用 UI：入口消失后后台同步/重算继续，重新启用后无重复 Host/作业/课程。文件级 HMR、真实 DSH Session 生命周期与审批 UI 仍待验证。
 
 ## 快速开始
 
@@ -31,6 +33,7 @@ GitHub: <https://github.com/kw78/academic-agent>
 npm install
 npm run typecheck
 npm test
+npm run build:ui
 
 # 端到端演示（写入 .data/academic.db）
 ACADEMIC_DB=.data/academic.db npm run demo
@@ -108,6 +111,21 @@ printf '%s' 'Call the tool academic_list_courses with empty arguments {}. Then r
 
 **Agent 写入默认关闭，且模型参数不能自证授权。** 当前 bundle 没有接入可信的 DSH 用户审批适配器，因此 `academic_update_task` 与 `academic_request_replan` 会被拒绝（`FORBIDDEN` / `CONFIRM_REQUIRED`）；CLI 用户直接操作仍走正常 Command API。详见 [插件 README](packages/academic-dsh-plugin/README.md)。
 
+### 挂载 Academic UI（Web / Desktop）
+
+```bash
+npm run build:dsh
+npm run build:ui
+dsh plugin --profile academic-web add \
+  D:/project/classhelper/packages/academic-dsh-plugin \
+  D:/project/classhelper/packages/academic-dsh-ui
+# profile 的 dsh.profile.bundles 需包含 @deepseek-ai/dsh-web-app（与 DSH web profile 一致）
+ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-ui-test.db \
+  dsh --profile academic-web --no-open --port 0
+```
+
+打开 DSH 打印的 URL，侧边栏会出现“学业”。UI 只通过受认证的 Host Remote API 读写，不接触 SQLite、Event Store、Scheduler 表或 Credential Vault；禁用 UI 不会停止后台同步和提醒。详见 [UI README](packages/academic-dsh-ui/README.md) 与 [验证记录](docs/frontend-verification.md)。
+
 ## 架构要点
 
 ```text
@@ -148,6 +166,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 | `packages/academic-notifications` | 应用内通知 Reaction、72h/24h 截止扫描 |
 | `packages/academic-connections` | 连接元数据、Credential Vault、授权状态 |
 | `packages/academic-dsh-plugin` | DSH bundle：host / planner / tools 独立 Cordis 插件 |
+| `packages/academic-dsh-ui` | DSH 客户端 UI 插件与 Host Typert Remote API 适配 |
 | `adapters/fixture-lms` | 受控测试数据源 |
 | `apps/academic-cli` | 组合根、CLI 演示、备份恢复 |
 
@@ -182,4 +201,4 @@ npm test
 npm run build:dsh
 ```
 
-共 77 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期与凭据连接；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry 自测。详见 [docs/testing.md](docs/testing.md)。
+共 100 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。

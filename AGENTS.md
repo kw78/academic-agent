@@ -42,6 +42,7 @@ packages/
   academic-notifications/      # 应用内通知 Reaction（可卸载）
   academic-connections/        # Connection Manager + Credential Vault
   academic-dsh-plugin/         # DSH bundle：host / planner / tools 独立插件
+  academic-dsh-ui/             # DSH 客户端 UI 插件 + Host Typert Remote API 适配
 adapters/
   fixture-lms/                 # MVP 受控测试数据源
 apps/
@@ -119,14 +120,16 @@ docs/adr/                      # 架构决策记录
 
 - 目标底座是 DSH Harness / Cordis；复用其 Agent、Tool、Session、Plugin Manager，不自造完整 Harness。
 - 稳定内核与大部分功能包保持宿主无关；DSH 绑定放在独立 bundle `@academic/dsh-plugin`。本机安装版本为 **DSH 0.2.1-rc.3**，插件 peer 范围 `>=0.2.0-rc.1 <0.3.0-0`。
-- DSH 绑定继续按 M0 验证：`inject`、Service 注册/撤销、Tool 注册/撤销、HMR/重启语义、依赖组件卸载时资源释放。目前已完成加载、工具注册、ToolRegistry 执行与 DeepSeek 模型自然语言调用；HMR/Session 待补。
+- DSH 绑定继续按 M0 验证：`inject`、Service 注册/撤销、Tool 注册/撤销、HMR/重启语义、依赖组件卸载时资源释放。目前已完成加载、工具注册、ToolRegistry 执行、DeepSeek 模型自然语言调用，以及 Web 客户端 UI 的加载/卸载/重载；文件级 HMR 与真实 Session 生命周期待补。
 - Agent 工具通过 `ctx.tools.register(defineTool(...))` 暴露；工具只调用领域服务，不拼 SQL、不直接追加事件。
 - 普通 Host 插件可访问宿主进程；Cordis disposer 不是安全沙箱。未审查代码不得以可信 Host 插件身份安装。
 - 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 拆成 `host` / `planner` / `tools` 三个 Cordis fiber；host 提供 `academicApp` 服务，planner 与 tools 独立注入，6 个工具经真实 `ctx.tools` 注册。
-- 真实 Cordis 生命周期测试已验证：卸载 tools 后 host/scheduler/store 继续运行；卸载 planner 后旧计划仍可读、能力消失；重载二者恢复；host 卸载关闭 app。profile 级 HMR 尚未验证。
+- 真实 Cordis 生命周期测试已验证：卸载 tools 后 host/scheduler/store 继续运行；卸载 planner 后旧计划仍可读、能力消失；重载二者恢复；host 卸载关闭 app。
+- DSH Web profile 已实测通过 Plugins 页面禁用/启用 `@academic/dsh-ui`：入口消失后后台同步/重算继续，重新启用后入口恢复且没有重复 Host、作业或课程。文件级 HMR 尚未验证。
 - DSH 运行时提供 `@deepseek-ai/cordis` / `@deepseek-ai/dsh-tools`；插件保持二者 external，不另造 Harness。普通 `--patch` 直接加载工作区文件无法解析这些 peer，必须安装到 profile（或从 DSH 源码 checkout 运行）。
 - 已用 DSH 凭证中的 DeepSeek key 跑通真实自然语言工具调用：模型调用 `academic_list_courses`，工具返回真实 SQLite 数据并正确回答。
-- 尚未验证 Cordis HMR、真实 Session 生命周期与审批 UI；不得把这些说成已完成。
+- 尚未验证 Cordis 文件级 HMR、真实 Session 生命周期与审批 UI；不得把这些说成已完成。
+- `academic-dsh-ui` 是唯一客户端 UI 插件：同时用于 DSH Desktop 与 Web；通过 `sidebar.panellist` + `main` keyed slot 注册，Host 侧使用 `AcademicUiService extends TypertRemoteService`（namespace `academic`）和 Gateway SRC fallback。UI 不访问 SQLite/Event Store/Projection/Scheduler 表/Vault。
 - `academic-agent-tools` 仍保留宿主无关的 `AcademicToolHost` 契约；`InMemoryToolHost` 仅用于本地 CLI/测试，DSH 适配在 `academic-dsh-plugin`。
 - 组合根 `apps/academic-cli` 负责装配能力、注册后台作业与通知 Reaction；它不包含领域规则，也不绕过 Command API。
 
@@ -134,7 +137,7 @@ docs/adr/                      # 架构决策记录
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
-| M0 | DSH 版本锁定与框架可运行性验证 | 部分完成：本机 `0.2.1-rc.3` 已验证 bundle 加载、host/planner/tools 分离、真实 Cordis 独立卸载/重载、6 工具注册与执行；profile HMR/Session 待补 |
+| M0 | DSH 版本锁定与框架可运行性验证 | 部分完成：本机 `0.2.1-rc.3` 已验证 bundle 加载、host/planner/tools 分离、真实 Cordis 独立卸载/重载、6 工具注册与执行、Web 客户端 UI 加载/卸载/重载；文件级 HMR/真实 Session 待补 |
 | M1 | Event-Sourced Kernel、SQLite Event Store、核心投影、迁移 | 已完成（MVP 范围） |
 | M2 | fixture LMS、Connector、Scheduler、StudyTask/StudyPlan、Planner | 已完成（fixture 闭环 + 用户管理/计划锁定） |
 | M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成：宿主无关工具、DSH 工具绑定、DeepSeek 模型自然语言工具调用均通过 |
@@ -160,18 +163,20 @@ docs/adr/                      # 架构决策记录
 | T14 Agent Bridge 卸载不影响后台 | 已覆盖（宿主无关 + 真实 Cordis tools fiber） | `tests/e2e/app.test.ts`、`cordis-lifecycle.test.ts` |
 | T15 零模型调用 | 已覆盖（ModelUsageMeter = 0；DSH 自测不调用模型） | `tests/e2e/app.test.ts`、DSH selftest |
 | T16 未授权写入被拒 | 已覆盖（可信宿主授权；模型参数不能自证；DSH 中 FORBIDDEN 实测） | `tests/integration/agent-tools.test.ts`、DSH selftest |
-| T17 插件停用资源释放 | 部分覆盖（消费者/定时器/处理器 + 真实 Cordis tools/planner fiber）；profile HMR 待补 | dispatcher、scheduler、cordis-lifecycle 测试 |
+| T17 插件停用资源释放 | 已覆盖（消费者/定时器/处理器 + 真实 Cordis tools/planner fiber + DSH Web UI 禁用/启用）；文件级 HMR 待补 | dispatcher、scheduler、cordis-lifecycle 测试；frontend-verification |
 | T18 备份恢复 | 已覆盖 | `tests/e2e/app.test.ts` |
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（77 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`。
+当前验证命令：`npm run typecheck`、`npm test`（100 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 
 P0 修复已验证：启动不覆盖调度配置；消费者重启续跑 checkpoint；Agent 写入需可信宿主授权；同步自动生成默认任务且不重复/不覆盖用户修改；Planner 遵守每周可用时间与临时不可用；72h/24h 截止提醒去重且重启补偿。
 
 凭据连接 MVP 已验证：连接元数据与秘密分离；Windows DPAPI 加密存储；fail-closed；验证/断开/删除凭据；认证失败停止同步并保留旧数据；source mismatch 拒绝；DB/事件/同步记录无明文；DPAPI 受保护凭据完成端到端同步。
+
+前端 UI 已验证（`packages/academic-dsh-ui`）：侧边栏“学业”入口、总览/任务/计划/连接/自动化/设置页面；任务完成、计划候选确认、锁定、可用时间保存、作业暂停/恢复、提醒已读均经 Host Remote API 生效；候选计划确认使用 Host 端 `previewId`，不信任客户端计划块；UI 不返回/保存 `credentialRef`，未实现真实 Adapter 时不显示认证表单。详细记录见 `docs/frontend-verification.md`。
 
 DSH 实测（本机 0.2.1-rc.3，独立 `academic` profile）：
 

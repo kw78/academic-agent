@@ -6,6 +6,8 @@
 
 凭据连接 MVP 已具备：可创建连接、隐藏输入凭据、DPAPI 加密保存、验证/断开/删除凭据，并由 Connector 在认证失败时停止同步、保留旧数据。Blackboard Adapter 尚未实现。
 
+前端按 Adapter 可用性展示：当前只有内置 Fixture 数据源显示为可用；没有已实现且可验证的认证 Adapter 时，连接页不会展示认证表单，也不会把“已保存凭据”显示为“已连接”。
+
 ## USTC Blackboard 尝试
 
 目标入口：

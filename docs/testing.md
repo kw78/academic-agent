@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**77 项测试通过**（17 个测试文件）。
+当前基线：**100 项测试通过**（20 个测试文件）。
 
 ## 分层
 
@@ -40,7 +40,7 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 | T14 | Agent Bridge 卸载后后台同步/调度照常 | `tests/e2e/app.test.ts`、`cordis-lifecycle.test.ts` | 通过（宿主无关 + 真实 Cordis tools fiber） |
 | T15 | 常规同步与 Planner 模型调用为 0 | `tests/e2e/app.test.ts` | 通过（`ModelUsageMeter`） |
 | T16 | 未授权/未确认的 Agent 写入被拒 | `agent-tools.test.ts` | 通过（可信宿主授权；模型参数不能自证） |
-| T17 | 停用后无残留监听器/定时器/处理器 | Dispatcher、Scheduler、Cordis 生命周期测试 | 部分（profile HMR 待 M0） |
+| T17 | 停用后无残留监听器/定时器/处理器 | Dispatcher、Scheduler、Cordis 生命周期测试；DSH Web Plugins 实测 | 通过（profile 级 UI 禁用/启用；文件级 HMR 未验证） |
 | T18 | 数据库备份恢复；事件完整、投影可校验/重建 | `tests/e2e/app.test.ts` | 通过 |
 | T19 | 旧 Schema 事件经 Upcaster 正确投影 | `tests/replay/upcaster.test.ts` | 通过 |
 | T20 | 会话/应用结束不影响持久化状态与后台任务 | `tests/e2e/app.test.ts` | 通过（应用重启；DSH Session 待 M0） |
@@ -88,7 +88,11 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 - 重新加载 tools/planner 后能力恢复；
 - host 卸载关闭 app。
 
-DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日志；profile 级 HMR 尚未验证。
+DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日志；Web profile 已实测通过 Plugins 页面禁用/启用 `/dsh-ui`，后台作业继续运行，重新启用后无重复 Host；文件级 HMR 尚未验证。
+
+## 前端 UI
+
+`packages/academic-dsh-ui` 的单元、集成与真实 DSH Web 验证见 [frontend-verification.md](frontend-verification.md)。
 
 ## DSH 实测（本机 0.2.1-rc.3）
 
