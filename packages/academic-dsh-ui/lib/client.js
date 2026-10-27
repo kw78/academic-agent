@@ -1057,6 +1057,31 @@ function groupBlocksByDate(blocks, timeZone) {
     blocks: [...entries].sort((a, b) => a.start.localeCompare(b.start))
   }));
 }
+function weekStart(date) {
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) return date;
+  const value = new Date(Date.UTC(year, month - 1, day));
+  const offset = (value.getUTCDay() + 6) % 7;
+  value.setUTCDate(value.getUTCDate() - offset);
+  return value.toISOString().slice(0, 10);
+}
+function groupBlocksByWeek(blocks, timeZone) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const block of blocks) {
+    const key = weekStart(localDate(block.start, timeZone));
+    const entries = groups.get(key) ?? [];
+    entries.push(block);
+    groups.set(key, entries);
+  }
+  return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, entries]) => ({
+    date,
+    endDate: addDays(date, 6),
+    blocks: [...entries].sort((a, b) => a.start.localeCompare(b.start))
+  }));
+}
+function sortPlanBlocks(blocks) {
+  return [...blocks].sort((left, right) => left.start.localeCompare(right.start));
+}
 function groupLockedByDate(blocks, timeZone) {
   const groups = /* @__PURE__ */ new Map();
   for (const block of blocks) {
@@ -1929,6 +1954,23 @@ var import_jsx_runtime4 = require("react/jsx-runtime");
 function taskTitle(tasks, taskId) {
   return tasks.find((card) => card.task.taskId === taskId)?.task.title ?? taskId;
 }
+function displayGroups(blocks, timeZone, mode) {
+  if (mode === "list") {
+    return [{ key: "all", label: "\u5168\u90E8\u65F6\u95F4\u5757", blocks: sortPlanBlocks(blocks) }];
+  }
+  if (mode === "week") {
+    return groupBlocksByWeek(blocks, timeZone).map((group) => ({
+      key: group.date,
+      label: `${group.date} \u2014 ${group.endDate}`,
+      blocks: group.blocks
+    }));
+  }
+  return groupBlocksByDate(blocks, timeZone).map((group) => ({
+    key: group.date,
+    label: `${group.date} ${weekdayLabel(group.date)}`,
+    blocks: group.blocks
+  }));
+}
 function availabilitySummary(availability) {
   const days = new Set(availability.weeklySlots.map((slot) => slot.weekday)).size;
   return `${availability.timeZone} \xB7 \u6BCF\u5468 ${days} \u5929\u53EF\u7528 \xB7 \u7C92\u5EA6 ${availability.granularityMinutes} \u5206\u949F \xB7 \u4E34\u65F6\u4E0D\u53EF\u7528 ${availability.temporaryBlocks.length} \u6BB5`;
@@ -1942,6 +1984,7 @@ function PlanPage({ ctx, active, onNavigate }) {
   const action = useAction(refresh);
   const [candidate, setCandidate] = (0, import_react5.useState)();
   const [rangeDays, setRangeDays] = (0, import_react5.useState)("7");
+  const [mode, setMode] = (0, import_react5.useState)("day");
   const [lockStart, setLockStart] = (0, import_react5.useState)("");
   const [lockEnd, setLockEnd] = (0, import_react5.useState)("");
   const [lockTitle, setLockTitle] = (0, import_react5.useState)("");
@@ -1951,12 +1994,12 @@ function PlanPage({ ctx, active, onNavigate }) {
   const plan = data?.plan;
   const tasks = data?.tasks ?? [];
   const candidateGroups = (0, import_react5.useMemo)(
-    () => candidate ? groupBlocksByDate(candidate.blocks, timeZone) : [],
-    [candidate, timeZone]
+    () => candidate ? displayGroups(candidate.blocks, timeZone, mode) : [],
+    [candidate, timeZone, mode]
   );
   const planGroups = (0, import_react5.useMemo)(
-    () => plan ? groupBlocksByDate(plan.blocks, timeZone) : [],
-    [plan, timeZone]
+    () => plan ? displayGroups(plan.blocks, timeZone, mode) : [],
+    [plan, timeZone, mode]
   );
   const lockedGroups = (0, import_react5.useMemo)(
     () => plan ? groupLockedByDate(plan.lockedBlocks, timeZone) : [],
@@ -2035,6 +2078,41 @@ function PlanPage({ ctx, active, onNavigate }) {
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "ac-muted", children: availabilitySummary(data.availability) })
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "ac-inline-actions", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "ac-toggle", role: "tablist", "aria-label": "\u8BA1\u5212\u89C6\u56FE", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              "button",
+              {
+                type: "button",
+                role: "tab",
+                "aria-selected": mode === "day",
+                className: mode === "day" ? "ac-toggle-active" : "",
+                onClick: () => setMode("day"),
+                children: "\u6309\u65E5"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              "button",
+              {
+                type: "button",
+                role: "tab",
+                "aria-selected": mode === "week",
+                className: mode === "week" ? "ac-toggle-active" : "",
+                onClick: () => setMode("week"),
+                children: "\u6309\u5468"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              "button",
+              {
+                type: "button",
+                role: "tab",
+                "aria-selected": mode === "list",
+                className: mode === "list" ? "ac-toggle-active" : "",
+                onClick: () => setMode("list"),
+                children: "\u5217\u8868"
+              }
+            )
+          ] }),
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Field, { label: "\u89C4\u5212\u8303\u56F4", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("select", { value: rangeDays, onChange: (event) => setRangeDays(event.target.value), children: [
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "7", children: "\u672A\u6765 7 \u5929" }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "14", children: "\u672A\u6765 14 \u5929" }),
@@ -2096,11 +2174,7 @@ function PlanPage({ ctx, active, onNavigate }) {
             ] }),
             candidate.warnings.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("ul", { className: "ac-warning-list", children: candidate.warnings.map((warning) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("li", { children: warning }, warning)) }),
             candidateGroups.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(EmptyState, { title: "\u6CA1\u6709\u53EF\u5B89\u6392\u7684\u5019\u9009\u65F6\u95F4\u5757", children: "\u68C0\u67E5\u53EF\u7528\u65F6\u95F4\u3001\u9501\u5B9A\u65F6\u6BB5\u548C\u4EFB\u52A1\u9884\u8BA1\u65F6\u957F\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "ac-day-groups", children: candidateGroups.map((group) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "ac-day-group", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("h3", { children: [
-                group.date,
-                " ",
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "ac-muted", children: weekdayLabel(group.date) })
-              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { children: group.label }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("ul", { className: "ac-block-list", children: group.blocks.map((block) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("li", { className: "ac-block-row", children: [
                 /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("time", { children: formatDateTime(block.start, timeZone) }),
                 /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: taskTitle(tasks, block.taskId) }),
@@ -2108,7 +2182,7 @@ function PlanPage({ ctx, active, onNavigate }) {
                   (Date.parse(block.end) - Date.parse(block.start)) / 6e4
                 ) })
               ] }, `${block.taskId}:${block.start}`)) })
-            ] }, group.date)) }),
+            ] }, group.key)) }),
             candidate.unscheduled.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "ac-subsection", children: [
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { children: "\u672A\u80FD\u5B89\u6392\u7684\u4EFB\u52A1" }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("ul", { className: "ac-list", children: candidate.unscheduled.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("li", { className: "ac-list-row", children: [
@@ -2145,11 +2219,7 @@ function PlanPage({ ctx, active, onNavigate }) {
           children: !plan ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u786E\u8BA4\u8BA1\u5212", children: "\u751F\u6210\u5019\u9009\u8BA1\u5212\u5E76\u786E\u8BA4\u540E\uFF0C\u8BA1\u5212\u5757\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
             plan.status === "archived" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "ac-muted", children: "\u8BE5\u8BA1\u5212\u5DF2\u5F52\u6863\uFF0C\u4E0D\u80FD\u7EE7\u7EED\u4FEE\u6539\uFF1B\u53EF\u4EE5\u751F\u6210\u65B0\u7684\u5019\u9009\u8BA1\u5212\u3002" }),
             planGroups.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(EmptyState, { title: "\u5F53\u524D\u8BA1\u5212\u6CA1\u6709\u65F6\u95F4\u5757" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "ac-day-groups", children: planGroups.map((group) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "ac-day-group", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("h3", { children: [
-                group.date,
-                " ",
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "ac-muted", children: weekdayLabel(group.date) })
-              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { children: group.label }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("ul", { className: "ac-block-list", children: group.blocks.map((block) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("li", { className: "ac-block-row", children: [
                 /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("time", { children: formatDateTime(block.start, timeZone) }),
                 /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: taskTitle(tasks, block.taskId) }),
@@ -2171,7 +2241,7 @@ function PlanPage({ ctx, active, onNavigate }) {
                   }
                 )
               ] }, `${block.taskId}:${block.start}`)) })
-            ] }, group.date)) }),
+            ] }, group.key)) }),
             /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "ac-subsection", children: [
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h3", { children: "\u9501\u5B9A\u65F6\u6BB5" }),
               lockedGroups.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { className: "ac-muted", children: "\u6CA1\u6709\u9501\u5B9A\u65F6\u6BB5\uFF1B\u9501\u5B9A\u662F\u786C\u7EA6\u675F\uFF0CPlanner \u4E0D\u4F1A\u5360\u7528\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("ul", { className: "ac-list", children: lockedGroups.flatMap(

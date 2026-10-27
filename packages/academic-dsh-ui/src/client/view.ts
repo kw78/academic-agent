@@ -234,6 +234,39 @@ export function groupBlocksByDate(
     }))
 }
 
+function weekStart(date: string): string {
+  const [year, month, day] = date.split('-').map(Number)
+  if (!year || !month || !day) return date
+  const value = new Date(Date.UTC(year, month - 1, day))
+  const offset = (value.getUTCDay() + 6) % 7
+  value.setUTCDate(value.getUTCDate() - offset)
+  return value.toISOString().slice(0, 10)
+}
+
+export function groupBlocksByWeek(
+  blocks: PlanBlock[],
+  timeZone: string,
+): Array<{ date: string; endDate: string; blocks: PlanBlock[] }> {
+  const groups = new Map<string, PlanBlock[]>()
+  for (const block of blocks) {
+    const key = weekStart(localDate(block.start, timeZone))
+    const entries = groups.get(key) ?? []
+    entries.push(block)
+    groups.set(key, entries)
+  }
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([date, entries]) => ({
+      date,
+      endDate: addDays(date, 6),
+      blocks: [...entries].sort((a, b) => a.start.localeCompare(b.start)),
+    }))
+}
+
+export function sortPlanBlocks(blocks: PlanBlock[]): PlanBlock[] {
+  return [...blocks].sort((left, right) => left.start.localeCompare(right.start))
+}
+
 export function groupLockedByDate(
   blocks: LockedBlock[],
   timeZone: string,

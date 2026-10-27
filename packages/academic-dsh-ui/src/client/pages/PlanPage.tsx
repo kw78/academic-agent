@@ -17,11 +17,13 @@ import {
   formatMinutes,
   fromLocalInputValue,
   groupBlocksByDate,
+  groupBlocksByWeek,
   groupLockedByDate,
+  sortPlanBlocks,
   planStatusLabel,
   weekdayLabel,
 } from '../view.js'
-import type { LockedBlock } from '@academic/contracts'
+import type { LockedBlock, PlanBlock } from '@academic/contracts'
 import type {
   AvailabilityView,
   PlanCandidate,
@@ -34,6 +36,36 @@ import type { PageProps } from './types.js'
 
 function taskTitle(tasks: TaskCard[], taskId: string): string {
   return tasks.find((card) => card.task.taskId === taskId)?.task.title ?? taskId
+}
+
+type PlanMode = 'day' | 'week' | 'list'
+
+interface DisplayGroup {
+  key: string
+  label: string
+  blocks: PlanBlock[]
+}
+
+function displayGroups(
+  blocks: PlanBlock[],
+  timeZone: string,
+  mode: PlanMode,
+): DisplayGroup[] {
+  if (mode === 'list') {
+    return [{ key: 'all', label: '全部时间块', blocks: sortPlanBlocks(blocks) }]
+  }
+  if (mode === 'week') {
+    return groupBlocksByWeek(blocks, timeZone).map((group) => ({
+      key: group.date,
+      label: `${group.date} — ${group.endDate}`,
+      blocks: group.blocks,
+    }))
+  }
+  return groupBlocksByDate(blocks, timeZone).map((group) => ({
+    key: group.date,
+    label: `${group.date} ${weekdayLabel(group.date)}`,
+    blocks: group.blocks,
+  }))
 }
 
 function availabilitySummary(availability: AvailabilityView): string {
@@ -50,6 +82,7 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
   const action = useAction(refresh)
   const [candidate, setCandidate] = useState<PlanCandidate>()
   const [rangeDays, setRangeDays] = useState('7')
+  const [mode, setMode] = useState<PlanMode>('day')
   const [lockStart, setLockStart] = useState('')
   const [lockEnd, setLockEnd] = useState('')
   const [lockTitle, setLockTitle] = useState('')
@@ -60,12 +93,12 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
   const tasks = data?.tasks ?? []
 
   const candidateGroups = useMemo(
-    () => (candidate ? groupBlocksByDate(candidate.blocks, timeZone) : []),
-    [candidate, timeZone],
+    () => (candidate ? displayGroups(candidate.blocks, timeZone, mode) : []),
+    [candidate, timeZone, mode],
   )
   const planGroups = useMemo(
-    () => (plan ? groupBlocksByDate(plan.blocks, timeZone) : []),
-    [plan, timeZone],
+    () => (plan ? displayGroups(plan.blocks, timeZone, mode) : []),
+    [plan, timeZone, mode],
   )
   const lockedGroups = useMemo(
     () => (plan ? groupLockedByDate(plan.lockedBlocks, timeZone) : []),
@@ -154,6 +187,35 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
               <span className="ac-muted">{availabilitySummary(data.availability)}</span>
             </div>
             <div className="ac-inline-actions">
+              <div className="ac-toggle" role="tablist" aria-label="计划视图">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === 'day'}
+                  className={mode === 'day' ? 'ac-toggle-active' : ''}
+                  onClick={() => setMode('day')}
+                >
+                  按日
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === 'week'}
+                  className={mode === 'week' ? 'ac-toggle-active' : ''}
+                  onClick={() => setMode('week')}
+                >
+                  按周
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === 'list'}
+                  className={mode === 'list' ? 'ac-toggle-active' : ''}
+                  onClick={() => setMode('list')}
+                >
+                  列表
+                </button>
+              </div>
               <Field label="规划范围">
                 <select value={rangeDays} onChange={(event) => setRangeDays(event.target.value)}>
                   <option value="7">未来 7 天</option>
@@ -246,10 +308,8 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
               ) : (
                 <div className="ac-day-groups">
                   {candidateGroups.map((group) => (
-                    <div key={group.date} className="ac-day-group">
-                      <h3>
-                        {group.date} <span className="ac-muted">{weekdayLabel(group.date)}</span>
-                      </h3>
+                    <div key={group.key} className="ac-day-group">
+                      <h3>{group.label}</h3>
                       <ul className="ac-block-list">
                         {group.blocks.map((block) => (
                           <li key={`${block.taskId}:${block.start}`} className="ac-block-row">
@@ -322,10 +382,8 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
                 ) : (
                   <div className="ac-day-groups">
                     {planGroups.map((group) => (
-                      <div key={group.date} className="ac-day-group">
-                        <h3>
-                          {group.date} <span className="ac-muted">{weekdayLabel(group.date)}</span>
-                        </h3>
+                      <div key={group.key} className="ac-day-group">
+                        <h3>{group.label}</h3>
                         <ul className="ac-block-list">
                           {group.blocks.map((block) => (
                             <li key={`${block.taskId}:${block.start}`} className="ac-block-row">

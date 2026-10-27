@@ -5,6 +5,7 @@ import {
   filterTaskCards,
   formatDue,
   groupBlocksByDate,
+  groupBlocksByWeek,
   sourceStateLabel,
   sourceStateTone,
 } from '../../packages/academic-dsh-ui/src/client/view.js'
@@ -133,6 +134,19 @@ describe('task filtering', () => {
       ZONE,
     )
     expect(groups.map((group) => group.date)).toEqual(['2026-10-27', '2026-10-28'])
+  })
+
+  it('groups plan blocks by week for the week view', () => {
+    const groups = groupBlocksByWeek(
+      [
+        { taskId: 'a', start: '2026-10-27T01:00:00.000Z', end: '2026-10-27T02:00:00.000Z' },
+        { taskId: 'a', start: '2026-10-28T01:00:00.000Z', end: '2026-10-28T02:00:00.000Z' },
+        { taskId: 'a', start: '2026-11-02T01:00:00.000Z', end: '2026-11-02T02:00:00.000Z' },
+      ],
+      ZONE,
+    )
+    expect(groups.map((group) => group.date)).toEqual(['2026-10-26', '2026-11-02'])
+    expect(groups[0]?.blocks).toHaveLength(2)
   })
 })
 
