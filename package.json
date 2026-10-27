@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "description": "Academic Agent — event-sourced personal academic assistant following the Academic Agent architecture baseline.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kw78/academic-agent.git"
+  },
+  "homepage": "https://github.com/kw78/academic-agent#readme",
   "packageManager": "npm@10.9.8",
   "workspaces": [
     "packages/*",
