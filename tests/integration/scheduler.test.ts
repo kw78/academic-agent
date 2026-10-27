@@ -211,6 +211,38 @@ describe('durable scheduler', () => {
     expect(scheduler.getJob('job-sync')?.consecutiveFailures).toBe(0)
   })
 
+  it('FIX-01 keeps persisted settings when default jobs are ensured on restart', async () => {
+    const { clock, scheduler } = setup()
+    const initial = scheduler.schedule({
+      jobId: 'job-persisted',
+      kind: 'persisted',
+      nextRunAt: clock.now(),
+      policy: { intervalMs: 60_000 },
+    })
+    scheduler.pause('job-persisted')
+    const paused = scheduler.getJob('job-persisted')!
+
+    const ensured = scheduler.ensureJob({
+      jobId: 'job-persisted',
+      kind: 'persisted',
+      nextRunAt: new Date(Date.parse(clock.now()) + 999_000).toISOString(),
+      policy: { intervalMs: 5_000 },
+    })
+    expect(ensured).toMatchObject({
+      enabled: false,
+      nextRunAt: paused.nextRunAt,
+      policy: initial.policy,
+      revision: initial.revision,
+    })
+
+    scheduler.resume('job-persisted', paused.nextRunAt)
+    expect(scheduler.ensureJob({
+      jobId: 'job-persisted',
+      kind: 'persisted',
+      policy: { intervalMs: 1_000 },
+    }).policy).toMatchObject({ intervalMs: 60_000 })
+  })
+
   it('T17 releases handlers and timers on dispose or close', async () => {
     const { clock, scheduler } = setup()
     scheduler.schedule({

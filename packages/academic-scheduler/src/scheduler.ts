@@ -178,6 +178,19 @@ export class Scheduler {
     }
   }
 
+  /**
+   * Installs a default job only when it does not exist yet. Startup wiring must
+   * use this instead of schedule(), otherwise saved enabled/nextRunAt/policy
+   * values are overwritten on every restart.
+   */
+  ensureJob(input: ScheduleJobInput): ScheduledJob {
+    const jobId = input.jobId ?? this.#ids.next()
+    const existing = this.getJob(jobId)
+    if (existing) return existing
+    return this.schedule({ ...input, jobId })
+  }
+
+  /** Explicit create-or-update. User-initiated configuration changes use this. */
   schedule(input: ScheduleJobInput): ScheduledJob {
     const now = this.#clock.now()
     const jobId = input.jobId ?? this.#ids.next()
