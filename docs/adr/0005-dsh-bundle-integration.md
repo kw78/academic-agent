@@ -27,7 +27,8 @@
 ```
 
 - 证明 bundle 在真实 DSH 进程加载、`ctx.tools` 注册成功、真实 ToolRegistry 执行只读工具成功、写入权限门禁生效。
-- 带模型的自然语言调用因 headless profile 缺少 `DEEPSEEK_API_KEY` 未执行（`MISSING_CREDENTIAL`）；这不是插件失败。
+- 使用 DSH 凭证中的 DeepSeek key 完成真实模型调用：模型选择 `academic_list_courses`，工具返回 SQLite 中的课程，最终回答正确（exit 0）。密钥仅注入进程环境，未写入仓库或日志。
+- 若 headless 未配置 key，会报 `MISSING_CREDENTIAL`；这与插件本身无关。
 
 ## 代价与后续
 

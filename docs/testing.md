@@ -70,7 +70,15 @@ dsh academic --json "hello"
 - 未授权写入被权限门禁拒绝；
 - 不调用模型。
 
-带模型的自然语言调用因 headless 缺少 `DEEPSEEK_API_KEY` 未执行，报 `MISSING_CREDENTIAL`；配置 key 或 DSH Models 后可用 `dsh academic "列出我的课程"` 复测。
+随后使用 DSH 凭证中保存的 `DEEPSEEK_API_KEY` 做了真实模型调用（密钥只注入进程环境，不打印）：
+
+```text
+{"type":"tool_call","tool":"academic_list_courses","input":{}}
+{"type":"tool_result","status":"completed","result":"{\"courses\":[{... \"title\": \"Introduction to Computer Science\" ...}]}"}
+{"type":"final","text":"There is one course: Introduction to Computer Science — internal id: b170ab5d-..."}
+```
+
+模型正确选择并调用了 Academic 工具，工具读取真实 SQLite 数据，最终回答正确。若 DSH 未配置 key，headless 会报 `MISSING_CREDENTIAL`。
 
 ## 手工验收（fixture 闭环）
 

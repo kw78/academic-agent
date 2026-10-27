@@ -111,12 +111,13 @@ docs/adr/                      # 架构决策记录
 
 - 目标底座是 DSH Harness / Cordis；复用其 Agent、Tool、Session、Plugin Manager，不自造完整 Harness。
 - 稳定内核与大部分功能包保持宿主无关；DSH 绑定放在独立 bundle `@academic/dsh-plugin`。本机安装版本为 **DSH 0.2.1-rc.3**，插件 peer 范围 `>=0.2.0-rc.1 <0.3.0-0`。
-- DSH 绑定继续按 M0 验证：`inject`、Service 注册/撤销、Tool 注册/撤销、HMR/重启语义、依赖组件卸载时资源释放。目前只完成加载、工具注册与 ToolRegistry 执行验证。
+- DSH 绑定继续按 M0 验证：`inject`、Service 注册/撤销、Tool 注册/撤销、HMR/重启语义、依赖组件卸载时资源释放。目前已完成加载、工具注册、ToolRegistry 执行与 DeepSeek 模型自然语言调用；HMR/Session 待补。
 - Agent 工具通过 `ctx.tools.register(defineTool(...))` 暴露；工具只调用领域服务，不拼 SQL、不直接追加事件。
 - 普通 Host 插件可访问宿主进程；Cordis disposer 不是安全沙箱。未审查代码不得以可信 Host 插件身份安装。
 - 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 通过 esbuild 打包，在独立 `academic` profile 中加载，6 个工具经真实 `ctx.tools` 注册；`academic_list_courses` 与写入拒绝路径已通过真实 ToolRegistry 自测。
 - DSH 运行时提供 `@deepseek-ai/cordis` / `@deepseek-ai/dsh-tools`；插件保持二者 external，不另造 Harness。普通 `--patch` 直接加载工作区文件无法解析这些 peer，必须安装到 profile（或从 DSH 源码 checkout 运行）。
-- 尚未验证 Cordis HMR、真实 Session 生命周期与带模型的自然语言工具调用（本机 headless 缺少 `DEEPSEEK_API_KEY`）；不得把这些说成已完成。
+- 已用 DSH 凭证中的 DeepSeek key 跑通真实自然语言工具调用：模型调用 `academic_list_courses`，工具返回真实 SQLite 数据并正确回答。
+- 尚未验证 Cordis HMR、真实 Session 生命周期与审批 UI；不得把这些说成已完成。
 - `academic-agent-tools` 仍保留宿主无关的 `AcademicToolHost` 契约；`InMemoryToolHost` 仅用于本地 CLI/测试，DSH 适配在 `academic-dsh-plugin`。
 - 组合根 `apps/academic-cli` 负责装配能力、注册后台作业与通知 Reaction；它不包含领域规则，也不绕过 Command API。
 
@@ -127,7 +128,7 @@ docs/adr/                      # 架构决策记录
 | M0 | DSH 版本锁定与框架可运行性验证 | 部分完成：本机 `0.2.1-rc.3` 已验证 bundle 加载、6 工具注册、真实 ToolRegistry 执行；HMR/Session 待补 |
 | M1 | Event-Sourced Kernel、SQLite Event Store、核心投影、迁移 | 已完成（MVP 范围） |
 | M2 | fixture LMS、Connector、Scheduler、StudyTask/StudyPlan、Planner | 已完成（fixture 闭环） |
-| M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成宿主无关工具与 DSH 工具绑定；带模型自然语言调用待 API key |
+| M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成：宿主无关工具、DSH 工具绑定、DeepSeek 模型自然语言工具调用均通过 |
 | M4 | 生命周期、故障注入、备份恢复、迁移与性能 | 部分完成（生命周期/故障/备份/Upcaster/重启已测；性能与迁移演练待做） |
 
 架构测试矩阵进度：
@@ -164,7 +165,7 @@ dsh plugin --profile academic add D:/project/classhelper/packages/academic-dsh-p
 ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db dsh academic --json "hello"
 ```
 
-已观测：`tools=6 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`。带模型的自然语言调用因 headless 缺少 `DEEPSEEK_API_KEY` 未执行。
+已观测：`tools=6 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`。另外使用 DSH 凭证中的 DeepSeek key 跑通真实自然语言调用：模型调用 `academic_list_courses`，返回真实 SQLite 课程并正确回答。密钥只在进程环境中注入，未写入代码或日志。
 
 ## 10. 待确认的环境参数（不阻塞实现）
 

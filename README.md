@@ -16,7 +16,8 @@ GitHub: <https://github.com/kw78/academic-agent>
 - 常规同步、去重、提醒、基础规划**不调用 LLM**；Agent 只通过受控工具读取事实或提交命令。
 - M1（事件溯源内核）与 M2（fixture 数据源 + 调度 + 规划）已完成；M3 的 Agent 工具已完成。
 - **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，6 个工具注册成功，并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
-- HMR、真实 DSH Session 生命周期与带模型的自然语言工具调用仍待验证（本机 headless 缺少 API key）。
+- 已用 DSH 中保存的 DeepSeek key 跑通真实自然语言工具调用：模型调用 `academic_list_courses` 并正确回答课程。
+- HMR、真实 DSH Session 生命周期与审批 UI 仍待验证。
 
 ## 快速开始
 
@@ -71,7 +72,16 @@ dsh academic --json "hello"
 [academic-agent] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 
-带模型自然语言调用需要 `DEEPSEEK_API_KEY` 或在 DSH Models 页面配置账号；否则 headless 会报 `MISSING_CREDENTIAL`。插件默认只读，写入需在 profile 配置 `agentWrites: true`，且工具参数必须 `confirmed: true`。详见 [插件 README](packages/academic-dsh-plugin/README.md)。
+DeepSeek 模型实测（使用 DSH 已保存的 `DEEPSEEK_API_KEY`，不打印密钥）：
+
+```bash
+printf '%s' 'Call the tool academic_list_courses with empty arguments {}. Then reply with the course titles and internal ids.' \
+  | ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db \
+    DEEPSEEK_API_KEY="$(...从 DSH 凭证读取...)" \
+    dsh academic --json -
+```
+
+实测模型调用了 `academic_list_courses`，工具返回真实 SQLite 数据，最终回答包含课程 `Introduction to Computer Science` 与内部 id。若 DSH 未配置 key，headless 会报 `MISSING_CREDENTIAL`。插件默认只读，写入需在 profile 配置 `agentWrites: true`，且工具参数必须 `confirmed: true`。详见 [插件 README](packages/academic-dsh-plugin/README.md)。
 
 ## 架构要点
 
