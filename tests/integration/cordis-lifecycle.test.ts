@@ -88,16 +88,14 @@ describe('R3 Cordis plugin lifecycle', () => {
       }),
     )
 
-    const planner = await ctx.plugin({
-      name: plannerName,
-      inject: plannerInject,
-      apply: applyPlanner,
-    })
-    const tools = await ctx.plugin({
-      name: toolsName,
-      inject: toolsInject,
-      apply: applyTools,
-    })
+    const planner = await ctx.plugin(
+      { name: plannerName, inject: plannerInject, apply: applyPlanner },
+      { log: false },
+    )
+    const tools = await ctx.plugin(
+      { name: toolsName, inject: toolsInject, apply: applyTools },
+      { logLoad: false, selfTest: false },
+    )
     expect(app.registry.get(PLANNER_CAPABILITY_ID)).toBeDefined()
     expect(fakeTools.definitions.size).toBe(6)
 
@@ -111,16 +109,14 @@ describe('R3 Cordis plugin lifecycle', () => {
     expect(app.registry.get(PLANNER_CAPABILITY_ID)).toBeUndefined()
     expect(await app.store.queries.getActiveStudyPlan(range)).toBeDefined()
 
-    const toolsReloaded = await ctx.plugin({
-      name: toolsName,
-      inject: toolsInject,
-      apply: applyTools,
-    })
-    const plannerReloaded = await ctx.plugin({
-      name: plannerName,
-      inject: plannerInject,
-      apply: applyPlanner,
-    })
+    const toolsReloaded = await ctx.plugin(
+      { name: toolsName, inject: toolsInject, apply: applyTools },
+      { logLoad: false, selfTest: false },
+    )
+    const plannerReloaded = await ctx.plugin(
+      { name: plannerName, inject: plannerInject, apply: applyPlanner },
+      { log: false },
+    )
     expect(fakeTools.definitions.size).toBe(6)
     expect(app.registry.get(PLANNER_CAPABILITY_ID)).toBeDefined()
     await toolsReloaded.dispose()
