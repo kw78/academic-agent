@@ -1,0 +1,24 @@
+node_modules/
+dist/
+coverage/
+.tmp-*/
+*.log
+
+# Local runtime state (SQLite databases, backups)
+.data/
+*.db
+*.db-wal
+*.db-shm
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
