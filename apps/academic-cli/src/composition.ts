@@ -14,6 +14,7 @@ import {
   systemClock,
   timeBlockSchema,
   type AcademicSourceAdapter,
+  type AdapterCandidateSummary,
   type Clock,
   type CommandResult,
   type ConnectionSyncBinding,
@@ -170,6 +171,19 @@ export interface CreateTaskInput {
   priority?: number
 }
 
+export interface UpdateCourseInput {
+  termId?: string
+  code?: string
+  title?: string
+}
+
+export interface UpdateTaskDetailsInput {
+  title?: string
+  dueAt?: string | null
+  priority?: number
+  estimateMinutes?: number
+}
+
 export interface LockPlanBlockInput {
   start: string
   end: string
@@ -196,6 +210,22 @@ export interface AcademicApp {
   manifestRegistry: ManifestRegistry
   manifestStore: ManifestStore
   adapterCandidates: AdapterCandidateService
+  activateAdapterCandidate(
+    adapterId: string,
+    version: string,
+  ): Promise<{
+    candidate: AdapterCandidateSummary
+    sourceId?: string
+    warning?: string
+  }>
+  rollbackAdapterCandidate(
+    adapterId: string,
+    version?: string,
+  ): Promise<{
+    candidate: AdapterCandidateSummary
+    sourceId?: string
+    warning?: string
+  }>
   connections: ConnectionManager
   webSessions: WebSessionStore
   replans: ReplanStore
@@ -232,8 +262,16 @@ export interface AcademicApp {
   requestReplan(range: Range, reason?: ReplanReason): { replanRequestId: string; status: string }
   processPendingReplans(limit?: number): Promise<number>
   addCourse(input: CreateCourseInput): Promise<CommandResult>
+  updateCourse(courseId: string, input: UpdateCourseInput): Promise<CommandResult>
   archiveCourse(courseId: string): Promise<CommandResult>
+  restoreCourse(courseId: string): Promise<CommandResult>
+  deleteCourse(courseId: string): Promise<CommandResult>
+  archiveItem(itemId: string): Promise<CommandResult>
+  restoreItem(itemId: string): Promise<CommandResult>
   createTask(input: CreateTaskInput): Promise<CommandResult>
+  updateTask(taskId: string, input: UpdateTaskDetailsInput): Promise<CommandResult>
+  archiveTask(taskId: string): Promise<CommandResult>
+  restoreTask(taskId: string): Promise<CommandResult>
   completeTask(taskId: string): Promise<CommandResult>
   reopenTask(taskId: string): Promise<CommandResult>
   changeTaskEstimate(taskId: string, estimateMinutes: number): Promise<CommandResult>
@@ -269,6 +307,31 @@ function addMilliseconds(iso: string, milliseconds: number): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function escapePattern(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function candidateSourceId(adapterId: string): string {
+  const slug = adapterId.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').slice(0, 80)
+  return `adapter-${slug}`
+}
+
+function configAllowsHost(
+  config: Record<string, unknown>,
+  host: string,
+): boolean {
+  const domains = Array.isArray(config.cookieDomains)
+    ? config.cookieDomains.filter(
+        (entry): entry is string => typeof entry === 'string',
+      )
+    : []
+  const target = host.toLowerCase()
+  return domains.some((entry) => {
+    const domain = entry.toLowerCase().replace(/^\./, '')
+    return target === domain || target.endsWith(`.${domain}`)
+  })
 }
 
 export async function createAcademicApp(
@@ -475,6 +538,129 @@ export async function createAcademicApp(
     })
   }
 
+  const ensureCandidateSource = async (
+    candidate: AdapterCandidateSummary,
+  ): Promise<{ sourceId?: string; warning?: string }> => {
+    const manifest = manifestRegistry.get(candidate.adapterId, candidate.version)
+    if (!manifest) return { warning: 'Manifest 未注册，无法创建同步数据源' }
+    if (!sourceEngines.get('declarative')) {
+      return { warning: 'declarative engine 未加载，无法创建同步数据源' }
+    }
+    const base = new URL(manifest.baseUrl)
+    const host = base.hostname
+    const config = {
+      manifestId: candidate.adapterId,
+      manifestVersion: candidate.version,
+      baseUrl: base.toString(),
+      loginUrl: base.toString(),
+      authenticatedUrlPatterns: [`^${escapePattern(base.origin)}/`],
+      cookieDomains: [host],
+      verifyUrl: base.toString(),
+      loggedOutPatterns: ['/login'],
+    }
+    let sourceId = candidateSourceId(candidate.adapterId)
+    let existing = sources.get(sourceId)
+    if (existing?.archived) {
+      sourceId = `${sourceId}-${candidate.version}`.slice(0, 200)
+      existing = sources.get(sourceId)
+    }
+    if (!existing) {
+      sources.create({
+        sourceId,
+        engine: 'declarative',
+        displayName: manifest.displayName,
+        authKind: 'token',
+        loginMode: 'browser',
+        capabilities: ['academic.sync'],
+        config,
+      })
+    } else {
+      sources.update(sourceId, {
+        displayName: manifest.displayName,
+        authKind: 'token',
+        loginMode: 'browser',
+        capabilities: ['academic.sync'],
+        config,
+      })
+    }
+
+    let warning: string | undefined
+    const loginSource = sources
+      .list()
+      .find(
+        (source) =>
+          source.sourceId !== sourceId &&
+          source.engine !== 'fixture' &&
+          source.engine !== 'declarative' &&
+          source.authKind !== 'none' &&
+          configAllowsHost(source.config, host),
+      )
+    const loginConnection = loginSource
+      ? connections
+          .list()
+          .find(
+            (connection) =>
+              connection.sourceId === loginSource.sourceId &&
+              connection.hasCredential &&
+              connection.status === 'connected',
+          )
+      : undefined
+    if (loginSource && loginConnection) {
+      try {
+        const lease = await connections.openCredential(
+          loginConnection.connectionId,
+          loginSource.sourceId,
+        )
+        const secret = await lease.getSecret()
+        const target =
+          connections
+            .list()
+            .find((connection) => connection.sourceId === sourceId) ??
+          connections.create({
+            sourceId,
+            displayName: manifest.displayName,
+            authKind: 'token',
+          })
+        await connections.setSecret(target.connectionId, secret)
+        // The source session was verified and the host scope already matched.
+        await connections.verify(target.connectionId, async () => ({ ok: true }))
+      } catch {
+        warning = '已有会话无法复制；请在该数据源上重新登录'
+      }
+    } else if (loginSource && loginConnection === undefined) {
+      warning = '请先验证原会话，再启用候选'
+    } else {
+      warning = '请在该数据源上完成登录后再同步'
+    }
+    return { sourceId, ...(warning ? { warning } : {}) }
+  }
+
+  const activateCandidate = async (
+    adapterId: string,
+    version: string,
+  ): Promise<{
+    candidate: AdapterCandidateSummary
+    sourceId?: string
+    warning?: string
+  }> => {
+    const candidate = adapterCandidates.activate(adapterId, version)
+    const activation = await ensureCandidateSource(candidate)
+    return { candidate, ...activation }
+  }
+
+  const rollbackCandidate = async (
+    adapterId: string,
+    version?: string,
+  ): Promise<{
+    candidate: AdapterCandidateSummary
+    sourceId?: string
+    warning?: string
+  }> => {
+    const candidate = adapterCandidates.rollback(adapterId, version)
+    const activation = await ensureCandidateSource(candidate)
+    return { candidate, ...activation }
+  }
+
   const host = new InMemoryToolHost()
   const agentRegistration = registerAcademicTools(host, {
     queries: store.queries,
@@ -486,6 +672,8 @@ export async function createAcademicApp(
     sourceEngines,
     webSessions,
     adapterCandidates,
+    activateAdapterCandidate: (request) =>
+      activateCandidate(request.adapterId, request.version),
     probeSource: probeSourceById,
     getProbeSample: (sampleId: string) => probeSamples.get(sampleId),
     allowWrites: options.agentWrites ?? false,
@@ -715,6 +903,8 @@ export async function createAcademicApp(
     manifestRegistry,
     manifestStore,
     adapterCandidates,
+    activateAdapterCandidate: activateCandidate,
+    rollbackAdapterCandidate: rollbackCandidate,
     connections,
     webSessions,
     replans,
@@ -879,6 +1069,22 @@ export async function createAcademicApp(
       )
     },
 
+    async updateCourse(courseId, input) {
+      const course = await store.queries.getCourse(courseId)
+      if (!course) return failure(`Course not found: ${courseId}`)
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.CourseUpdate,
+          aggregateId: courseId,
+          expectedVersion: course.version,
+          actor: userActor,
+          correlationId: `course/${courseId}`,
+          payload: input,
+        }),
+      )
+    },
+
     async archiveCourse(courseId) {
       const course = await store.queries.getCourse(courseId)
       if (!course) return failure(`Course not found: ${courseId}`)
@@ -890,6 +1096,125 @@ export async function createAcademicApp(
           expectedVersion: course.version,
           actor: userActor,
           correlationId: `course/${courseId}`,
+          payload: {},
+        }),
+      )
+    },
+
+    async restoreCourse(courseId) {
+      const course = await store.queries.getCourse(courseId)
+      if (!course) return failure(`Course not found: ${courseId}`)
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.CourseRestore,
+          aggregateId: courseId,
+          expectedVersion: course.version,
+          actor: userActor,
+          correlationId: `course/${courseId}`,
+          payload: {},
+        }),
+      )
+    },
+
+    async deleteCourse(courseId) {
+      const course = await store.queries.getCourse(courseId)
+      if (!course) return failure(`Course not found: ${courseId}`)
+
+      // Deleting a course must not leave its synced items and local tasks
+      // pointing at a hidden course. Archive them through their own commands.
+      const items = []
+      let cursor: string | undefined
+      do {
+        const page = await store.queries.listAcademicItems({
+          courseId,
+          status: 'all',
+          limit: 200,
+          ...(cursor ? { cursor } : {}),
+        })
+        items.push(...page.items)
+        cursor = page.nextCursor
+      } while (cursor)
+      const itemIds = new Set(items.map((item) => item.itemId))
+
+      for (const item of items) {
+        if (item.archived) continue
+        const result = await store.commands.execute(
+          parseCommand({
+            commandId: ids.next(),
+            type: COMMAND.AcademicItemArchive,
+            aggregateId: item.itemId,
+            expectedVersion: item.version,
+            actor: userActor,
+            correlationId: `course-delete/${courseId}`,
+            payload: { reason: 'course deleted' },
+          }),
+        )
+        if (!result.ok && result.code !== 'CONFLICT') return result
+      }
+
+      const tasks = (
+        await store.queries.listStudyTasks({
+          status: 'all',
+          includeArchived: true,
+        })
+      ).items
+      for (const task of tasks) {
+        if (task.archived || !task.itemId || !itemIds.has(task.itemId)) continue
+        const result = await store.commands.execute(
+          parseCommand({
+            commandId: ids.next(),
+            type: COMMAND.StudyTaskArchive,
+            aggregateId: task.taskId,
+            expectedVersion: task.version,
+            actor: userActor,
+            correlationId: `course-delete/${courseId}`,
+            payload: { reason: 'course deleted' },
+          }),
+        )
+        if (!result.ok && result.code !== 'CONFLICT') return result
+      }
+
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.CourseDelete,
+          aggregateId: courseId,
+          expectedVersion: course.version,
+          actor: userActor,
+          correlationId: `course/${courseId}`,
+          payload: {},
+        }),
+      )
+    },
+
+    async archiveItem(itemId) {
+      const item = await store.queries.getAcademicItem(itemId)
+      if (!item) return failure(`Academic item not found: ${itemId}`)
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.AcademicItemArchive,
+          aggregateId: itemId,
+          expectedVersion: item.version,
+          actor: userActor,
+          correlationId: `item/${itemId}`,
+          payload: {},
+        }),
+      )
+    },
+
+    async restoreItem(itemId) {
+      const item = await store.queries.getAcademicItem(itemId)
+      if (!item) return failure(`Academic item not found: ${itemId}`)
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.AcademicItemRestore,
+          aggregateId: itemId,
+          expectedVersion: item.version,
+          actor: userActor,
+          correlationId: `item/${itemId}`,
           payload: {},
         }),
       )
@@ -914,6 +1239,18 @@ export async function createAcademicApp(
           },
         }),
       )
+    },
+
+    async updateTask(taskId, input) {
+      return taskCommand(taskId, COMMAND.StudyTaskChangeDetails, input)
+    },
+
+    async archiveTask(taskId) {
+      return taskCommand(taskId, COMMAND.StudyTaskArchive, {})
+    },
+
+    async restoreTask(taskId) {
+      return taskCommand(taskId, COMMAND.StudyTaskRestore, {})
     },
 
     async completeTask(taskId) {

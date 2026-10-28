@@ -5,7 +5,6 @@ import {
   dueSortKey,
   type AcademicItemView,
   type AdapterCandidateReport,
-  type AdapterCandidateSummary,
   type AdapterSample,
   type CommandResult,
   type ConnectionView,
@@ -104,6 +103,7 @@ const itemsSchema = z.object({
 })
 const tasksSchema = z.object({
   status: z.enum(['active', 'completed', 'all']).optional(),
+  includeArchived: z.boolean().optional(),
 })
 const previewSchema = z.object({
   start: z.string().min(1),
@@ -171,6 +171,19 @@ const createSourceSchema = z.object({
   config: z.record(z.string(), z.unknown()).optional(),
   capabilities: z.array(z.string().min(1).max(200)).max(50).optional(),
   enabled: z.boolean().optional(),
+})
+const updateCourseSchema = z.object({
+  id: z.string().min(1),
+  termId: z.string().min(1).max(100).optional(),
+  code: z.string().min(1).max(100).optional(),
+  title: z.string().min(1).max(300).optional(),
+})
+const updateTaskSchema = z.object({
+  taskId: z.string().min(1),
+  title: z.string().min(1).max(500).optional(),
+  dueAt: z.string().min(1).nullable().optional(),
+  priority: z.number().int().min(0).max(3).optional(),
+  estimateMinutes: z.number().int().min(5).max(1440).optional(),
 })
 const updateSourceSchema = z.object({
   sourceId: z.string().min(1),
@@ -463,7 +476,7 @@ async function buildPreferencesView(app: AcademicApp): Promise<PreferencesView> 
   return {
     coursePriorities: preferences.coursePriorities,
     courses: page.items
-      .filter((course) => !course.archived)
+      .filter((course) => !course.archived && !course.deleted)
       .map((course) => ({
         courseId: course.courseId,
         code: course.code,
@@ -765,7 +778,7 @@ function buildSources(
   syncRuns: SyncRunSummary[],
 ): SourceStatus[] {
   const catalog = new Map<string, SourceStatus>()
-  for (const config of app.sources.list()) {
+  for (const config of app.sources.list({ includeArchived: true })) {
     const engine = app.sourceEngines.get(config.engine)
     const available = Boolean(engine) && config.enabled && !config.archived
     const adapterReady = available && Boolean(engine?.createAdapter)
@@ -854,140 +867,6 @@ function sourceStatusFor(app: AcademicApp, sourceId: string): SourceStatus | und
   )
 }
 
-function escapePattern(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function candidateSourceId(adapterId: string): string {
-  const slug = adapterId.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').slice(0, 80)
-  return `adapter-${slug}`
-}
-
-function configAllowsHost(
-  config: Record<string, unknown>,
-  host: string,
-): boolean {
-  const domains = Array.isArray(config.cookieDomains)
-    ? config.cookieDomains.filter(
-        (entry): entry is string => typeof entry === 'string',
-      )
-    : []
-  const target = host.toLowerCase()
-  return domains.some((entry) => {
-    const domain = entry.toLowerCase().replace(/^\./, '')
-    return target === domain || target.endsWith(`.${domain}`)
-  })
-}
-
-/**
- * Activation creates the declarative source that the scheduler can actually
- * sync. If an authorized browser session already covers the manifest host,
- * its secret is copied into the new connection instead of asking for a second
- * login. The secret never leaves the Host.
- */
-async function ensureCandidateSource(
-  app: AcademicApp,
-  candidate: AdapterCandidateSummary,
-): Promise<{ source?: SourceStatus; warning?: string }> {
-  const manifest = app.manifestRegistry.get(candidate.adapterId, candidate.version)
-  if (!manifest) return { warning: 'Manifest 未注册，无法创建同步数据源' }
-  if (!app.sourceEngines.get('declarative')) {
-    return { warning: 'declarative engine 未加载，无法创建同步数据源' }
-  }
-  const base = new URL(manifest.baseUrl)
-  const host = base.hostname
-  const config = {
-    manifestId: candidate.adapterId,
-    manifestVersion: candidate.version,
-    baseUrl: base.toString(),
-    loginUrl: base.toString(),
-    authenticatedUrlPatterns: [`^${escapePattern(base.origin)}/`],
-    cookieDomains: [host],
-    verifyUrl: base.toString(),
-    loggedOutPatterns: ['/login'],
-  }
-  let sourceId = candidateSourceId(candidate.adapterId)
-  let existing = app.sources.get(sourceId)
-  if (existing?.archived) {
-    sourceId = `${sourceId}-${candidate.version}`.slice(0, 200)
-    existing = app.sources.get(sourceId)
-  }
-  if (!existing) {
-    app.sources.create({
-      sourceId,
-      engine: 'declarative',
-      displayName: manifest.displayName,
-      authKind: 'token',
-      loginMode: 'browser',
-      capabilities: ['academic.sync'],
-      config,
-    })
-  } else {
-    app.sources.update(sourceId, {
-      displayName: manifest.displayName,
-      authKind: 'token',
-      loginMode: 'browser',
-      capabilities: ['academic.sync'],
-      config,
-    })
-  }
-
-  let warning: string | undefined
-  const loginSource = app.sources
-    .list()
-    .find(
-      (source) =>
-        source.sourceId !== sourceId &&
-        source.engine !== 'fixture' &&
-        source.engine !== 'declarative' &&
-        source.authKind !== 'none' &&
-        configAllowsHost(source.config, host),
-    )
-  const loginConnection = loginSource
-    ? app.connections
-        .list()
-        .find(
-          (connection) =>
-            connection.sourceId === loginSource.sourceId &&
-            connection.hasCredential &&
-            connection.status === 'connected',
-        )
-    : undefined
-  if (loginSource && loginConnection) {
-    try {
-      const lease = await app.connections.openCredential(
-        loginConnection.connectionId,
-        loginSource.sourceId,
-      )
-      const secret = await lease.getSecret()
-      const target =
-        app.connections
-          .list()
-          .find((connection) => connection.sourceId === sourceId) ??
-        app.connections.create({
-          sourceId,
-          displayName: manifest.displayName,
-          authKind: 'token',
-        })
-      await app.connections.setSecret(target.connectionId, secret)
-      // The source session was verified and the host scope already matched.
-      await app.connections.verify(target.connectionId, async () => ({ ok: true }))
-    } catch {
-      warning = '已有会话无法复制；请在该数据源上重新登录'
-    }
-  } else if (loginSource && loginConnection === undefined) {
-    warning = '请先验证原会话，再启用候选'
-  } else {
-    warning = '请在该数据源上完成登录后再同步'
-  }
-  return {
-    ...(sourceStatusFor(app, sourceId)
-      ? { source: sourceStatusFor(app, sourceId)! }
-      : {}),
-    ...(warning ? { warning } : {}),
-  }
-}
-
 function syncHealth(
   lastSync: SyncRunSummary | undefined,
   now: string,
@@ -1012,12 +891,16 @@ interface LoadedTasks {
 
 async function loadTasks(
   app: AcademicApp,
-  options: { status?: 'active' | 'completed' | 'all' } = {},
+  options: {
+    status?: 'active' | 'completed' | 'all'
+    includeArchived?: boolean
+  } = {},
 ): Promise<LoadedTasks> {
   const [taskPage, itemPage, coursePage, plan] = await Promise.all([
-    app.store.queries.listStudyTasks(
-      options.status ? { status: options.status } : {},
-    ),
+    app.store.queries.listStudyTasks({
+      ...(options.status ? { status: options.status } : {}),
+      ...(options.includeArchived ? { includeArchived: true } : {}),
+    }),
     app.store.queries.listAcademicItems({ status: 'all', limit: MAX_ITEMS }),
     app.store.queries.listCourses(),
     app.getLatestPlan(),
@@ -1076,6 +959,8 @@ export interface AcademicUiApi {
   createSource(request: unknown): Promise<UiResult<SourceStatus>>
   updateSource(request: unknown): Promise<UiResult<SourceStatus>>
   archiveSource(request: unknown): Promise<UiResult<SourceStatus>>
+  restoreSource(request: unknown): Promise<UiResult<SourceStatus>>
+  deleteSource(request: unknown): Promise<UiResult<{ deleted: boolean }>>
   sourceLogin(request: unknown): Promise<UiResult<ConnectionView>>
   probeSource(request: unknown): Promise<UiResult<SourceProbeEvidence>>
   adapterCandidates(request: unknown): Promise<UiResult<AdapterCandidatesView>>
@@ -1114,8 +999,16 @@ export interface AcademicUiApi {
     request: unknown,
   ): Promise<UiResult<{ enabled: boolean; thresholdsHours: number[]; updatedAt: string }>>
   addCourse(request: unknown): Promise<UiResult<CommandReceipt>>
+  updateCourse(request: unknown): Promise<UiResult<CommandReceipt>>
   archiveCourse(request: unknown): Promise<UiResult<CommandReceipt>>
+  restoreCourse(request: unknown): Promise<UiResult<CommandReceipt>>
+  deleteCourse(request: unknown): Promise<UiResult<CommandReceipt>>
+  archiveItem(request: unknown): Promise<UiResult<CommandReceipt>>
+  restoreItem(request: unknown): Promise<UiResult<CommandReceipt>>
   createTask(request: unknown): Promise<UiResult<CommandReceipt>>
+  updateTask(request: unknown): Promise<UiResult<CommandReceipt>>
+  archiveTask(request: unknown): Promise<UiResult<CommandReceipt>>
+  restoreTask(request: unknown): Promise<UiResult<CommandReceipt>>
   completeTask(request: unknown): Promise<UiResult<CommandReceipt>>
   reopenTask(request: unknown): Promise<UiResult<CommandReceipt>>
   changeTaskEstimate(request: unknown): Promise<UiResult<CommandReceipt>>
@@ -1552,6 +1445,34 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       }
     },
 
+    async restoreSource(request) {
+      const parsed = parse(sourceIdSchema, request)
+      if (!parsed.ok) return parsed
+      const body: SourceIdRequest = parsed.value
+      try {
+        app.sources.restore(body.sourceId)
+        const source = sourceStatusFor(app, body.sourceId)
+        return source ? ok(source) : failure('NOT_FOUND', '数据源不存在')
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async deleteSource(request) {
+      const parsed = parse(sourceIdSchema, request)
+      if (!parsed.ok) return parsed
+      const body: SourceIdRequest = parsed.value
+      const source = app.sources.get(body.sourceId)
+      if (!source) return failure('NOT_FOUND', '数据源不存在')
+      try {
+        await app.connections.deleteBySource(body.sourceId)
+        app.sources.delete(body.sourceId)
+        return ok({ deleted: true })
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
     async sourceLogin(request) {
       const parsed = parse(sourceIdSchema, request)
       if (!parsed.ok) return parsed
@@ -1672,14 +1593,17 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
         return failure('VALIDATION', '启用候选需要明确版本')
       }
       try {
-        const candidate = app.adapterCandidates.activate(
+        const activation = await app.activateAdapterCandidate(
           body.adapterId,
           body.version,
         )
-        const activation = await ensureCandidateSource(app, candidate)
+        const source = activation.sourceId
+          ? sourceStatusFor(app, activation.sourceId)
+          : undefined
         return ok({
-          candidate,
-          ...activation,
+          candidate: activation.candidate,
+          ...(source ? { source } : {}),
+          ...(activation.warning ? { warning: activation.warning } : {}),
         } satisfies AdapterCandidateActivationView)
       } catch (error) {
         return fromError(error)
@@ -1691,12 +1615,11 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       if (!parsed.ok) return parsed
       const body: AdapterCandidateVersionRequest = parsed.value
       try {
-        const candidate = app.adapterCandidates.rollback(
+        const activation = await app.rollbackAdapterCandidate(
           body.adapterId,
           body.version,
         )
-        await ensureCandidateSource(app, candidate)
-        return ok(candidate)
+        return ok(activation.candidate)
       } catch (error) {
         return fromError(error)
       }
@@ -2046,6 +1969,13 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       return commandReceipt(await app.addCourse(body))
     },
 
+    async updateCourse(request) {
+      const parsed = parse(updateCourseSchema, request)
+      if (!parsed.ok) return parsed
+      const { id, ...input } = parsed.value
+      return commandReceipt(await app.updateCourse(id, input))
+    },
+
     async archiveCourse(request) {
       const parsed = parse(idSchema, request)
       if (!parsed.ok) return parsed
@@ -2053,11 +1983,64 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       return commandReceipt(await app.archiveCourse(body.id))
     },
 
+    async restoreCourse(request) {
+      const parsed = parse(idSchema, request)
+      if (!parsed.ok) return parsed
+      const body = parsed.value
+      return commandReceipt(await app.restoreCourse(body.id))
+    },
+
+    async deleteCourse(request) {
+      const parsed = parse(idSchema, request)
+      if (!parsed.ok) return parsed
+      const body = parsed.value
+      return commandReceipt(await app.deleteCourse(body.id))
+    },
+
+    async archiveItem(request) {
+      const parsed = parse(idSchema, request)
+      if (!parsed.ok) return parsed
+      const body = parsed.value
+      return commandReceipt(await app.archiveItem(body.id))
+    },
+
+    async restoreItem(request) {
+      const parsed = parse(idSchema, request)
+      if (!parsed.ok) return parsed
+      const body = parsed.value
+      return commandReceipt(await app.restoreItem(body.id))
+    },
+
     async createTask(request) {
       const parsed = parse(createTaskSchema, request)
       if (!parsed.ok) return parsed
       const body: CreateTaskRequest = parsed.value
       const result = commandReceipt(await app.createTask(body))
+      if (result.ok) previews.clear()
+      return result
+    },
+
+    async updateTask(request) {
+      const parsed = parse(updateTaskSchema, request)
+      if (!parsed.ok) return parsed
+      const { taskId, ...input } = parsed.value
+      const result = commandReceipt(await app.updateTask(taskId, input))
+      if (result.ok) previews.clear()
+      return result
+    },
+
+    async archiveTask(request) {
+      const parsed = parse(idSchema, request)
+      if (!parsed.ok) return parsed
+      const result = commandReceipt(await app.archiveTask(parsed.value.id))
+      if (result.ok) previews.clear()
+      return result
+    },
+
+    async restoreTask(request) {
+      const parsed = parse(idSchema, request)
+      if (!parsed.ok) return parsed
+      const result = commandReceipt(await app.restoreTask(parsed.value.id))
       if (result.ok) previews.clear()
       return result
     },
@@ -2103,7 +2086,9 @@ export const uiRequestSchemas = {
   unlock: unlockSchema,
   availability: availabilitySchema,
   createTask: createTaskSchema,
+  updateTask: updateTaskSchema,
   createCourse: createCourseSchema,
+  updateCourse: updateCourseSchema,
   createConnection: createConnectionSchema,
   secret: secretSchema,
   connectionId: connectionIdSchema,

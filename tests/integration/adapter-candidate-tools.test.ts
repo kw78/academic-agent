@@ -67,6 +67,10 @@ const samples = [
 function setup(options: {
   allowWrites: boolean
   authorizeWrite?: () => boolean
+  activateAdapterCandidate?: (request: {
+    adapterId: string
+    version: string
+  }) => Promise<unknown>
 }) {
   const clock = fixedClock()
   const store = createTestStore({ clock })
@@ -85,6 +89,9 @@ function setup(options: {
     registry,
     ids: sequentialIds('agent'),
     adapterCandidates: candidates,
+    ...(options.activateAdapterCandidate
+      ? { activateAdapterCandidate: options.activateAdapterCandidate }
+      : {}),
     allowWrites: options.allowWrites,
     ...(options.authorizeWrite
       ? { authorizeWrite: options.authorizeWrite }
@@ -98,7 +105,7 @@ function setup(options: {
 }
 
 describe('adapter candidate agent tools', () => {
-  it('validates read-only and requires approval for register/activate', async () => {
+  it('stages a candidate without write access but requires approval to activate', async () => {
     const { host } = setup({ allowWrites: false })
     const validation = await host.call(
       ACADEMIC_TOOL_NAMES.ValidateAdapterCandidate,
@@ -108,12 +115,11 @@ describe('adapter candidate agent tools', () => {
     if (!validation.ok) return
     expect((validation.data as { report: { ok: boolean } }).report.ok).toBe(true)
 
-    expect(
-      await host.call(ACADEMIC_TOOL_NAMES.RegisterAdapterCandidate, {
-        manifest,
-        samples,
-      }),
-    ).toMatchObject({ ok: false, code: 'FORBIDDEN' })
+    const registered = await host.call(
+      ACADEMIC_TOOL_NAMES.RegisterAdapterCandidate,
+      { manifest, samples },
+    )
+    expect(registered).toMatchObject({ ok: true })
     expect(
       await host.call(ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate, {
         adapterId: 'tool-demo',
@@ -155,6 +161,34 @@ describe('adapter candidate agent tools', () => {
     ).toBe('validated')
   })
 
+  it('uses the host activation callback that also creates the sync source', async () => {
+    const calls: Array<{ adapterId: string; version: string }> = []
+    const { host } = setup({
+      allowWrites: true,
+      authorizeWrite: () => true,
+      activateAdapterCandidate: async (request) => {
+        calls.push(request)
+        return {
+          candidate: { adapterId: request.adapterId, version: request.version },
+          sourceId: `adapter-${request.adapterId}`,
+        }
+      },
+    })
+    await host.call(ACADEMIC_TOOL_NAMES.RegisterAdapterCandidate, {
+      manifest,
+      samples,
+    })
+    const activated = await host.call(
+      ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate,
+      { adapterId: 'tool-demo', version: '1.0.0' },
+    )
+    expect(activated).toMatchObject({
+      ok: true,
+      data: { sourceId: 'adapter-tool-demo' },
+    })
+    expect(calls).toEqual([{ adapterId: 'tool-demo', version: '1.0.0' }])
+  })
+
   it('does not let untrusted page text grant agent permissions', async () => {
     const { host } = setup({ allowWrites: false })
     const injected = samples.map((sample) => ({
@@ -172,7 +206,7 @@ describe('adapter candidate agent tools', () => {
         manifest,
         samples: injected,
       }),
-    ).toMatchObject({ ok: false, code: 'FORBIDDEN' })
+    ).toMatchObject({ ok: true })
     expect(
       await host.call(ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate, {
         adapterId: 'tool-demo',

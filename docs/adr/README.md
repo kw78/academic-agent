@@ -12,5 +12,6 @@
 | [0008](0008-dsh-plugin-split.md) | DSH host/planner/tools 独立 Cordis 插件与生命周期验证 | 已接受 |
 | [0009](0009-connection-manager-and-credential-vault.md) | Connection Manager、DPAPI Credential Vault 与受控凭据同步 | 已接受 |
 | [0010](0010-dsh-client-ui-and-remote-api.md) | DSH 客户端 UI 插件与 Typert Remote API 适配 | 已接受 |
+| [0011](0011-candidate-staging-and-unified-activation.md) | 候选暂存、统一激活与 source 级作业请求 | 已接受 |
 
 新增决策时按 `NNNN-kebab-title.md` 命名，并更新本索引。已接受决策的契约不得静默修改；需要变更时新增 ADR 并说明迁移方案。

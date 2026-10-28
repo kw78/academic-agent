@@ -769,18 +769,34 @@ function runAdapterList(app: AcademicApp): void {
   }
 }
 
-function runAdapterActivate(app: AcademicApp, args: string[]): void {
+async function runAdapterActivate(
+  app: AcademicApp,
+  args: string[],
+): Promise<void> {
   const [adapterId, version] = args
   if (!adapterId || !version) throw new Error('用法：adapter activate <adapterId> <version>')
-  const candidate = app.adapterCandidates.activate(adapterId, version)
-  console.log(`已启用：${candidate.adapterId}@${candidate.version}`)
+  const activation = await app.activateAdapterCandidate(adapterId, version)
+  console.log(
+    `已启用：${activation.candidate.adapterId}@${activation.candidate.version}${
+      activation.sourceId ? ` · 同步源 ${activation.sourceId}` : ''
+    }`,
+  )
+  if (activation.warning) console.log(`  ! ${activation.warning}`)
 }
 
-function runAdapterRollback(app: AcademicApp, args: string[]): void {
+async function runAdapterRollback(
+  app: AcademicApp,
+  args: string[],
+): Promise<void> {
   const [adapterId, version] = args
   if (!adapterId) throw new Error('用法：adapter rollback <adapterId> [version]')
-  const candidate = app.adapterCandidates.rollback(adapterId, version)
-  console.log(`已回滚到：${candidate.adapterId}@${candidate.version}`)
+  const activation = await app.rollbackAdapterCandidate(adapterId, version)
+  console.log(
+    `已回滚到：${activation.candidate.adapterId}@${activation.candidate.version}${
+      activation.sourceId ? ` · 同步源 ${activation.sourceId}` : ''
+    }`,
+  )
+  if (activation.warning) console.log(`  ! ${activation.warning}`)
 }
 
 async function runSourceSync(app: AcademicApp, args: string[]): Promise<void> {
@@ -1078,8 +1094,8 @@ async function main(): Promise<void> {
         if (subcommand === 'list') runAdapterList(app)
         else if (subcommand === 'validate') await runAdapterValidate(app, args)
         else if (subcommand === 'register') await runAdapterRegister(app, args)
-        else if (subcommand === 'activate') runAdapterActivate(app, args)
-        else if (subcommand === 'rollback') runAdapterRollback(app, args)
+        else if (subcommand === 'activate') await runAdapterActivate(app, args)
+        else if (subcommand === 'rollback') await runAdapterRollback(app, args)
         else throw new Error('用法：adapter list|validate|register|activate|rollback')
         break
       }

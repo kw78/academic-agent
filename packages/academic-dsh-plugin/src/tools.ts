@@ -241,7 +241,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     name: ACADEMIC_TOOL_NAMES.RegisterAdapterCandidate,
     description:
-      'Store a validated declarative adapter candidate. Write; requires trusted host approval; candidates stay inactive until activated. Use real samples or captured sampleIds.',
+      'Store a declarative adapter candidate for user review. Never activates the adapter and never creates a sync source; activation is a separate user-authorized step. Use real samples or captured sampleIds.',
     parameters: {
       manifest: {
         type: 'object',
@@ -270,12 +270,12 @@ export const TOOL_SPECS: ToolSpec[] = [
         items: { type: 'string' },
       },
     },
-    write: true,
+    write: false,
   },
   {
     name: ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate,
     description:
-      'Activate a validated declarative adapter version. Write; requires trusted host approval; previous versions remain for rollback.',
+      'Activate a validated declarative adapter version and create/update its sync source. Write; requires trusted host approval; previous versions remain for rollback.',
     parameters: {
       adapterId: { type: 'string', required: true, description: 'Adapter id' },
       version: { type: 'string', required: true, description: 'Validated version' },

@@ -67,6 +67,14 @@ export interface AcademicToolDependencies {
   sourceEngines?: SourceEngineRegistryApi
   webSessions?: WebSessionStore
   adapterCandidates?: AdapterCandidatePort
+  /**
+   * Host-side activation that also creates/updates the sync source. Approval
+   * is still checked here; this callback only decides what activation means.
+   */
+  activateAdapterCandidate?: (request: {
+    adapterId: string
+    version: string
+  }) => Promise<unknown>
   probeSource?: (
     sourceId: string,
     url?: string,
@@ -572,14 +580,9 @@ export function createAcademicTools(
 
           defineTool(
             ACADEMIC_TOOL_NAMES.RegisterAdapterCandidate,
-            'Store a validated declarative adapter candidate. Write; requires trusted host approval. Candidates are never active until explicitly activated. Use real samples or captured sampleIds.',
+            'Store a declarative adapter candidate for user review. This never activates the adapter and never creates a sync source; activation is a separate user-authorized step. Use real samples or captured sampleIds.',
             adapterCandidateSchema,
             async (input) => {
-              const rejection = await requireWriteApproval(
-                ACADEMIC_TOOL_NAMES.RegisterAdapterCandidate,
-                { ...input },
-              )
-              if (rejection) return rejection
               const resolved = resolveSamples(input)
               if ('error' in resolved) return resolved.error
               try {
@@ -599,7 +602,7 @@ export function createAcademicTools(
 
           defineTool(
             ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate,
-            'Activate a validated declarative adapter version. Write; requires trusted host approval. Only validated versions can be activated; previous versions remain available for rollback.',
+            'Activate a validated declarative adapter version and create/update its sync source. Write; requires trusted host approval. Only validated versions can be activated; previous versions remain available for rollback.',
             adapterActivateSchema,
             async (input) => {
               const rejection = await requireWriteApproval(
@@ -608,6 +611,14 @@ export function createAcademicTools(
               )
               if (rejection) return rejection
               try {
+                if (dependencies.activateAdapterCandidate) {
+                  return success(
+                    await dependencies.activateAdapterCandidate({
+                      adapterId: input.adapterId,
+                      version: input.version,
+                    }),
+                  )
+                }
                 return success({
                   candidate: dependencies.adapterCandidates!.activate(
                     input.adapterId,
