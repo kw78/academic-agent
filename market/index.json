@@ -20,8 +20,8 @@
       "name": "@academic/dsh-plugin",
       "title": { "en": "Academic Agent Host & Tools", "zh": "学业助手 Host 与工具" },
       "description": {
-        "en": "Event-sourced courses, tasks, plans, reminders, source sync, course materials and 23 DSH tools. Writes require trusted host approval.",
-        "zh": "事件溯源的课程、任务、计划、提醒、数据源同步、课程资料与 23 个 DSH 工具；写入需可信宿主批准。"
+        "en": "Event-sourced courses, tasks, plans, reminders, source sync, course materials and 24 DSH tools. Writes require trusted host approval.",
+        "zh": "事件溯源的课程、任务、计划、提醒、数据源同步、课程资料与 24 个 DSH 工具；写入需可信宿主批准。"
       },
       "icon": "icon.svg",
       "author": "kw78",
@@ -35,7 +35,7 @@
         "labels": ["local-first", "event-sourced"],
         "keywords": ["academic", "study", "planner", "event-sourcing", "sqlite", "dsh"]
       },
-      "dist-tags": { "latest": "0.1.0" },
+      "dist-tags": { "latest": "0.1.1" },
       "versions": [
         {
           "version": "0.1.0",
@@ -44,6 +44,17 @@
             "type": "git",
             "url": "https://github.com/kw78/academic-agent",
             "commit": "03617d34f475b315bc0051d39b7141e7c95dbf06",
+            "path": "packages/academic-dsh-plugin"
+          },
+          "engines": { "dsh": ">=0.2.0-rc.1 <0.3.0-0" }
+        },
+        {
+          "version": "0.1.1",
+          "publishTimestamp": 1793194886,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/kw78/academic-agent",
+            "commit": "ca01f31d5cea9f9d0ec2abec57edf1149d107936",
             "path": "packages/academic-dsh-plugin"
           },
           "engines": { "dsh": ">=0.2.0-rc.1 <0.3.0-0" }
@@ -69,7 +80,7 @@
         "labels": ["local-first"],
         "keywords": ["academic", "ui", "panel", "dsh"]
       },
-      "dist-tags": { "latest": "0.1.0" },
+      "dist-tags": { "latest": "0.1.1" },
       "versions": [
         {
           "version": "0.1.0",
@@ -78,6 +89,17 @@
             "type": "git",
             "url": "https://github.com/kw78/academic-agent",
             "commit": "03617d34f475b315bc0051d39b7141e7c95dbf06",
+            "path": "packages/academic-dsh-ui"
+          },
+          "engines": { "dsh": ">=0.2.0-rc.1 <0.3.0-0" }
+        },
+        {
+          "version": "0.1.1",
+          "publishTimestamp": 1793194886,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/kw78/academic-agent",
+            "commit": "ca01f31d5cea9f9d0ec2abec57edf1149d107936",
             "path": "packages/academic-dsh-ui"
           },
           "engines": { "dsh": ">=0.2.0-rc.1 <0.3.0-0" }
