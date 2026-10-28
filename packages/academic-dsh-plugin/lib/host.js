@@ -41668,6 +41668,10 @@ function buildPlan(input2) {
   const slots = subtractIntervals([{ start: rangeStart, end: rangeEnd }], cuts).map((slot) => ({ start: Math.max(slot.start, nowMs), end: slot.end })).filter((slot) => slot.end > slot.start).map((slot) => ({ start: alignUp(slot.start, step), end: alignDown(slot.end, step) })).filter((slot) => slot.end - slot.start >= 6e4).sort((left, right) => left.start - right.start);
   const blocks = [];
   const unscheduled = [];
+  const availableMinutes = slots.reduce(
+    (sum, slot) => sum + Math.floor((slot.end - slot.start) / 6e4),
+    0
+  );
   let scheduledMinutes = 0;
   let unscheduledMinutes = 0;
   const tasks = input2.tasks.filter((task) => task.status !== "completed").map((task) => ({ ...task, deadline: taskDeadline(task, timeZone, warnings) })).sort(
@@ -41704,9 +41708,9 @@ function buildPlan(input2) {
       if (task.deadline !== void 0 && slot.start >= task.deadline) break;
       const start = Math.max(slot.start, nowMs);
       const end = Math.min(slot.end, task.deadline ?? slot.end);
-      const availableMinutes = Math.floor((end - start) / 6e4);
-      if (availableMinutes <= 0) continue;
-      const maximum = Math.min(remaining, availableMinutes);
+      const availableMinutes2 = Math.floor((end - start) / 6e4);
+      if (availableMinutes2 <= 0) continue;
+      const maximum = Math.min(remaining, availableMinutes2);
       const take = remaining <= granularity ? maximum : Math.min(remaining, Math.floor(maximum / granularity) * granularity);
       if (take <= 0) continue;
       const blockEnd = start + take * 6e4;
@@ -41731,6 +41735,14 @@ function buildPlan(input2) {
       warnings.push(`${task.title}: ${remaining} minutes could not be scheduled`);
     }
   }
+  const capacityShortfall = unscheduled.filter(
+    (entry) => entry.reason === "insufficient-time" || entry.reason === "no-available-time"
+  ).reduce((sum, entry) => sum + entry.remainingMinutes, 0);
+  if (capacityShortfall > 0) {
+    warnings.push(
+      `\u53EF\u7528\u65F6\u95F4\u4E0D\u8DB3\uFF1A\u53EF\u5B89\u6392 ${availableMinutes} \u5206\u949F\uFF0C\u5DF2\u5B89\u6392 ${scheduledMinutes} \u5206\u949F\uFF0C\u4ECD\u6709 ${capacityShortfall} \u5206\u949F\u672A\u80FD\u5B89\u6392`
+    );
+  }
   blocks.sort(
     (left, right) => Date.parse(left.start) - Date.parse(right.start) || Date.parse(left.end) - Date.parse(right.end)
   );
@@ -41747,7 +41759,8 @@ function buildPlan(input2) {
     stats: {
       taskCount: tasks.length,
       scheduledMinutes,
-      unscheduledMinutes
+      unscheduledMinutes,
+      availableMinutes
     }
   };
 }

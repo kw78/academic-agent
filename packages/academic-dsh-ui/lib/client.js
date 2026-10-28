@@ -2182,6 +2182,15 @@ var import_jsx_runtime4 = require("react/jsx-runtime");
 function taskTitle(tasks, taskId) {
   return tasks.find((card) => card.task.taskId === taskId)?.task.title ?? taskId;
 }
+var UNSCHEDULED_REASON_LABELS = {
+  "deadline-passed": "\u622A\u6B62\u65F6\u95F4\u5DF2\u8FC7",
+  "insufficient-time": "\u53EF\u7528\u65F6\u95F4\u4E0D\u8DB3",
+  "no-available-time": "\u6CA1\u6709\u53EF\u7528\u65F6\u6BB5",
+  "invalid-duration": "\u9884\u8BA1\u65F6\u957F\u65E0\u6548"
+};
+function unscheduledReasonLabel(reason) {
+  return UNSCHEDULED_REASON_LABELS[reason] ?? reason;
+}
 function displayGroups(blocks, timeZone, mode) {
   if (mode === "list") {
     return [{ key: "all", label: "\u5168\u90E8\u65F6\u95F4\u5757", blocks: sortPlanBlocks(blocks) }];
@@ -2396,6 +2405,10 @@ function PlanPage({ ctx, active, onNavigate }) {
                 /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("strong", { className: "ac-stat-value", children: formatMinutes(candidate.stats.scheduledMinutes) })
               ] }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "ac-stat", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "ac-stat-label", children: "\u53EF\u5B89\u6392" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("strong", { className: "ac-stat-value", children: formatMinutes(candidate.stats.availableMinutes) })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "ac-stat", children: [
                 /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "ac-stat-label", children: "\u672A\u5B89\u6392" }),
                 /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("strong", { className: "ac-stat-value", children: formatMinutes(candidate.stats.unscheduledMinutes) })
               ] })
@@ -2416,7 +2429,7 @@ function PlanPage({ ctx, active, onNavigate }) {
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("ul", { className: "ac-list", children: candidate.unscheduled.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("li", { className: "ac-list-row", children: [
                 /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
                   /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("strong", { children: entry.title }),
-                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "ac-muted", children: entry.reason })
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "ac-muted", children: unscheduledReasonLabel(entry.reason) })
                 ] }),
                 /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Badge, { tone: "warn", children: formatMinutes(entry.remainingMinutes) })
               ] }, entry.taskId)) })
@@ -4541,6 +4554,31 @@ function SettingsPage({ ctx, active, onNavigate }) {
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { type: "button", className: "ac-button", onClick: () => onNavigate("automation"), children: "\u6253\u5F00\u81EA\u52A8\u5316" })
       ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+        Section,
+        {
+          title: "\u5DF2\u52A0\u8F7D\u80FD\u529B",
+          subtitle: "\u53EA\u8BFB\uFF1B\u542F\u505C\u7531\u63D2\u4EF6\u751F\u547D\u5468\u671F\u63A7\u5236\uFF0C\u505C\u7528\u540E\u76F8\u5173\u64CD\u4F5C\u8FD4\u56DE CAPABILITY_UNAVAILABLE",
+          children: data.capabilities.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(EmptyState, { title: "\u6CA1\u6709\u5DF2\u6CE8\u518C\u80FD\u529B", children: "\u68C0\u67E5 Host \u63D2\u4EF6\u662F\u5426\u52A0\u8F7D\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("ul", { className: "ac-list", children: data.capabilities.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("li", { className: "ac-list-row", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("strong", { children: [
+              entry.id,
+              " \xB7 ",
+              entry.version
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "ac-muted", children: [
+              entry.kind,
+              " \xB7 \u63D0\u4F9B\u65B9 ",
+              entry.providerPlugin
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "ac-muted", children: [
+              "\u80FD\u529B\uFF1A",
+              entry.capabilities.join("\u3001") || "\u2014",
+              " \xB7 \u6743\u9650\uFF1A",
+              entry.requiredPermissions.join("\u3001") || "\u65E0"
+            ] })
+          ] }) }, entry.id)) })
+        }
+      ),
       /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Section, { title: "\u754C\u9762\u504F\u597D", subtitle: "\u53EA\u4FDD\u5B58\u975E\u654F\u611F UI \u504F\u597D", children: [
         /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { className: "ac-muted", children: "\u5F53\u524D\u9875\u9762\u548C\u7B5B\u9009\u7B49\u7EAF\u754C\u9762\u504F\u597D\u4FDD\u5B58\u5728\u672C\u673A\u6D4F\u89C8\u5668\uFF1B\u8BFE\u7A0B\u3001\u4EFB\u52A1\u3001\u8BA1\u5212\u3001\u53EF\u7528\u65F6\u95F4\u4E0E\u51ED\u636E\u4E0D\u4F1A\u4FDD\u5B58\u5728\u6D4F\u89C8\u5668\u5B58\u50A8\u3002" }),
         /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
