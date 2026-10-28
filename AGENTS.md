@@ -154,7 +154,7 @@ docs/adr/                      # 架构决策记录
 
 | Gate | 内容 | 状态 |
 |---|---|---|
-| Gate 0 | 真实基线 | 已完成：typecheck、168 项测试/32 文件、两个构建、DSH selftest；桌面干净启动待复核 |
+| Gate 0 | 真实基线 | 已完成：typecheck、169 项测试/33 文件、两个构建、DSH selftest；桌面干净启动待复核 |
 | Gate 1 | 桌面端可启动、可操作 | 用户已手工检查当前 Desktop 基本流程，无阻塞；链接配置已置顶；文件级 HMR/完整生命周期专项仍未验证 |
 | Gate 2 | 真实平台登录与会话 | 已完成：BB 与 USTC 教务真实登录/验证；正式同步新增“连接必须已验证”闸门；删除凭据不删学业数据 |
 | Gate 3 | 一个平台的数据同步闭环 | 已完成：BB 真实课程/作业/文件夹；考试/测验 fixture 验证并标注；JW 考试真实同步 |
@@ -195,7 +195,7 @@ MVP 后能力（2026-10-28）：Host 统一返回数据源阶段与唯一下一�
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（168 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（169 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 

@@ -229,7 +229,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 
 ## 已知限制与后续
 
-- **Gate 0/2–6 已完成**：类型检查、168 项测试、构建、DSH selftest、DSH Web UI 独立库同步、真实 BB/JW 平台闭环均已实测；详见 [docs/mvp-verification.md](docs/mvp-verification.md)。
+- **Gate 0/2–6 已完成**：类型检查、169 项测试、构建、DSH selftest、DSH Web UI 独立库同步、真实 BB/JW 平台闭环均已实测；详见 [docs/mvp-verification.md](docs/mvp-verification.md)。
 - **Gate 1**：DSH Web 已验证 UI/Host/同步；用户已在 Desktop 当前构建手工检查基本流程，未报告问题；文件级 HMR/完整生命周期专项仍未验证。
 - 系统凭据库当前为 Windows DPAPI；Credential Manager/其他 OS vault 是后续可替换实现。
 - **接入流程**：给定 HTTPS 网址后可登录、验证、只读探测；Agent 可基于探测证据生成声明式 Manifest 候选，用户在“连接”页验证、启用/回滚。仍未实现任意站点全自动生成、多页自动采样或任意 JavaScript。
@@ -247,4 +247,4 @@ npm test
 npm run build:dsh
 ```
 
-共 168 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态、Blackboard 只读解析/同步、声明式 Adapter、AI 候选校验/启用、同步重试/并发与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。
+共 169 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态、Blackboard 只读解析/同步、声明式 Adapter、AI 候选校验/启用、同步重试/并发与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。

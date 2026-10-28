@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**168 项测试通过**（32 个测试文件）。
+当前基线：**169 项测试通过**（33 个测试文件）。
 
 ## 分层
 
@@ -153,6 +153,8 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 - `tests/integration/web-sessions.test.ts`：429 映射为 `RATE_LIMITED`；超时与响应上限覆盖。
 - 备份/恢复、迁移、会话撤销、升级与故障排查见 [operations.md](operations.md)。
 - 2026-10-28 恢复演练：fixture 数据库备份后恢复到独立文件，`integrity_check=ok`、事件与投影位置一致，`list` 读回相同事项/任务/提醒；性能基线由 `npm run benchmark` 覆盖 1k/10k 事项的同步、查询与投影重建。
+- 升级演练：`tests/integration/migrations.test.ts` 使用 0010 之前的迁移建库并写入课程，再用当前迁移重开，断言数据保留、0011 生效、投影一致。
+- 同步可追溯性：`sync_runs` 记录 `adapter_id` 与 `adapter_version`（Fixture 1.0.0、Blackboard 1.0.0、Manifest 使用版本号），失败与成功运行都可回溯到具体 Adapter 版本。
 
 ## AI 候选 Adapter
 

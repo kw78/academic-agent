@@ -78,6 +78,17 @@ ACADEMIC_DB=.data/academic.db npm run demo -- source sync ustc-blackboard
 
 限制：只覆盖“考试信息”页，因此只能发现本学期有考试的课程；课表/选课接口返回内嵌 XML 或需要额外参数，当前 Manifest 未支持 XML，未扩大能力；成绩和作业未接入。平台未提供 ICS 订阅。
 
+## 标准接口评估（F-04）
+
+按“官方 API/导出 → ICS → 已授权 HTTP/JSON → 已登录浏览器会话 → 受限页面解析”的顺序评估：
+
+- **Blackboard**：站点提供 Web Service/API 选项，但需要管理员启用与额外凭据授权；当前个人账号可用的是已登录网页，因此先使用只读页面 Adapter，不绕过学校授权。
+- **USTC 综合教务与 Blackboard**：均未提供面向学生的 ICS/日历订阅；不把页面数据伪造成“标准接口”。
+- **OAuth/API 凭据**：当前 Vault 面向浏览器会话与本地隐藏输入；在真实平台提供可用的用户级 OAuth 前，不新增不会使用的 OAuth 抽象。
+- **ICS**：在出现真实可用的日历订阅后，可用通用 Manifest/JSON 或独立只读 engine 接入；当前没有真实样本，不实现空壳 Adapter。
+
+结论：现阶段继续使用已授权 HTTP/会话 + 受限页面解析；平台差异停留在 Manifest/Adapter，不进入 Kernel、Connector 或 UI。
+
 ## 可行接入路径
 
 按 Intent/Architecture 的优先级：
