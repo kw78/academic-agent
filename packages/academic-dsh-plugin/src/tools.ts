@@ -112,12 +112,17 @@ const TOOL_SPECS: ToolSpec[] = [
   {
     name: ACADEMIC_TOOL_NAMES.ProbeSource,
     description:
-      'Read one authorized page from a saved source session and return sanitized evidence (title, headings, links, forms) for adapter candidates. Read-only; never returns cookies or URL query strings.',
+      'Read one authorized same-host page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Read-only; never returns cookies or URL query strings.',
     parameters: {
       sourceId: {
         type: 'string',
         required: true,
         description: 'Source id with a saved session',
+      },
+      url: {
+        type: 'string',
+        description:
+          'Optional same-host URL to probe; defaults to the configured portal/verify URL',
       },
     },
     write: false,

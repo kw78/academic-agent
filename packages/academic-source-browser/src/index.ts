@@ -20,6 +20,10 @@ export const browserConfigSchema = z.object({
   cookieDomains: z.array(z.string().min(1)).min(1),
   verifyUrl: z.string().url().optional(),
   loggedOutPatterns: z.array(z.string().min(1)).optional(),
+  probePathPrefixes: z
+    .array(z.string().regex(/^\//, 'Expected a path beginning with /'))
+    .max(20)
+    .optional(),
   timeoutMs: z.number().int().min(1_000).max(10 * 60_000).optional(),
   channel: z.enum(['msedge', 'chrome']).optional(),
   allowHttp: z.boolean().optional(),

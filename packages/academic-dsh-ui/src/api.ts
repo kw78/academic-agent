@@ -62,6 +62,7 @@ import type {
   SourceIdRequest,
   SourceDiagnosis,
   SourceProbeEvidence,
+  SourceProbeRequest,
   SourceNextStep,
   SourceSecretRequest,
   SourceStage,
@@ -182,6 +183,9 @@ const updateSourceSchema = z.object({
   expectedVersion: z.number().int().min(1).optional(),
 })
 const sourceIdSchema = z.object({ sourceId: z.string().min(1) })
+const sourceProbeSchema = sourceIdSchema.extend({
+  url: z.string().url().optional(),
+})
 const candidateManifestSchema = z.object({
   manifest: z.unknown(),
   samples: z
@@ -1592,16 +1596,16 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
     },
 
     async probeSource(request) {
-      const parsed = parse(sourceIdSchema, request)
+      const parsed = parse(sourceProbeSchema, request)
       if (!parsed.ok) return parsed
-      const body: SourceIdRequest = parsed.value
+      const body: SourceProbeRequest = parsed.value
       const source = app.sources.get(body.sourceId)
       if (!source) return failure('NOT_FOUND', '数据源不存在')
       if (source.authKind === 'none') {
         return failure('VALIDATION', '该数据源不需要会话探测')
       }
       try {
-        const evidence = await app.probeSource(source.sourceId)
+        const evidence = await app.probeSource(source.sourceId, body.url)
         if (evidence.loginLike) {
           return failure('AUTH_REQUIRED', '会话可能已失效；请重新登录后再探测')
         }

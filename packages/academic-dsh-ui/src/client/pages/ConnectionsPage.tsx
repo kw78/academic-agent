@@ -136,10 +136,13 @@ function SourceCard({
   const askForAdapter = () => {
     const ok = askAgent(
       ctx,
-      `请为数据源 ${source.sourceId}（${source.displayName}）生成声明式 Adapter 候选。` +
-        '先调用只读工具 academic_probe_source 读取脱敏页面证据；' +
-        '只生成 Manifest 候选并用 academic_validate_adapter_candidate 做离线样本验证，' +
-        '不要注册、启用或扩大域名/路径范围。启用由我在“连接”页确认。',
+      `请为数据源 ${source.sourceId}（${source.displayName}）生成可验证的声明式 Adapter。按阶段执行，证据不足时停止并说明，不要猜测。\n` +
+        '1. 先调用 academic_probe_source 探测当前配置页面，记录 status/title/headings/links/scripts/endpointCandidates/tableCount/jsonShape/digest；不要记录 Cookie。\n' +
+        '2. 若页面是 SPA 外壳（标题/列表/表格/链接基本为空，只有“加载中”），不要生成 selector 占位候选；用 academic_probe_source 的可选 url 参数继续探测同站脚本、分页/列表链接和候选接口，优先找同源 JSON 接口并记录字段/数组形状。每次 URL 必须仍属于该来源主机。\n' +
+        '3. 只有拿到真实列表页或真实 JSON 样本后才生成字段映射；没有真实样本时不要编造含列表的 HTML 或占位选择器。\n' +
+        '4. 用真实样本调用 academic_validate_adapter_candidate，样本必须覆盖所有请求 URL；失败只报告结构化原因，不要为了变绿修改样本或放宽权限。\n' +
+        '5. 不注册、不启用、不扩大域名/路径；需要更宽路径时给出精确 URL/前缀，交由我在“连接”页确认。\n' +
+        '6. 输出：已探测 URL/状态、尝试过的脚本/接口、阻塞点、需要我提供的唯一信息、候选是否已保存/验证。',
     )
     setAgentNote(
       ok
@@ -319,6 +322,20 @@ function SourceCard({
               <p className="ac-muted">
                 分页线索：
                 {probe.paginationLinks.map((link) => link.text).join(' / ')}
+              </p>
+            )}
+            {probe.scripts.length > 0 && (
+              <p className="ac-muted">
+                同站脚本：{probe.scripts.slice(0, 5).map((link) => link.text).join(' / ')}
+              </p>
+            )}
+            {probe.endpointCandidates.length > 0 && (
+              <p className="ac-muted">
+                候选接口：
+                {probe.endpointCandidates
+                  .slice(0, 8)
+                  .map((link) => link.text)
+                  .join(' / ')}
               </p>
             )}
             {probe.jsonShape && (

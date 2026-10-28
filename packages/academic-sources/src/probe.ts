@@ -15,6 +15,7 @@ export interface ProbeSourcePageInput {
   config: Record<string, unknown>
   secret: string
   probedAt: string
+  url?: string
   fetchImpl?: typeof fetch
   resolveHost?: ResolveHost
   timeoutMs?: number
@@ -97,6 +98,81 @@ function jsonShape(value: unknown, depth = 0): string {
   return typeof value
 }
 
+const ASSET_EXTENSION =
+  /\.(?:js|mjs|css|png|jpe?g|gif|svg|ico|woff2?|ttf|map)(?:$|[?#])/i
+
+function allowedTarget(
+  raw: string,
+  base: string,
+  allowedHosts: string[],
+): URL | undefined {
+  try {
+    const target = new URL(raw, base)
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+      return undefined
+    }
+    if (!hostAllowed(target.hostname, allowedHosts)) return undefined
+    target.hash = ''
+    return target
+  } catch {
+    return undefined
+  }
+}
+
+function scriptLinks(
+  body: string,
+  finalUrl: string,
+  allowedHosts: string[],
+): SourceProbeLink[] {
+  const links: SourceProbeLink[] = []
+  const seen = new Set<string>()
+  for (const match of body.matchAll(
+    /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi,
+  )) {
+    const target = allowedTarget(match[1] ?? '', finalUrl, allowedHosts)
+    if (!target) continue
+    const safe = safeUrlForDisplay(target.toString())
+    if (!safe || seen.has(safe)) continue
+    seen.add(safe)
+    const name =
+      target.pathname.split('/').filter(Boolean).pop() ?? target.pathname
+    links.push({ text: name, url: safe })
+    if (links.length >= 10) break
+  }
+  return links
+}
+
+function endpointLinks(
+  text: string,
+  finalUrl: string,
+  allowedHosts: string[],
+): SourceProbeLink[] {
+  const links: SourceProbeLink[] = []
+  const seen = new Set<string>()
+  const scan = (raw: string): void => {
+    if (!raw || ASSET_EXTENSION.test(raw)) return
+    const target = allowedTarget(raw, finalUrl, allowedHosts)
+    if (!target) return
+    const safe = safeUrlForDisplay(target.toString())
+    if (!safe || seen.has(safe)) return
+    seen.add(safe)
+    links.push({ text: target.pathname, url: safe })
+  }
+  for (const match of text.matchAll(/["'`](\/(?!\/)[^"'`\s]{2,200})["'`]/g)) {
+    scan(match[1] ?? '')
+    if (links.length >= 20) break
+  }
+  if (links.length < 20) {
+    for (const match of text.matchAll(
+      /["'`](https?:\/\/[^"'`\s]{4,300})["'`]/g,
+    )) {
+      scan(match[1] ?? '')
+      if (links.length >= 20) break
+    }
+  }
+  return links.slice(0, 20)
+}
+
 function buildEvidence(
   sourceId: string,
   url: string,
@@ -144,6 +220,34 @@ function buildEvidence(
   }
   const contentType = result.contentType
   let jsonShapeText: string | undefined
+  const scripts = scriptLinks(result.body, result.finalUrl, allowedHosts)
+  let endpointCandidates: SourceProbeLink[] = []
+  if (
+    contentType?.includes('javascript') ||
+    contentType?.includes('ecmascript')
+  ) {
+    endpointCandidates = endpointLinks(
+      result.body.slice(0, 200_000),
+      result.finalUrl,
+      allowedHosts,
+    )
+  } else if (contentType?.includes('html')) {
+    let inline = ''
+    for (const match of result.body.matchAll(
+      /<script\b([^>]*)>([\s\S]*?)<\/script>/gi,
+    )) {
+      if (/\bsrc\s*=/i.test(match[1] ?? '')) continue
+      inline += `\n${match[2] ?? ''}`
+      if (inline.length >= 200_000) break
+    }
+    if (inline) {
+      endpointCandidates = endpointLinks(
+        inline.slice(0, 200_000),
+        result.finalUrl,
+        allowedHosts,
+      )
+    }
+  }
   if (contentType?.includes('json')) {
     try {
       jsonShapeText = jsonShape(JSON.parse(result.body)).slice(0, 500)
@@ -163,6 +267,8 @@ function buildEvidence(
     headings,
     links,
     paginationLinks,
+    scripts,
+    endpointCandidates,
     formCount: (result.body.match(/<form\b/gi) ?? []).length,
     tableCount: (result.body.match(/<table\b/gi) ?? []).length,
     ...(contentType?.includes('json') && jsonShapeText
@@ -182,7 +288,7 @@ function buildEvidence(
 export async function probeSourcePage(
   input: ProbeSourcePageInput,
 ): Promise<SourceProbeEvidence> {
-  const url = probeUrlFor(input.config)
+  const url = input.url?.trim() || probeUrlFor(input.config)
   if (!url) throw new Error('数据源配置中没有可探测的 URL')
   const cookies = cookiesFromSecret(input.secret)
   const host = new URL(url).hostname
@@ -191,12 +297,24 @@ export async function probeSourcePage(
         (entry): entry is string => typeof entry === 'string',
       )
     : []
+  if (input.url && cookieDomains.length === 0) {
+    throw new Error('该来源未配置授权域名，不能探测额外 URL')
+  }
   const allowedHosts = cookieDomains.length > 0 ? cookieDomains : [host]
+  if (!hostAllowed(host, allowedHosts)) {
+    throw new Error('探测 URL 不在该来源的授权域名内')
+  }
+  const pathPrefixes = Array.isArray(input.config.probePathPrefixes)
+    ? input.config.probePathPrefixes.filter(
+        (entry): entry is string => typeof entry === 'string' && entry.startsWith('/'),
+      )
+    : []
   const result = await safeFetch(url, {
     cookies,
     allowedHosts,
     allowedProtocols:
       input.config.allowHttp === true ? ['http:', 'https:'] : ['https:'],
+    ...(pathPrefixes.length > 0 ? { allowedPathPrefixes: pathPrefixes } : {}),
     timeoutMs: input.timeoutMs ?? 15_000,
     maxBytes: input.maxBytes ?? 512 * 1024,
     ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),

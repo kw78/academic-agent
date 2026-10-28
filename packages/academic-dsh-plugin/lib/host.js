@@ -26420,6 +26420,63 @@ function jsonShape(value, depth = 0) {
   if (value === null) return "null";
   return typeof value;
 }
+var ASSET_EXTENSION = /\.(?:js|mjs|css|png|jpe?g|gif|svg|ico|woff2?|ttf|map)(?:$|[?#])/i;
+function allowedTarget(raw, base, allowedHosts) {
+  try {
+    const target = new URL(raw, base);
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
+      return void 0;
+    }
+    if (!hostAllowed(target.hostname, allowedHosts)) return void 0;
+    target.hash = "";
+    return target;
+  } catch {
+    return void 0;
+  }
+}
+function scriptLinks(body, finalUrl, allowedHosts) {
+  const links = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const match of body.matchAll(
+    /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi
+  )) {
+    const target = allowedTarget(match[1] ?? "", finalUrl, allowedHosts);
+    if (!target) continue;
+    const safe = safeUrlForDisplay(target.toString());
+    if (!safe || seen.has(safe)) continue;
+    seen.add(safe);
+    const name = target.pathname.split("/").filter(Boolean).pop() ?? target.pathname;
+    links.push({ text: name, url: safe });
+    if (links.length >= 10) break;
+  }
+  return links;
+}
+function endpointLinks(text2, finalUrl, allowedHosts) {
+  const links = [];
+  const seen = /* @__PURE__ */ new Set();
+  const scan = (raw) => {
+    if (!raw || ASSET_EXTENSION.test(raw)) return;
+    const target = allowedTarget(raw, finalUrl, allowedHosts);
+    if (!target) return;
+    const safe = safeUrlForDisplay(target.toString());
+    if (!safe || seen.has(safe)) return;
+    seen.add(safe);
+    links.push({ text: target.pathname, url: safe });
+  };
+  for (const match of text2.matchAll(/["'`](\/(?!\/)[^"'`\s]{2,200})["'`]/g)) {
+    scan(match[1] ?? "");
+    if (links.length >= 20) break;
+  }
+  if (links.length < 20) {
+    for (const match of text2.matchAll(
+      /["'`](https?:\/\/[^"'`\s]{4,300})["'`]/g
+    )) {
+      scan(match[1] ?? "");
+      if (links.length >= 20) break;
+    }
+  }
+  return links.slice(0, 20);
+}
 function buildEvidence(sourceId, url2, result, allowedHosts, patterns, probedAt) {
   const title = plainText(
     /<title[^>]*>([\s\S]*?)<\/title>/i.exec(result.body)?.[1] ?? ""
@@ -26458,6 +26515,32 @@ ${text2}`);
   }
   const contentType = result.contentType;
   let jsonShapeText;
+  const scripts = scriptLinks(result.body, result.finalUrl, allowedHosts);
+  let endpointCandidates = [];
+  if (contentType?.includes("javascript") || contentType?.includes("ecmascript")) {
+    endpointCandidates = endpointLinks(
+      result.body.slice(0, 2e5),
+      result.finalUrl,
+      allowedHosts
+    );
+  } else if (contentType?.includes("html")) {
+    let inline = "";
+    for (const match of result.body.matchAll(
+      /<script\b([^>]*)>([\s\S]*?)<\/script>/gi
+    )) {
+      if (/\bsrc\s*=/i.test(match[1] ?? "")) continue;
+      inline += `
+${match[2] ?? ""}`;
+      if (inline.length >= 2e5) break;
+    }
+    if (inline) {
+      endpointCandidates = endpointLinks(
+        inline.slice(0, 2e5),
+        result.finalUrl,
+        allowedHosts
+      );
+    }
+  }
   if (contentType?.includes("json")) {
     try {
       jsonShapeText = jsonShape(JSON.parse(result.body)).slice(0, 500);
@@ -26477,6 +26560,8 @@ ${text2}`);
     headings,
     links,
     paginationLinks,
+    scripts,
+    endpointCandidates,
     formCount: (result.body.match(/<form\b/gi) ?? []).length,
     tableCount: (result.body.match(/<table\b/gi) ?? []).length,
     ...contentType?.includes("json") && jsonShapeText ? { jsonShape: jsonShapeText } : {},
@@ -26487,18 +26572,28 @@ ${text2}`);
   };
 }
 async function probeSourcePage(input2) {
-  const url2 = probeUrlFor(input2.config);
+  const url2 = input2.url?.trim() || probeUrlFor(input2.config);
   if (!url2) throw new Error("\u6570\u636E\u6E90\u914D\u7F6E\u4E2D\u6CA1\u6709\u53EF\u63A2\u6D4B\u7684 URL");
   const cookies = cookiesFromSecret(input2.secret);
   const host = new URL(url2).hostname;
   const cookieDomains = Array.isArray(input2.config.cookieDomains) ? input2.config.cookieDomains.filter(
     (entry) => typeof entry === "string"
   ) : [];
+  if (input2.url && cookieDomains.length === 0) {
+    throw new Error("\u8BE5\u6765\u6E90\u672A\u914D\u7F6E\u6388\u6743\u57DF\u540D\uFF0C\u4E0D\u80FD\u63A2\u6D4B\u989D\u5916 URL");
+  }
   const allowedHosts = cookieDomains.length > 0 ? cookieDomains : [host];
+  if (!hostAllowed(host, allowedHosts)) {
+    throw new Error("\u63A2\u6D4B URL \u4E0D\u5728\u8BE5\u6765\u6E90\u7684\u6388\u6743\u57DF\u540D\u5185");
+  }
+  const pathPrefixes = Array.isArray(input2.config.probePathPrefixes) ? input2.config.probePathPrefixes.filter(
+    (entry) => typeof entry === "string" && entry.startsWith("/")
+  ) : [];
   const result = await safeFetch(url2, {
     cookies,
     allowedHosts,
     allowedProtocols: input2.config.allowHttp === true ? ["http:", "https:"] : ["https:"],
+    ...pathPrefixes.length > 0 ? { allowedPathPrefixes: pathPrefixes } : {},
     timeoutMs: input2.timeoutMs ?? 15e3,
     maxBytes: input2.maxBytes ?? 512 * 1024,
     ...input2.fetchImpl ? { fetchImpl: input2.fetchImpl } : {},
@@ -26783,6 +26878,7 @@ var browserConfigSchema = external_exports.object({
   cookieDomains: external_exports.array(external_exports.string().min(1)).min(1),
   verifyUrl: external_exports.string().url().optional(),
   loggedOutPatterns: external_exports.array(external_exports.string().min(1)).optional(),
+  probePathPrefixes: external_exports.array(external_exports.string().regex(/^\//, "Expected a path beginning with /")).max(20).optional(),
   timeoutMs: external_exports.number().int().min(1e3).max(10 * 6e4).optional(),
   channel: external_exports.enum(["msedge", "chrome"]).optional(),
   allowHttp: external_exports.boolean().optional()
@@ -40104,10 +40200,16 @@ function createAcademicTools(dependencies) {
       ...dependencies.probeSource ? [
         defineTool(
           ACADEMIC_TOOL_NAMES.ProbeSource,
-          "Read one authorized page from a saved session and return sanitized evidence (title, headings, links, forms). Read-only; never returns cookies or URL query strings.",
-          external_exports.object({ sourceId: external_exports.string().min(1).max(200) }),
+          "Read one authorized same-host page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Read-only; never returns cookies or URL query strings.",
+          external_exports.object({
+            sourceId: external_exports.string().min(1).max(200),
+            url: external_exports.string().url().optional()
+          }),
           async (input2) => {
-            const evidence = await dependencies.probeSource(input2.sourceId);
+            const evidence = await dependencies.probeSource(
+              input2.sourceId,
+              input2.url
+            );
             if (evidence.loginLike) {
               return failure2(
                 "AUTH_REQUIRED",
@@ -44257,7 +44359,7 @@ async function createAcademicApp(options) {
     capabilities: ["academic.sync", "academic.courses.probe"],
     config: {}
   });
-  const probeSourceById = async (sourceId) => {
+  const probeSourceById = async (sourceId, url2) => {
     const source = sources.get(sourceId);
     if (!source || source.archived) {
       throw new CapabilityUnavailableError(`source.${sourceId}`);
@@ -44278,6 +44380,7 @@ async function createAcademicApp(options) {
       config: source.config,
       secret: await credentials.getSecret(),
       probedAt: clock.now(),
+      ...url2 ? { url: url2 } : {},
       ...options.probeFetch ? { fetchImpl: options.probeFetch } : {},
       ...options.probeResolveHost ? { resolveHost: options.probeResolveHost } : {}
     });

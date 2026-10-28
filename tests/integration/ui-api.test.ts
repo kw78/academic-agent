@@ -217,8 +217,14 @@ describe('academic UI host API', () => {
       probeResolveHost: async () => [
         { address: '93.184.216.34', family: 4 },
       ],
-      probeFetch: async (_input, init) => {
+      probeFetch: async (input, init) => {
         sentCookie = new Headers(init?.headers).get('cookie')
+        if (String(input).endsWith('/static/app.js')) {
+          return new Response('fetch("/api/assignments");', {
+            status: 200,
+            headers: { 'content-type': 'application/javascript' },
+          })
+        }
         if (mode === 'login') {
           return new Response(
             '<html><head><title>登录</title></head><body></body></html>',
@@ -226,9 +232,11 @@ describe('academic UI host API', () => {
           )
         }
         return new Response(
-          '<html><head><title>Home</title></head><body>' +
+          '<html><head><title>Home</title>' +
+            '<script src="/static/app.js"></script></head><body>' +
             '<h1>Courses</h1>' +
             '<a href="https://lms.example.edu/course/1?token=should-not-leak">Course 1</a>' +
+            '<script>window.__routes={courses:"/api/portal/courses?term=2026"}</script>' +
             '</body></html>',
           { status: 200, headers: { 'content-type': 'text/html' } },
         )
@@ -282,10 +290,40 @@ describe('academic UI host API', () => {
       text: 'Course 1',
       url: 'https://lms.example.edu/course/1',
     })
+    expect(probed.value.scripts).toEqual([
+      { text: 'app.js', url: 'https://lms.example.edu/static/app.js' },
+    ])
+    expect(probed.value.endpointCandidates).toEqual([
+      { text: '/api/portal/courses', url: 'https://lms.example.edu/api/portal/courses' },
+    ])
     expect(JSON.stringify(probed.value)).not.toContain('top-secret')
     expect(JSON.stringify(probed.value)).not.toContain('should-not-leak')
+    const alt = await api.probeSource({
+      sourceId: 'probe-source',
+      url: 'https://lms.example.edu/page/list',
+    })
+    expect(alt.ok).toBe(true)
+    const scriptProbe = await api.probeSource({
+      sourceId: 'probe-source',
+      url: 'https://lms.example.edu/static/app.js',
+    })
+    expect(scriptProbe.ok).toBe(true)
+    if (scriptProbe.ok) {
+      expect(scriptProbe.value.endpointCandidates).toEqual([
+        {
+          text: '/api/assignments',
+          url: 'https://lms.example.edu/api/assignments',
+        },
+      ])
+    }
+    const crossHost = await api.probeSource({
+      sourceId: 'probe-source',
+      url: 'https://evil.example.edu/page/list',
+    })
+    expect(crossHost.ok).toBe(false)
     const toolProbe = await app.agentBridge.host.call('academic_probe_source', {
       sourceId: 'probe-source',
+      url: 'https://lms.example.edu/page/list',
     })
     expect(toolProbe.ok).toBe(true)
     if (toolProbe.ok) {

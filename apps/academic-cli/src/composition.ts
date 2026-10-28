@@ -212,7 +212,7 @@ export interface AcademicApp {
     connectionId: string,
     adapter: AcademicSourceAdapter,
   ): Promise<SyncRunSummary>
-  probeSource(sourceId: string): Promise<SourceProbeEvidence>
+  probeSource(sourceId: string, url?: string): Promise<SourceProbeEvidence>
   previewSourceSync(sourceId: string, connectionId?: string): Promise<SyncPreview>
   syncSource(sourceId: string, connectionId?: string): Promise<SyncRunSummary>
   previewPlan(
@@ -426,6 +426,7 @@ export async function createAcademicApp(
 
   const probeSourceById = async (
     sourceId: string,
+    url?: string,
   ): Promise<SourceProbeEvidence> => {
     const source = sources.get(sourceId)
     if (!source || source.archived) {
@@ -449,6 +450,7 @@ export async function createAcademicApp(
       config: source.config,
       secret: await credentials.getSecret(),
       probedAt: clock.now(),
+      ...(url ? { url } : {}),
       ...(options.probeFetch ? { fetchImpl: options.probeFetch } : {}),
       ...(options.probeResolveHost
         ? { resolveHost: options.probeResolveHost }

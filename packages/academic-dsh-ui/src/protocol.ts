@@ -459,6 +459,11 @@ export interface SourceIdRequest {
   sourceId: string
 }
 
+export interface SourceProbeRequest {
+  sourceId: string
+  url?: string
+}
+
 export interface SourceSecretRequest {
   sourceId: string
   secret: string

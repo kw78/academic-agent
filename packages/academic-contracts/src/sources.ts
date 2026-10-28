@@ -154,6 +154,8 @@ export interface SourceProbeEvidence {
   headings: string[]
   links: SourceProbeLink[]
   paginationLinks: SourceProbeLink[]
+  scripts: SourceProbeLink[]
+  endpointCandidates: SourceProbeLink[]
   formCount: number
   tableCount: number
   jsonShape?: string

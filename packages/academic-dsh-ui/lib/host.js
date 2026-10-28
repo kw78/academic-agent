@@ -20328,6 +20328,9 @@ var updateSourceSchema = external_exports.object({
   expectedVersion: external_exports.number().int().min(1).optional()
 });
 var sourceIdSchema = external_exports.object({ sourceId: external_exports.string().min(1) });
+var sourceProbeSchema = sourceIdSchema.extend({
+  url: external_exports.string().url().optional()
+});
 var candidateManifestSchema = external_exports.object({
   manifest: external_exports.unknown(),
   samples: external_exports.array(
@@ -21439,7 +21442,7 @@ function createAcademicUiApi(app) {
       }
     },
     async probeSource(request) {
-      const parsed = parse3(sourceIdSchema, request);
+      const parsed = parse3(sourceProbeSchema, request);
       if (!parsed.ok) return parsed;
       const body = parsed.value;
       const source = app.sources.get(body.sourceId);
@@ -21448,7 +21451,7 @@ function createAcademicUiApi(app) {
         return failure2("VALIDATION", "\u8BE5\u6570\u636E\u6E90\u4E0D\u9700\u8981\u4F1A\u8BDD\u63A2\u6D4B");
       }
       try {
-        const evidence = await app.probeSource(source.sourceId);
+        const evidence = await app.probeSource(source.sourceId, body.url);
         if (evidence.loginLike) {
           return failure2("AUTH_REQUIRED", "\u4F1A\u8BDD\u53EF\u80FD\u5DF2\u5931\u6548\uFF1B\u8BF7\u91CD\u65B0\u767B\u5F55\u540E\u518D\u63A2\u6D4B");
         }

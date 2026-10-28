@@ -66,7 +66,7 @@ export interface AcademicToolDependencies {
   sourceEngines?: SourceEngineRegistryApi
   webSessions?: WebSessionStore
   adapterCandidates?: AdapterCandidatePort
-  probeSource?: (sourceId: string) => Promise<SourceProbeEvidence>
+  probeSource?: (sourceId: string, url?: string) => Promise<SourceProbeEvidence>
 }
 
 export const ACADEMIC_TOOL_NAMES = {
@@ -406,10 +406,16 @@ export function createAcademicTools(
             ? [
                 defineTool(
                   ACADEMIC_TOOL_NAMES.ProbeSource,
-                  'Read one authorized page from a saved session and return sanitized evidence (title, headings, links, forms). Read-only; never returns cookies or URL query strings.',
-                  z.object({ sourceId: z.string().min(1).max(200) }),
+                  'Read one authorized same-host page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Read-only; never returns cookies or URL query strings.',
+                  z.object({
+                    sourceId: z.string().min(1).max(200),
+                    url: z.string().url().optional(),
+                  }),
                   async (input) => {
-                    const evidence = await dependencies.probeSource!(input.sourceId)
+                    const evidence = await dependencies.probeSource!(
+                      input.sourceId,
+                      input.url,
+                    )
                     if (evidence.loginLike) {
                       return failure(
                         'AUTH_REQUIRED',
