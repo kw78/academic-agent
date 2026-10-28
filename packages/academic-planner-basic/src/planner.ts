@@ -58,6 +58,7 @@ export interface PlanSuggestion {
     taskCount: number
     scheduledMinutes: number
     unscheduledMinutes: number
+    availableMinutes: number
   }
 }
 
@@ -146,6 +147,10 @@ export function buildPlan(input: PlannerInput): PlanSuggestion {
 
   const blocks: PlanBlock[] = []
   const unscheduled: UnscheduledTask[] = []
+  const availableMinutes = slots.reduce(
+    (sum, slot) => sum + Math.floor((slot.end - slot.start) / 60_000),
+    0,
+  )
   let scheduledMinutes = 0
   let unscheduledMinutes = 0
 
@@ -229,6 +234,14 @@ export function buildPlan(input: PlannerInput): PlanSuggestion {
     }
   }
 
+  if (unscheduledMinutes > 0) {
+    warnings.push(
+      `可用时间不足：可安排 ${availableMinutes} 分钟，任务需要 ${
+        scheduledMinutes + unscheduledMinutes
+      } 分钟，仍有 ${unscheduledMinutes} 分钟未安排`,
+    )
+  }
+
   blocks.sort(
     (left, right) =>
       Date.parse(left.start) - Date.parse(right.start) ||
@@ -251,6 +264,7 @@ export function buildPlan(input: PlannerInput): PlanSuggestion {
       taskCount: tasks.length,
       scheduledMinutes,
       unscheduledMinutes,
+      availableMinutes,
     },
   }
 }

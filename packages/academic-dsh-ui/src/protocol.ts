@@ -255,6 +255,7 @@ export interface PlanCandidate {
     taskCount: number
     scheduledMinutes: number
     unscheduledMinutes: number
+    availableMinutes: number
   }
 }
 

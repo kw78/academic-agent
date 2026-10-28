@@ -38,6 +38,17 @@ function taskTitle(tasks: TaskCard[], taskId: string): string {
   return tasks.find((card) => card.task.taskId === taskId)?.task.title ?? taskId
 }
 
+const UNSCHEDULED_REASON_LABELS: Record<string, string> = {
+  'deadline-passed': '截止时间已过',
+  'insufficient-time': '可用时间不足',
+  'no-available-time': '没有可用时段',
+  'invalid-duration': '预计时长无效',
+}
+
+function unscheduledReasonLabel(reason: string): string {
+  return UNSCHEDULED_REASON_LABELS[reason] ?? reason
+}
+
 type PlanMode = 'day' | 'week' | 'list'
 
 interface DisplayGroup {
@@ -288,6 +299,12 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
                   </strong>
                 </div>
                 <div className="ac-stat">
+                  <span className="ac-stat-label">可安排</span>
+                  <strong className="ac-stat-value">
+                    {formatMinutes(candidate.stats.availableMinutes)}
+                  </strong>
+                </div>
+                <div className="ac-stat">
                   <span className="ac-stat-label">未安排</span>
                   <strong className="ac-stat-value">
                     {formatMinutes(candidate.stats.unscheduledMinutes)}
@@ -335,7 +352,9 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
                       <li key={entry.taskId} className="ac-list-row">
                         <div>
                           <strong>{entry.title}</strong>
-                          <span className="ac-muted">{entry.reason}</span>
+                          <span className="ac-muted">
+                            {unscheduledReasonLabel(entry.reason)}
+                          </span>
                         </div>
                         <Badge tone="warn">{formatMinutes(entry.remainingMinutes)}</Badge>
                       </li>
