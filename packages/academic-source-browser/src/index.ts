@@ -62,6 +62,24 @@ function cookieDomainAllowed(cookieDomain: string, domains: string[]): boolean {
   })
 }
 
+/**
+ * Some portals serve their homepage at an already "authenticated" URL before
+ * the user signs in. Those must wait for explicit confirmation instead of
+ * closing the browser as soon as the URL matches.
+ */
+export function loginRequiresConfirmation(
+  config: Pick<
+    BrowserSessionConfig,
+    'authenticatedUrlPatterns' | 'loggedOutPatterns'
+  >,
+  url: string,
+): boolean {
+  return (
+    matchesAny(config.authenticatedUrlPatterns, url) &&
+    !matchesAny(config.loggedOutPatterns ?? [], url)
+  )
+}
+
 async function launch(channel: 'msedge' | 'chrome' | undefined): Promise<Browser> {
   const channels = channel ? [channel] : (['msedge', 'chrome'] as const)
   let lastError: unknown
@@ -83,6 +101,72 @@ async function launch(channel: 'msedge' | 'chrome' | undefined): Promise<Browser
   )
 }
 
+const LOGIN_HELPER_SCRIPT = `(() => {
+  const install = () => {
+    if (document.getElementById('academic-login-save')) return
+    const panel = document.createElement('div')
+    panel.id = 'academic-login-panel'
+    panel.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483647;background:#111827;color:#fff;padding:10px 12px;border-radius:8px;font:13px/1.4 system-ui,-apple-system,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.35);max-width:320px'
+    const status = document.createElement('div')
+    status.id = 'academic-login-status'
+    status.style.cssText = 'margin-bottom:8px'
+    status.textContent = '完成登录后点击下方按钮保存会话（不会保存密码）'
+    const button = document.createElement('button')
+    button.id = 'academic-login-save'
+    button.type = 'button'
+    button.textContent = '已完成登录，保存会话'
+    button.style.cssText = 'background:#2563eb;color:#fff;border:0;border-radius:6px;padding:8px 10px;cursor:pointer;font:inherit'
+    button.addEventListener('click', () => {
+      status.textContent = '正在读取并校验会话…'
+      if (typeof window.__academicLoginConfirm === 'function') {
+        window.__academicLoginConfirm()
+      } else {
+        status.textContent = '无法连接宿主，请关闭窗口后重试'
+      }
+    })
+    panel.appendChild(status)
+    panel.appendChild(button)
+    document.documentElement.appendChild(panel)
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install, { once: true })
+  } else {
+    install()
+  }
+})()`
+
+async function sessionCookies(
+  context: BrowserContext,
+  config: BrowserSessionConfig,
+): Promise<WebCookie[]> {
+  return (await context.cookies())
+    .filter((cookie) => cookieDomainAllowed(cookie.domain, config.cookieDomains))
+    .map((cookie) => ({
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      ...(cookie.expires >= 0 ? { expires: cookie.expires } : {}),
+      ...(cookie.httpOnly ? { httpOnly: true } : {}),
+      ...(cookie.secure ? { secure: true } : {}),
+      ...(cookie.sameSite ? { sameSite: cookie.sameSite } : {}),
+    }))
+}
+
+async function updateLoginStatus(
+  context: BrowserContext,
+  text: string,
+): Promise<void> {
+  for (const page of context.pages()) {
+    await page
+      .evaluate((message) => {
+        const element = document.getElementById('academic-login-status')
+        if (element) element.textContent = message
+      }, text)
+      .catch(() => undefined)
+  }
+}
+
 async function browserLogin(
   config: BrowserSessionConfig,
 ): Promise<SourceLoginResult> {
@@ -93,16 +177,57 @@ async function browserLogin(
       locale: 'zh-CN',
       viewport: { width: 1280, height: 900 },
     })
+    let confirmed = false
+    await context.exposeBinding('__academicLoginConfirm', () => {
+      confirmed = true
+    })
+    await context.addInitScript({ content: LOGIN_HELPER_SCRIPT })
     const page = await context.newPage()
     await page.goto(config.loginUrl, {
       waitUntil: 'domcontentloaded',
       timeout: 60_000,
     })
+    const initialUrl = page.url()
+    // A portal homepage often already matches the authenticated URL pattern
+    // before the user signs in. In that case URL matching alone would close the
+    // window too early, so require an explicit completion click instead.
+    const requireConfirm = loginRequiresConfirmation(config, initialUrl)
     const deadline = Date.now() + (config.timeoutMs ?? 4 * 60_000)
     let loggedPage = page
     while (Date.now() < deadline) {
       if (!browser.isConnected()) {
         throw new Error('登录窗口已关闭，未完成登录')
+      }
+      if (confirmed) {
+        confirmed = false
+        const cookies = await sessionCookies(context, config)
+        if (cookies.length === 0) {
+          await updateLoginStatus(
+            context,
+            '仍未读取到会话 Cookie，请完成登录后再点击',
+          )
+          continue
+        }
+        const secret = JSON.stringify({ cookies })
+        if (config.verifyUrl) {
+          await updateLoginStatus(context, '正在校验会话…')
+          const verified = await verifySession(
+            config,
+            secret,
+            undefined,
+            undefined,
+            undefined,
+            config.timeoutMs,
+          )
+          if (!verified.ok) {
+            await updateLoginStatus(
+              context,
+              `会话校验未通过：${verified.message ?? '请继续登录'}；完成登录后再点击`,
+            )
+            continue
+          }
+        }
+        return { secret }
       }
       const reached = context.pages().find((candidate) => {
         try {
@@ -115,11 +240,16 @@ async function browserLogin(
           return false
         }
       })
-      if (reached) {
+      if (reached && !requireConfirm) {
         loggedPage = reached
         break
       }
       await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+    if (requireConfirm && Date.now() >= deadline) {
+      throw new Error(
+        '登录超时：请在浏览器中完成登录后点击右上角“已完成登录，保存会话”',
+      )
     }
     const finalUrl = loggedPage.url()
     if (
@@ -129,18 +259,7 @@ async function browserLogin(
       throw new Error('登录超时：未检测到已认证页面')
     }
     await loggedPage.waitForLoadState('domcontentloaded').catch(() => undefined)
-    const cookies: WebCookie[] = (await context.cookies())
-      .filter((cookie) => cookieDomainAllowed(cookie.domain, config.cookieDomains))
-      .map((cookie) => ({
-        name: cookie.name,
-        value: cookie.value,
-        domain: cookie.domain,
-        path: cookie.path,
-        ...(cookie.expires >= 0 ? { expires: cookie.expires } : {}),
-        ...(cookie.httpOnly ? { httpOnly: true } : {}),
-        ...(cookie.secure ? { secure: true } : {}),
-        ...(cookie.sameSite ? { sameSite: cookie.sameSite } : {}),
-      }))
+    const cookies = await sessionCookies(context, config)
     if (cookies.length === 0) {
       throw new Error('登录成功但未读取到会话 Cookie')
     }

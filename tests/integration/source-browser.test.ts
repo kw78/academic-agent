@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { createBrowserSessionEngine } from '@academic/source-browser'
+import {
+  createBrowserSessionEngine,
+  loginRequiresConfirmation,
+} from '@academic/source-browser'
 
 const config = {
   loginUrl: 'https://www.example.com/login',
@@ -25,6 +28,18 @@ const secret = JSON.stringify({
 })
 
 describe('browser-session engine verification', () => {
+  it('requires manual confirmation when the start page already looks authenticated', () => {
+    expect(
+      loginRequiresConfirmation(config, 'https://www.example.com/dashboard'),
+    ).toBe(true)
+    expect(
+      loginRequiresConfirmation(config, 'https://www.example.com/login'),
+    ).toBe(false)
+    expect(
+      loginRequiresConfirmation(config, 'https://id.example.com/cas/login'),
+    ).toBe(false)
+  })
+
   it('uses scoped cookies and reports a valid session', async () => {
     let sentCookie: string | null = null
     const engine = createBrowserSessionEngine({

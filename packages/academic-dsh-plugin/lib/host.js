@@ -26806,6 +26806,9 @@ function cookieDomainAllowed(cookieDomain, domains) {
     return host === domain2 || host.endsWith(`.${domain2}`) || domain2.endsWith(`.${host}`);
   });
 }
+function loginRequiresConfirmation(config2, url2) {
+  return matchesAny(config2.authenticatedUrlPatterns, url2) && !matchesAny(config2.loggedOutPatterns ?? [], url2);
+}
 async function launch(channel) {
   const channels = channel ? [channel] : ["msedge", "chrome"];
   let lastError;
@@ -26824,6 +26827,59 @@ async function launch(channel) {
     `\u65E0\u6CD5\u542F\u52A8 Edge/Chrome \u767B\u5F55\u7A97\u53E3\uFF1A${lastError instanceof Error ? lastError.message : String(lastError)}`
   );
 }
+var LOGIN_HELPER_SCRIPT = `(() => {
+  const install = () => {
+    if (document.getElementById('academic-login-save')) return
+    const panel = document.createElement('div')
+    panel.id = 'academic-login-panel'
+    panel.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483647;background:#111827;color:#fff;padding:10px 12px;border-radius:8px;font:13px/1.4 system-ui,-apple-system,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.35);max-width:320px'
+    const status = document.createElement('div')
+    status.id = 'academic-login-status'
+    status.style.cssText = 'margin-bottom:8px'
+    status.textContent = '\u5B8C\u6210\u767B\u5F55\u540E\u70B9\u51FB\u4E0B\u65B9\u6309\u94AE\u4FDD\u5B58\u4F1A\u8BDD\uFF08\u4E0D\u4F1A\u4FDD\u5B58\u5BC6\u7801\uFF09'
+    const button = document.createElement('button')
+    button.id = 'academic-login-save'
+    button.type = 'button'
+    button.textContent = '\u5DF2\u5B8C\u6210\u767B\u5F55\uFF0C\u4FDD\u5B58\u4F1A\u8BDD'
+    button.style.cssText = 'background:#2563eb;color:#fff;border:0;border-radius:6px;padding:8px 10px;cursor:pointer;font:inherit'
+    button.addEventListener('click', () => {
+      status.textContent = '\u6B63\u5728\u8BFB\u53D6\u5E76\u6821\u9A8C\u4F1A\u8BDD\u2026'
+      if (typeof window.__academicLoginConfirm === 'function') {
+        window.__academicLoginConfirm()
+      } else {
+        status.textContent = '\u65E0\u6CD5\u8FDE\u63A5\u5BBF\u4E3B\uFF0C\u8BF7\u5173\u95ED\u7A97\u53E3\u540E\u91CD\u8BD5'
+      }
+    })
+    panel.appendChild(status)
+    panel.appendChild(button)
+    document.documentElement.appendChild(panel)
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install, { once: true })
+  } else {
+    install()
+  }
+})()`;
+async function sessionCookies(context2, config2) {
+  return (await context2.cookies()).filter((cookie) => cookieDomainAllowed(cookie.domain, config2.cookieDomains)).map((cookie) => ({
+    name: cookie.name,
+    value: cookie.value,
+    domain: cookie.domain,
+    path: cookie.path,
+    ...cookie.expires >= 0 ? { expires: cookie.expires } : {},
+    ...cookie.httpOnly ? { httpOnly: true } : {},
+    ...cookie.secure ? { secure: true } : {},
+    ...cookie.sameSite ? { sameSite: cookie.sameSite } : {}
+  }));
+}
+async function updateLoginStatus(context2, text2) {
+  for (const page of context2.pages()) {
+    await page.evaluate((message) => {
+      const element = document.getElementById("academic-login-status");
+      if (element) element.textContent = message;
+    }, text2).catch(() => void 0);
+  }
+}
 async function browserLogin(config2) {
   const browser = await launch(config2.channel);
   let context2;
@@ -26832,16 +26888,54 @@ async function browserLogin(config2) {
       locale: "zh-CN",
       viewport: { width: 1280, height: 900 }
     });
+    let confirmed = false;
+    await context2.exposeBinding("__academicLoginConfirm", () => {
+      confirmed = true;
+    });
+    await context2.addInitScript({ content: LOGIN_HELPER_SCRIPT });
     const page = await context2.newPage();
     await page.goto(config2.loginUrl, {
       waitUntil: "domcontentloaded",
       timeout: 6e4
     });
+    const initialUrl = page.url();
+    const requireConfirm = loginRequiresConfirmation(config2, initialUrl);
     const deadline = Date.now() + (config2.timeoutMs ?? 4 * 6e4);
     let loggedPage = page;
     while (Date.now() < deadline) {
       if (!browser.isConnected()) {
         throw new Error("\u767B\u5F55\u7A97\u53E3\u5DF2\u5173\u95ED\uFF0C\u672A\u5B8C\u6210\u767B\u5F55");
+      }
+      if (confirmed) {
+        confirmed = false;
+        const cookies2 = await sessionCookies(context2, config2);
+        if (cookies2.length === 0) {
+          await updateLoginStatus(
+            context2,
+            "\u4ECD\u672A\u8BFB\u53D6\u5230\u4F1A\u8BDD Cookie\uFF0C\u8BF7\u5B8C\u6210\u767B\u5F55\u540E\u518D\u70B9\u51FB"
+          );
+          continue;
+        }
+        const secret = JSON.stringify({ cookies: cookies2 });
+        if (config2.verifyUrl) {
+          await updateLoginStatus(context2, "\u6B63\u5728\u6821\u9A8C\u4F1A\u8BDD\u2026");
+          const verified = await verifySession(
+            config2,
+            secret,
+            void 0,
+            void 0,
+            void 0,
+            config2.timeoutMs
+          );
+          if (!verified.ok) {
+            await updateLoginStatus(
+              context2,
+              `\u4F1A\u8BDD\u6821\u9A8C\u672A\u901A\u8FC7\uFF1A${verified.message ?? "\u8BF7\u7EE7\u7EED\u767B\u5F55"}\uFF1B\u5B8C\u6210\u767B\u5F55\u540E\u518D\u70B9\u51FB`
+            );
+            continue;
+          }
+        }
+        return { secret };
       }
       const reached = context2.pages().find((candidate) => {
         try {
@@ -26851,27 +26945,23 @@ async function browserLogin(config2) {
           return false;
         }
       });
-      if (reached) {
+      if (reached && !requireConfirm) {
         loggedPage = reached;
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    if (requireConfirm && Date.now() >= deadline) {
+      throw new Error(
+        "\u767B\u5F55\u8D85\u65F6\uFF1A\u8BF7\u5728\u6D4F\u89C8\u5668\u4E2D\u5B8C\u6210\u767B\u5F55\u540E\u70B9\u51FB\u53F3\u4E0A\u89D2\u201C\u5DF2\u5B8C\u6210\u767B\u5F55\uFF0C\u4FDD\u5B58\u4F1A\u8BDD\u201D"
+      );
     }
     const finalUrl = loggedPage.url();
     if (!matchesAny(config2.authenticatedUrlPatterns, finalUrl) || matchesAny(config2.loggedOutPatterns ?? [], finalUrl)) {
       throw new Error("\u767B\u5F55\u8D85\u65F6\uFF1A\u672A\u68C0\u6D4B\u5230\u5DF2\u8BA4\u8BC1\u9875\u9762");
     }
     await loggedPage.waitForLoadState("domcontentloaded").catch(() => void 0);
-    const cookies = (await context2.cookies()).filter((cookie) => cookieDomainAllowed(cookie.domain, config2.cookieDomains)).map((cookie) => ({
-      name: cookie.name,
-      value: cookie.value,
-      domain: cookie.domain,
-      path: cookie.path,
-      ...cookie.expires >= 0 ? { expires: cookie.expires } : {},
-      ...cookie.httpOnly ? { httpOnly: true } : {},
-      ...cookie.secure ? { secure: true } : {},
-      ...cookie.sameSite ? { sameSite: cookie.sameSite } : {}
-    }));
+    const cookies = await sessionCookies(context2, config2);
     if (cookies.length === 0) {
       throw new Error("\u767B\u5F55\u6210\u529F\u4F46\u672A\u8BFB\u53D6\u5230\u4F1A\u8BDD Cookie");
     }
@@ -27529,7 +27619,7 @@ function parseConfig2(config2) {
   if (error62) throw new Error(error62);
   return parsed;
 }
-function sessionCookies(secret) {
+function sessionCookies2(secret) {
   try {
     const parsed = JSON.parse(secret);
     if (!Array.isArray(parsed.cookies) || parsed.cookies.length === 0) {
@@ -27636,7 +27726,7 @@ var BlackboardReadOnlyAdapter = class {
     }
     const client = new BlackboardClient(
       this.#config,
-      sessionCookies(await context2.credentials.getSecret()),
+      sessionCookies2(await context2.credentials.getSecret()),
       this.#options
     );
     const portalUrl = this.#config.portalUrl ?? this.#config.loginUrl;
@@ -27844,7 +27934,7 @@ function createBlackboardEngine(options = {}) {
       const config2 = parseConfig2(context2.config);
       const client = new BlackboardClient(
         config2,
-        sessionCookies(await credentials.getSecret()),
+        sessionCookies2(await credentials.getSecret()),
         options
       );
       const portalUrl = config2.portalUrl ?? config2.loginUrl;
@@ -38888,7 +38978,7 @@ function parseDue2(value, zone, utcOffsetMinutes) {
   }
   return { kind: "unknown" };
 }
-function sessionCookies2(secret) {
+function sessionCookies3(secret) {
   try {
     const parsed = JSON.parse(secret);
     if (!Array.isArray(parsed.cookies) || parsed.cookies.length === 0) {
@@ -39091,7 +39181,7 @@ var ManifestAdapter = class {
     this.#options = options;
   }
   async #client(credentials) {
-    const cookies = credentials ? sessionCookies2(await credentials.getSecret()) : [];
+    const cookies = credentials ? sessionCookies3(await credentials.getSecret()) : [];
     return new ManifestClient(this.#manifest, this.#config, cookies, this.#options);
   }
   async listCourses(credentials) {
