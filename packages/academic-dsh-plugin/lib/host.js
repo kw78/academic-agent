@@ -26521,6 +26521,7 @@ function probeUrlFor(config2) {
   return void 0;
 }
 function hostAllowed(host, allowed) {
+  if (allowed.includes("*")) return true;
   const value = host.toLowerCase();
   return allowed.some((entry) => {
     const base = entry.toLowerCase().replace(/^\./, "");
@@ -26782,16 +26783,17 @@ async function probeSourcePage(input2) {
   const probeAllowedHosts = Array.isArray(input2.config.probeAllowedHosts) ? input2.config.probeAllowedHosts.filter(
     (entry) => typeof entry === "string"
   ) : [];
+  const allowAnyPublicHost = input2.config.probeAllowAnyPublicHost === true;
   const allowedHosts = [
     .../* @__PURE__ */ new Set([...cookieDomains, ...probeAllowedHosts])
   ];
-  if (input2.url && allowedHosts.length === 0) {
+  if (input2.url && !allowAnyPublicHost && allowedHosts.length === 0) {
     throw new Error("\u8BE5\u6765\u6E90\u672A\u914D\u7F6E\u6388\u6743\u57DF\u540D\uFF0C\u4E0D\u80FD\u63A2\u6D4B\u989D\u5916 URL");
   }
-  const effectiveHosts = allowedHosts.length > 0 ? allowedHosts : [host];
+  const effectiveHosts = allowAnyPublicHost ? ["*"] : allowedHosts.length > 0 ? allowedHosts : [host];
   if (!hostAllowed(host, effectiveHosts)) {
     throw new Error(
-      `\u63A2\u6D4B URL \u4E3B\u673A\u672A\u6388\u6743\uFF1A${host}\u3002\u5DF2\u6388\u6743\u4E3B\u673A\uFF1A${effectiveHosts.join(", ")}\uFF1B\u8DE8\u4E3B\u673A\u7684\u53EA\u8BFB\u63A2\u6D4B\u9700\u5728\u6765\u6E90\u914D\u7F6E\u7684 probeAllowedHosts \u4E2D\u663E\u5F0F\u52A0\u5165\u8BE5\u4E3B\u673A\uFF08\u4E0D\u4F1A\u81EA\u52A8\u643A\u5E26\u8BE5\u57DF\u540D\u7684 Cookie\uFF09`
+      `\u63A2\u6D4B URL \u4E3B\u673A\u672A\u6388\u6743\uFF1A${host}\u3002\u5DF2\u6388\u6743\u4E3B\u673A\uFF1A${effectiveHosts.join(", ")}\uFF1B\u8DE8\u4E3B\u673A\u7684\u53EA\u8BFB\u63A2\u6D4B\u9700\u5728\u6765\u6E90\u914D\u7F6E\u7684 probeAllowedHosts \u4E2D\u663E\u5F0F\u52A0\u5165\u8BE5\u4E3B\u673A\uFF0C\u6216\u7531\u7528\u6237\u5F00\u542F probeAllowAnyPublicHost\uFF08\u4E0D\u4F1A\u81EA\u52A8\u643A\u5E26\u8BE5\u57DF\u540D\u7684 Cookie\uFF09`
     );
   }
   const pathPrefixes = Array.isArray(input2.config.probePathPrefixes) ? input2.config.probePathPrefixes.filter(
@@ -26805,7 +26807,7 @@ async function probeSourcePage(input2) {
   }
   const result = await safeFetch(url2, {
     cookies,
-    allowedHosts: effectiveHosts,
+    allowedHosts: allowAnyPublicHost ? [host] : effectiveHosts,
     allowedProtocols: input2.config.allowHttp === true ? ["http:", "https:"] : ["https:"],
     ...pathPrefixes.length > 0 ? { allowedPathPrefixes: pathPrefixes } : {},
     timeoutMs: input2.timeoutMs ?? 15e3,
@@ -26968,13 +26970,14 @@ function crawlScope(config2, start) {
   const extraHosts = Array.isArray(config2.probeAllowedHosts) ? config2.probeAllowedHosts.filter(
     (entry) => typeof entry === "string"
   ) : [];
-  const allowedHosts = uniqueStrings([...cookieDomains, ...extraHosts]);
+  const allowAnyPublicHost = config2.probeAllowAnyPublicHost === true;
+  const allowedHosts = allowAnyPublicHost ? ["*"] : uniqueStrings([...cookieDomains, ...extraHosts]);
   if (allowedHosts.length === 0) {
     throw new Error("\u8BE5\u6765\u6E90\u672A\u914D\u7F6E\u6388\u6743\u57DF\u540D\uFF0C\u4E0D\u80FD\u6293\u53D6\u7AD9\u70B9");
   }
   if (!hostAllowed(start.hostname, allowedHosts)) {
     throw new Error(
-      `\u6293\u53D6 URL \u4E3B\u673A\u672A\u6388\u6743\uFF1A${start.hostname}\u3002\u5DF2\u6388\u6743\u4E3B\u673A\uFF1A${allowedHosts.join(", ")}\uFF1B\u8DE8\u4E3B\u673A\u53EA\u8BFB\u6293\u53D6\u9700\u5728\u6765\u6E90\u914D\u7F6E\u7684 probeAllowedHosts \u4E2D\u663E\u5F0F\u52A0\u5165\u8BE5\u4E3B\u673A`
+      `\u6293\u53D6 URL \u4E3B\u673A\u672A\u6388\u6743\uFF1A${start.hostname}\u3002\u5DF2\u6388\u6743\u4E3B\u673A\uFF1A${allowedHosts.join(", ")}\uFF1B\u8DE8\u4E3B\u673A\u53EA\u8BFB\u6293\u53D6\u9700\u5728\u6765\u6E90\u914D\u7F6E\u7684 probeAllowedHosts \u4E2D\u663E\u5F0F\u52A0\u5165\u8BE5\u4E3B\u673A\uFF0C\u6216\u7531\u7528\u6237\u5F00\u542F probeAllowAnyPublicHost`
     );
   }
   const configured = Array.isArray(config2.probePathPrefixes) ? config2.probePathPrefixes.filter(
@@ -26983,7 +26986,8 @@ function crawlScope(config2, start) {
   const defaultPathPrefix = start.pathname.endsWith("/") ? start.pathname : start.pathname.slice(0, start.pathname.lastIndexOf("/") + 1) || "/";
   return {
     allowedHosts,
-    pathPrefixes: configured.length > 0 ? configured : [defaultPathPrefix]
+    pathPrefixes: configured.length > 0 ? configured : [defaultPathPrefix],
+    allowAnyPublicHost
   };
 }
 async function crawlSourcePages(input2) {
@@ -26992,7 +26996,10 @@ async function crawlSourcePages(input2) {
     throw new Error("\u53EA\u5141\u8BB8 http(s) \u6293\u53D6");
   }
   const options = input2.options ?? {};
-  const { allowedHosts, pathPrefixes } = crawlScope(input2.config, start);
+  const { allowedHosts, pathPrefixes, allowAnyPublicHost } = crawlScope(
+    input2.config,
+    start
+  );
   const requestedPrefix = options.pathPrefix ? options.pathPrefix.startsWith("/") ? options.pathPrefix : `/${options.pathPrefix}` : void 0;
   if (requestedPrefix) {
     const normalized2 = requestedPrefix.replace(/\/+$/, "") || "/";
@@ -27070,9 +27077,10 @@ async function crawlSourcePages(input2) {
     const item = queue.shift();
     fetched += 1;
     try {
+      const itemHost = new URL(item.url).hostname;
       const result = await safeFetch(item.url, {
         cookies,
-        allowedHosts,
+        allowedHosts: allowAnyPublicHost ? [itemHost] : allowedHosts,
         allowedProtocols: input2.config.allowHttp === true ? ["http:", "https:"] : ["https:"],
         ...prefixes.length > 0 ? { allowedPathPrefixes: prefixes } : {},
         timeoutMs: 15e3,
@@ -27436,6 +27444,8 @@ var browserConfigSchema = external_exports.object({
   verifyUrl: external_exports.string().url().optional(),
   loggedOutPatterns: external_exports.array(external_exports.string().min(1)).optional(),
   probePathPrefixes: external_exports.array(external_exports.string().regex(/^\//, "Expected a path beginning with /")).max(20).optional(),
+  /** Opt-in: allow the read-only probe/crawl to visit any public HTTPS host. */
+  probeAllowAnyPublicHost: external_exports.boolean().optional(),
   /** Extra hosts the user explicitly allows the read-only probe to visit. */
   probeAllowedHosts: external_exports.array(
     external_exports.string().min(1).max(253).regex(/^[a-z0-9.-]+$/i, "Expected a hostname without scheme or path")

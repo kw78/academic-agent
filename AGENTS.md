@@ -82,7 +82,7 @@ docs/adr/                      # 架构决策记录
 - 数据源定义与配置保存在 `academic_sources` 运营表：少量通用 engine（fixture、browser-session，后续 ics/http-session）+ 非敏感 `config_json`。新增网站来源优先写 DB 配置，不在应用层为每家网站写代码或 vendor 插件；只有出现新的独立执行能力时才增加 engine。
 - 通用网站会话保存在 `web_sessions` 运营表，Cookie 仅存 DPAPI；UI/CLI/Agent 通过 `web login`、`academic_fetch_web_session` 等接口带会话访问，不把 Cookie 返回给模型或浏览器端。
 - 课程资料原文件按 sha256 存于数据库同目录 `materials/`，SQLite 只存元数据、分块与 FTS5 索引（可重建）；资料不写入 Event Store/核心投影，删除资料不影响学业事件。
-- 只读探测默认限制在来源 `cookieDomains`；需要跨主机（例如壳站与 MOOC 子站）时，必须由用户在来源配置 `probeAllowedHosts` 中显式列出额外主机。跨主机请求不会自动携带该主机 Cookie；Manifest `allowedOrigins` 必须列出所有实际请求主机。`loggedOutPatterns` 只匹配最终 URL 与页面标题，不拿 JS/JSON 正文做登录判断。
+- 只读探测默认限制在来源 `cookieDomains`；需要跨主机（例如壳站与 MOOC 子站）时，必须由用户在来源配置 `probeAllowedHosts` 中显式列出额外主机。跨主机请求不会自动携带该主机 Cookie；Manifest `allowedOrigins` 必须列出所有实际请求主机。`loggedOutPatterns` 只匹配最终 URL 与页面标题，不拿 JS/JSON 正文做登录判断。来源可显式开启 `probeAllowAnyPublicHost`，让只读探测/有界抓取访问任意公开 HTTPS 主机；默认关闭，跨主机仍不携带该域 Cookie，私网/回环/元数据地址仍被拒绝，页面/深度/路径/时长上限不变。
 - 课程页附件自动导入必须由用户为 source+course 显式开启；只扫描用户给出的课程页同主机链接，限制文件数/大小/时长，401/403/登录页/429 立即停止；资料正文一律视为不可信数据。
 - 课程身份按 `(termId, 规范化标题)` 合并：同步注册与手工添加都复用同学期同名课程；外部来源身份保存在 `course_source_aliases`，不重复建课。
 - 历史重复课程通过 `course merge-duplicates` 或设置页“合并同学期同名课程”显式修复：事项经 `AcademicItemReassignCourse` 事件迁移，资料/订阅/优先级迁移后关闭重复课程；合并前先备份。
@@ -160,7 +160,7 @@ docs/adr/                      # 架构决策记录
 
 | Gate | 内容 | 状态 |
 |---|---|---|
-| Gate 0 | 真实基线 | 已完成：typecheck、222 项测试/41 文件、两个构建、DSH selftest；桌面干净启动待复核 |
+| Gate 0 | 真实基线 | 已完成：typecheck、224 项测试/41 文件、两个构建、DSH selftest；桌面干净启动待复核 |
 | Gate 1 | 桌面端可启动、可操作 | 用户已手工检查当前 Desktop 基本流程，无阻塞；链接配置已置顶；文件级 HMR/完整生命周期专项仍未验证 |
 | Gate 2 | 真实平台登录与会话 | 已完成：BB 与 USTC 教务真实登录/验证；正式同步新增“连接必须已验证”闸门；删除凭据不删学业数据 |
 | Gate 3 | 一个平台的数据同步闭环 | 已完成：BB 真实课程/作业/文件夹；考试/测验 fixture 验证并标注；JW 考试真实同步 |

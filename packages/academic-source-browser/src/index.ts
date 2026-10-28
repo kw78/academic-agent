@@ -24,6 +24,8 @@ export const browserConfigSchema = z.object({
     .array(z.string().regex(/^\//, 'Expected a path beginning with /'))
     .max(20)
     .optional(),
+  /** Opt-in: allow the read-only probe/crawl to visit any public HTTPS host. */
+  probeAllowAnyPublicHost: z.boolean().optional(),
   /** Extra hosts the user explicitly allows the read-only probe to visit. */
   probeAllowedHosts: z
     .array(

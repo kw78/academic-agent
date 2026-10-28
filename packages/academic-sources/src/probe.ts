@@ -51,6 +51,7 @@ export function probeUrlFor(config: Record<string, unknown>): string | undefined
 }
 
 export function hostAllowed(host: string, allowed: string[]): boolean {
+  if (allowed.includes('*')) return true
   const value = host.toLowerCase()
   return allowed.some((entry) => {
     const base = entry.toLowerCase().replace(/^\./, '')
@@ -378,16 +379,21 @@ export async function probeSourcePage(
         (entry): entry is string => typeof entry === 'string',
       )
     : []
+  const allowAnyPublicHost = input.config.probeAllowAnyPublicHost === true
   const allowedHosts = [
     ...new Set([...cookieDomains, ...probeAllowedHosts]),
   ]
-  if (input.url && allowedHosts.length === 0) {
+  if (input.url && !allowAnyPublicHost && allowedHosts.length === 0) {
     throw new Error('该来源未配置授权域名，不能探测额外 URL')
   }
-  const effectiveHosts = allowedHosts.length > 0 ? allowedHosts : [host]
+  const effectiveHosts = allowAnyPublicHost
+    ? ['*']
+    : allowedHosts.length > 0
+      ? allowedHosts
+      : [host]
   if (!hostAllowed(host, effectiveHosts)) {
     throw new Error(
-      `探测 URL 主机未授权：${host}。已授权主机：${effectiveHosts.join(', ')}；跨主机的只读探测需在来源配置的 probeAllowedHosts 中显式加入该主机（不会自动携带该域名的 Cookie）`,
+      `探测 URL 主机未授权：${host}。已授权主机：${effectiveHosts.join(', ')}；跨主机的只读探测需在来源配置的 probeAllowedHosts 中显式加入该主机，或由用户开启 probeAllowAnyPublicHost（不会自动携带该域名的 Cookie）`,
     )
   }
   const pathPrefixes = Array.isArray(input.config.probePathPrefixes)
@@ -403,7 +409,7 @@ export async function probeSourcePage(
   }
   const result = await safeFetch(url, {
     cookies,
-    allowedHosts: effectiveHosts,
+    allowedHosts: allowAnyPublicHost ? [host] : effectiveHosts,
     allowedProtocols:
       input.config.allowHttp === true ? ['http:', 'https:'] : ['https:'],
     ...(pathPrefixes.length > 0 ? { allowedPathPrefixes: pathPrefixes } : {}),

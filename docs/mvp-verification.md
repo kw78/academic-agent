@@ -8,7 +8,7 @@
 | 检查 | 命令 | 结果 |
 |---|---|---|
 | 类型检查 | `npm run typecheck` | 通过 |
-| 全量测试 | `npm test` | 通过：41 个文件、222 项 |
+| 全量测试 | `npm test` | 通过：41 个文件、224 项 |
 | DSH 构建 | `npm run build:dsh` | 通过 |
 | UI 构建 | `npm run build:ui` | 通过 |
 | DSH 自测 | `ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=.data/dsh-academic.db dsh academic --json "hello"` | 通过：host/planner/tools 加载，`tools=17 registered=true`，只读查询成功，未授权写入 `FORBIDDEN` |
@@ -19,7 +19,7 @@
 - **SEC-002 Manifest 授权范围**：Manifest 必须声明 `allowedPathPrefixes`；主机按精确匹配（不做隐式子域）；协议/端口来自 baseUrl；`safeFetch` 对初始、模板、分页、详情和重定向统一执行路径/主机策略。越权路径与子域在候选验证阶段被拒绝。
 - **SEC-003 正则执行**：静态拒绝嵌套量词、含分支组的量词、环视、过大重复与连续无限通配；实际执行放入受限 `vm` 上下文，单次 100ms 超时、每页 500ms 预算；超时返回受控错误。
 - **SEC-004 会话/Cookie 范围**：Web Session、browser-session、Blackboard 与 Manifest 均按精确主机校验；不再隐式把父域 Cookie 用于子域；Cookie 的 Domain/Path/Secure/Expiry 规则保留。
-- 验证：`npm run typecheck`、222 项测试通过；新增越权路径/子域、敏感 JSON、恶意正则、子域 Cookie 回归样本。
+- 验证：`npm run typecheck`、224 项测试通过；新增越权路径/子域、敏感 JSON、恶意正则、子域 Cookie 回归样本。
 
 ## Gate 1 — 桌面端可启动、可操作
 
@@ -91,7 +91,7 @@ USTC 教务（第二平台，Manifest）：
 - 偏好与复习：课程优先级持久化并作为计划第二排序依据；任务页按课程展示复习清单与带上下文 Agent 入口。
 - 真实计划案例（Blackboard 临时库快照）：9 个任务中 3 个按时段安排、5 个截止已过被明确标为 `deadline-passed`、1 个未知截止无截止安排；date-only 考试按 Asia/Shanghai 日终处理。可用总时长与实际容量不足分开提示，截止已过不再误报为“时间不足”。
 - 运维：恢复命令在独立目录执行 `integrity_check` 与投影一致性校验；1k/10k 事项基准已记录；旧库升级测试验证数据保留与新迁移生效；`sync_runs` 记录 Adapter ID/版本。
-- 验证：`npm run typecheck`、`npm test`（41 文件/222 项）、`npm run build:dsh`、`npm run build:ui` 通过。新 UI 面板（阶段/诊断、候选范围、课程优先级、复习清单、编辑/删除/恢复入口）只完成类型检查、构建与 Host API 测试，未重新做浏览器点验。
+- 验证：`npm run typecheck`、`npm test`（41 文件/224 项）、`npm run build:dsh`、`npm run build:ui` 通过。新 UI 面板（阶段/诊断、候选范围、课程优先级、复习清单、编辑/删除/恢复入口）只完成类型检查、构建与 Host API 测试，未重新做浏览器点验。
 - 个人数据编辑：课程编辑/归档/删除/恢复；来源事项归档/恢复；任务编辑/删除/恢复；数据源编辑/归档/恢复/彻底删除。课程、事项、任务删除均为事件软删除，投影重建可还原；数据源彻底删除只清理配置与凭据，不删除学业事件。详见 ADR 0012。
 
 ## 候选交接修复（2026-10-28）
@@ -108,7 +108,7 @@ USTC 教务（第二平台，Manifest）：
 - 授权附件导入需显式开启 source+course 订阅，只扫描用户给出的课程页中同主机且允许扩展名的链接；限 12 个文件、80 MB/文件、2 分钟；401/403/登录页/429 立即停止。
 - Agent 工具：`academic_list_materials` / `academic_search_materials` 只读；`academic_import_material` / `academic_delete_material` 需可信宿主逐次授权。Tutor skill 的 explain/review 要求先查资料、引用标题/页码，查不到时明确说明。
 - 真实 PDF 检索：`2025春数分B2期中试题及解答.pdf` 导入后 6 个分块，可检索“中国科学技术大学”“隐函数”等片段，并返回页码；重复导入返回既有资料；删除后事件行数不变。
-- 验证：`npm run typecheck`、`npm test`（222 项/41 文件）、`npm run build:dsh`、`npm run build:ui` 通过；DSH 自测 `tools=24 registered=true`，只读成功，写入 `FORBIDDEN`。
+- 验证：`npm run typecheck`、`npm test`（224 项/41 文件）、`npm run build:dsh`、`npm run build:ui` 通过；DSH 自测 `tools=24 registered=true`，只读成功，写入 `FORBIDDEN`。
 - 浏览器点验（DSH Web + 临时库）：Fixture 同步后，资料页导入粘贴文本与真实 PDF；检索“半加器”返回 1 段，“隐函数”返回 3 段并标注 PDF 第 3/2/5 页；删除资料后列表与文件同步清理。
 - 未验证：真实模型会话中的资料引用行为（本机当前缺少 DeepSeek key）、OCR、自动多页发现。
 

@@ -51,7 +51,7 @@ function pathAllowedBy(prefixes: string[], pathname: string): boolean {
 function crawlScope(
   config: Record<string, unknown>,
   start: URL,
-): { allowedHosts: string[]; pathPrefixes: string[] } {
+): { allowedHosts: string[]; pathPrefixes: string[]; allowAnyPublicHost: boolean } {
   const cookieDomains = Array.isArray(config.cookieDomains)
     ? config.cookieDomains.filter(
         (entry): entry is string => typeof entry === 'string',
@@ -62,13 +62,16 @@ function crawlScope(
         (entry): entry is string => typeof entry === 'string',
       )
     : []
-  const allowedHosts = uniqueStrings([...cookieDomains, ...extraHosts])
+  const allowAnyPublicHost = config.probeAllowAnyPublicHost === true
+  const allowedHosts = allowAnyPublicHost
+    ? ['*']
+    : uniqueStrings([...cookieDomains, ...extraHosts])
   if (allowedHosts.length === 0) {
     throw new Error('该来源未配置授权域名，不能抓取站点')
   }
   if (!hostAllowed(start.hostname, allowedHosts)) {
     throw new Error(
-      `抓取 URL 主机未授权：${start.hostname}。已授权主机：${allowedHosts.join(', ')}；跨主机只读抓取需在来源配置的 probeAllowedHosts 中显式加入该主机`,
+      `抓取 URL 主机未授权：${start.hostname}。已授权主机：${allowedHosts.join(', ')}；跨主机只读抓取需在来源配置的 probeAllowedHosts 中显式加入该主机，或由用户开启 probeAllowAnyPublicHost`,
     )
   }
   const configured = Array.isArray(config.probePathPrefixes)
@@ -83,6 +86,7 @@ function crawlScope(
   return {
     allowedHosts,
     pathPrefixes: configured.length > 0 ? configured : [defaultPathPrefix],
+    allowAnyPublicHost,
   }
 }
 
@@ -99,7 +103,10 @@ export async function crawlSourcePages(
     throw new Error('只允许 http(s) 抓取')
   }
   const options = input.options ?? {}
-  const { allowedHosts, pathPrefixes } = crawlScope(input.config, start)
+  const { allowedHosts, pathPrefixes, allowAnyPublicHost } = crawlScope(
+    input.config,
+    start,
+  )
   const requestedPrefix = options.pathPrefix
     ? options.pathPrefix.startsWith('/')
       ? options.pathPrefix
@@ -183,9 +190,10 @@ export async function crawlSourcePages(
     const item = queue.shift()!
     fetched += 1
     try {
+      const itemHost = new URL(item.url).hostname
       const result = await safeFetch(item.url, {
         cookies,
-        allowedHosts,
+        allowedHosts: allowAnyPublicHost ? [itemHost] : allowedHosts,
         allowedProtocols:
           input.config.allowHttp === true ? ['http:', 'https:'] : ['https:'],
         ...(prefixes.length > 0 ? { allowedPathPrefixes: prefixes } : {}),

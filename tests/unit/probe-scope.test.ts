@@ -49,6 +49,60 @@ describe('source probe host scope', () => {
     expect(calls).toBe(0)
   })
 
+  it('can opt in to any public host without carrying cookies across domains', async () => {
+    const urls: string[] = []
+    const fetchImpl = (async (input: string | URL | Request) => {
+      urls.push(String(input))
+      return new Response('<html><body>external</body></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      })
+    }) as typeof fetch
+    const evidence = await probeSourcePage({
+      sourceId: 'source-1',
+      config: { ...config(), probeAllowAnyPublicHost: true },
+      secret: secret(),
+      probedAt: '2026-10-28T10:00:00.000Z',
+      url: 'https://other.example/course',
+      fetchImpl,
+      resolveHost: publicAddress,
+    })
+    expect(evidence.status).toBe(200)
+    expect(urls).toHaveLength(1)
+  })
+
+  it('follows an explicitly opted-in public host during a bounded crawl', async () => {
+    const urls: string[] = []
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = String(input)
+      urls.push(url)
+      if (url.includes('i.chaoxing.com/space/index')) {
+        return new Response('<a href="https://other.example/space/1">课程</a>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        })
+      }
+      return new Response('<html><body>external course</body></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      })
+    }) as typeof fetch
+    const result = await crawlSourcePages({
+      sourceId: 'source-1',
+      config: {
+        ...config(),
+        probeAllowAnyPublicHost: true,
+      },
+      secret: secret(),
+      startUrl: 'https://i.chaoxing.com/space/index',
+      options: { maxPages: 2, maxDepth: 1, pathPrefix: '/space', delayMs: 0 },
+      fetchImpl,
+      resolveHost: publicAddress,
+    })
+    expect(result.fetched).toBe(2)
+    expect(urls.some((url) => url.includes('other.example'))).toBe(true)
+  })
+
   it('does not treat a JS bundle containing /login as a login page', async () => {
     const fetchImpl = (async () =>
       new Response('const route = "/login"; const api = "/api/courses";', {

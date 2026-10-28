@@ -281,7 +281,7 @@ function SourceCard({
       ctx,
       `请为数据源 ${source.sourceId}（${source.displayName}）生成可验证的声明式 Adapter。按阶段执行，证据不足时停止并说明，不要猜测。\n` +
         '1. 先调用 academic_probe_source 探测当前配置页面，记录 status/title/headings/links/scripts/endpointCandidates/tables/containers/jsonShape/digest；不要记录 Cookie。\n' +
-        '2. 若页面是 SPA 外壳（标题/列表/表格/链接基本为空，只有“加载中”），不要生成 selector 占位候选；用 academic_probe_source 的可选 url 参数继续探测同站脚本、分页/列表链接和候选接口，优先找同源 JSON 接口并记录字段/数组形状。每次 URL 必须属于该来源主机，或在来源配置 `probeAllowedHosts` 中显式授权；跨主机不会自动带该域名 Cookie，Manifest 的 allowedOrigins 要列出所有实际请求主机。需要先摸清一个栏目时，可调用 academic_crawl_source 从入口 URL 有界抓取（最多 10 页、深度 2、只跟 GET 链接，仍受 probeAllowedHosts/probePathPrefixes 限制）。\n' +
+        '2. 若页面是 SPA 外壳（标题/列表/表格/链接基本为空，只有“加载中”），不要生成 selector 占位候选；用 academic_probe_source 的可选 url 参数继续探测同站脚本、分页/列表链接和候选接口，优先找同源 JSON 接口并记录字段/数组形状。每次 URL 必须属于该来源主机，或在来源配置 `probeAllowedHosts` 中显式授权；也可由用户开启 `probeAllowAnyPublicHost` 允许任意公开 HTTPS 主机（只读、限额、不带跨域 Cookie）；跨主机不会自动带该域名 Cookie，Manifest 的 allowedOrigins 要列出所有实际请求主机。需要先摸清一个栏目时，可调用 academic_crawl_source 从入口 URL 有界抓取（最多 10 页、深度 2、只跟 GET 链接，仍受 probeAllowedHosts/probePathPrefixes 限制）。\n' +
         '3. 找到真实列表页或 JSON 接口后，先根据 tables[].className/headers、containers[].className 和 links 推断选择器，再用 academic_probe_source 的 capture=true 捕获响应，拿到 sampleId；原始页面只留在宿主，不要把整页内容粘贴到对话里。\n' +
         '4. 只有拿到真实页面/真实 JSON 样本后才生成字段映射；用 sampleIds（或真实 samples）调用 academic_validate_adapter_candidate，样本必须覆盖所有请求 URL。禁止用合成 HTML 让验证变绿，失败只报告结构化原因。\n' +
         '5. 不注册、不启用、不扩大域名/路径；需要更宽路径时给出精确 URL/前缀，交由我在“连接”页确认。\n' +
