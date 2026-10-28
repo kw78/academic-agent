@@ -30,6 +30,7 @@ const manifest = {
   displayName: 'Demo JSON',
   baseUrl: 'https://lms.example.edu/',
   allowedOrigins: ['lms.example.edu'],
+  allowedPathPrefixes: ['/api/'],
   timeZone: 'Asia/Shanghai',
   utcOffsetMinutes: 480,
   courses: {
@@ -140,6 +141,25 @@ describe('adapter candidate replay and registry', () => {
     const templateReport = await replayManifest(badTemplate, samples())
     expect(templateReport.ok).toBe(false)
     expect(templateReport.errors.join(' ')).toMatch(/模板引用了未知字段/)
+
+    const outsidePath = {
+      ...manifest,
+      assignments: { ...manifest.assignments, url: '/admin/assignments' },
+    }
+    const pathReport = await replayManifest(outsidePath, samples())
+    expect(pathReport.ok).toBe(false)
+    expect(pathReport.errors.join(' ')).toMatch(/allowedPathPrefixes/)
+
+    const subdomain = {
+      ...manifest,
+      courses: {
+        ...manifest.courses,
+        url: 'https://evil.lms.example.edu/api/courses',
+      },
+    }
+    const hostReport = await replayManifest(subdomain, samples())
+    expect(hostReport.ok).toBe(false)
+    expect(hostReport.errors.join(' ')).toMatch(/allowedOrigins/)
   })
 
   it('stores candidates, activates validated versions and rolls back', async () => {

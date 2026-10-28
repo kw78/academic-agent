@@ -132,6 +132,7 @@ class BlackboardClient {
       const result = await safeFetch(url, {
         cookies: this.#cookies,
         allowedHosts: this.#config.cookieDomains,
+        allowSubdomains: false,
         allowedProtocols: this.#config.allowHttp
           ? ['http:', 'https:']
           : ['https:'],

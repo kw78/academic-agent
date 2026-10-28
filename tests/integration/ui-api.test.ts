@@ -347,6 +347,7 @@ describe('academic UI host API', () => {
       displayName: 'Auto Demo',
       baseUrl: 'https://lms.example.edu/',
       allowedOrigins: ['lms.example.edu'],
+      allowedPathPrefixes: ['/data'],
       courses: {
         url: '/data',
         responseType: 'json',

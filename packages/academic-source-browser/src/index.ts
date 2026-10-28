@@ -174,6 +174,7 @@ async function verifySession(
     const result = await safeFetch(config.verifyUrl, {
       cookies,
       allowedHosts: config.cookieDomains,
+      allowSubdomains: false,
       allowedProtocols: protocolsFor(config),
       ...(fetchImpl ? { fetchImpl } : {}),
       ...(requestImpl ? { requestImpl } : {}),

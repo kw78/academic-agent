@@ -33,6 +33,7 @@ const jsonManifest = {
   displayName: 'Demo JSON',
   baseUrl: 'https://lms.example.edu/',
   allowedOrigins: ['lms.example.edu'],
+  allowedPathPrefixes: ['/api/'],
   timeZone: 'Asia/Shanghai',
   utcOffsetMinutes: 480,
   courses: {
@@ -78,6 +79,7 @@ const htmlManifest = {
   displayName: 'Demo HTML',
   baseUrl: 'https://lms.example.edu/',
   allowedOrigins: ['lms.example.edu'],
+  allowedPathPrefixes: ['/portal.html', '/course/', '/assignment/'],
   timeZone: 'Asia/Shanghai',
   utcOffsetMinutes: 480,
   courses: {
@@ -120,6 +122,7 @@ const jwManifest = {
   displayName: 'USTC 综合教务系统 · 考试',
   baseUrl: 'https://jw.example.edu/',
   allowedOrigins: ['jw.example.edu'],
+  allowedPathPrefixes: ['/for-std/'],
   timeZone: 'Asia/Shanghai',
   utcOffsetMinutes: 480,
   courses: {

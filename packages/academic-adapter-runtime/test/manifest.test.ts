@@ -26,6 +26,7 @@ const htmlManifest = {
   displayName: 'Demo HTML',
   baseUrl: 'https://lms.example.edu/',
   allowedOrigins: ['lms.example.edu'],
+  allowedPathPrefixes: ['/portal.html', '/course/', '/assignment/'],
   courses: {
     url: '/portal.html',
     responseType: 'html',
@@ -143,7 +144,10 @@ describe('declarative manifest', () => {
     expect(regexSafetyError('(.*)*')).toBeTruthy()
     expect(regexSafetyError('(\\w+){2,}')).toBeTruthy()
     expect(regexSafetyError('\\1')).toBeTruthy()
-    expect(regexSafetyError('(?:x|y)+')).toBeUndefined()
+    expect(regexSafetyError('(a|aa)+$')).toBeTruthy()
+    expect(regexSafetyError('(?:x|y)+')).toBeTruthy()
+    expect(regexSafetyError('x{2000}')).toBeTruthy()
+    expect(regexSafetyError('(?:x|y)')).toBeUndefined()
 
     const unsafe = parseManifest({
       ...htmlManifest,

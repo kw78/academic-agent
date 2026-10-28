@@ -30,6 +30,7 @@ const manifest = {
   displayName: 'Tool Demo',
   baseUrl: 'https://lms.example.edu/',
   allowedOrigins: ['lms.example.edu'],
+  allowedPathPrefixes: ['/courses', '/course/'],
   courses: {
     url: '/courses',
     responseType: 'html',

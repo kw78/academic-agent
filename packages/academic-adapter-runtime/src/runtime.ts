@@ -221,6 +221,8 @@ class ManifestClient {
       const result = await safeFetch(url, {
         cookies: this.#cookies,
         allowedHosts: this.#manifest.allowedOrigins,
+        allowedPathPrefixes: this.#manifest.allowedPathPrefixes,
+        allowSubdomains: false,
         allowedProtocols: this.#protocols,
         allowedPorts: this.#ports,
         ...(this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {}),
@@ -573,7 +575,15 @@ export function createDeclarativeEngine(
 }
 
 function hostAllowed(host: string, origins: string[]): boolean {
-  return origins.some((origin) => host === origin || host.endsWith(`.${origin}`))
+  return origins.includes(host)
+}
+
+function pathAllowed(pathname: string, prefixes: string[]): boolean {
+  return prefixes.some((prefix) => {
+    if (prefix === '/') return true
+    if (pathname === prefix) return true
+    return pathname.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`)
+  })
 }
 
 function validateManifestStatic(manifest: AdapterManifest): string[] {
@@ -627,6 +637,11 @@ function validateManifestStatic(manifest: AdapterManifest): string[] {
             : 80
         if (port !== basePort) {
           errors.push(`${name} URL 端口必须与 baseUrl 一致：${port}`)
+        }
+        if (!pathAllowed(resolved.pathname, manifest.allowedPathPrefixes)) {
+          errors.push(
+            `${name} URL 路径不在 allowedPathPrefixes：${resolved.pathname}`,
+          )
         }
       }
     } catch {

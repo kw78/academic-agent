@@ -76,6 +76,8 @@ export interface SafeFetchOptions {
   /** Defaults to 443 (and 80 only when HTTP is enabled). */
   allowedPorts?: number[]
   allowedPathPrefixes?: string[]
+  /** Defaults true for existing session callers; manifests use exact hosts. */
+  allowSubdomains?: boolean
   fetchImpl?: typeof fetch
   requestImpl?: PinnedRequest
   resolveHost?: ResolveHost
@@ -164,10 +166,14 @@ function normalizeDomain(domain: string): string {
   return normalizeHostname(domain).replace(/^\./, '')
 }
 
-function hostMatches(hostname: string, allowed: string): boolean {
+function hostMatches(
+  hostname: string,
+  allowed: string,
+  allowSubdomains = true,
+): boolean {
   const host = normalizeHostname(hostname)
   const base = normalizeDomain(allowed)
-  return host === base || host.endsWith(`.${base}`)
+  return host === base || (allowSubdomains && host.endsWith(`.${base}`))
 }
 
 function isBlockedHostname(hostname: string): boolean {
@@ -268,10 +274,15 @@ async function assertSafeTarget(
   allowedProtocols: AllowedProtocol[],
   allowedPorts: number[],
   allowedPathPrefixes: string[] | undefined,
+  allowSubdomains: boolean,
 ): Promise<PinnedTarget> {
   assertUrlPolicy(url, allowedProtocols, allowedPorts, allowedPathPrefixes)
   const host = normalizeHostname(url.hostname)
-  if (!allowedHosts.some((allowed) => hostMatches(host, allowed))) {
+  if (
+    !allowedHosts.some((allowed) =>
+      hostMatches(host, allowed, allowSubdomains),
+    )
+  ) {
     throw new SafeFetchError('UNSAFE_HOST', `目标主机不在授权范围内：${host}`)
   }
   if (isBlockedHostname(host)) {
@@ -570,6 +581,7 @@ export async function safeFetch(
         allowedProtocols,
         allowedPorts,
         options.allowedPathPrefixes,
+        options.allowSubdomains ?? true,
       )
       const cookie = cookieHeaderFor(cookies, current, now())
 

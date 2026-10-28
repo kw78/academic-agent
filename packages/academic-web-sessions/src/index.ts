@@ -235,6 +235,7 @@ export class WebSessionStore {
     const result = await safeFetch(targetUrl, {
       cookies,
       allowedHosts: [row.domain],
+      allowSubdomains: false,
       allowedProtocols: this.#allowedProtocols,
       ...(this.#allowedPorts ? { allowedPorts: this.#allowedPorts } : {}),
       ...(this.#allowedPathPrefixes

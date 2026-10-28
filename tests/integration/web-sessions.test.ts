@@ -82,6 +82,24 @@ describe('generic web sessions', () => {
     expect(webSessions.list()).toHaveLength(0)
   })
 
+  it('does not reuse a session cookie for subdomains implicitly', async () => {
+    const { webSessions } = setup(async () => new Response('ok'))
+    const session = await webSessions.create({
+      loginUrl: 'https://www.example.com/login',
+      cookies: [
+        {
+          name: 'sid',
+          value: '1',
+          domain: '.example.com',
+          path: '/',
+        },
+      ],
+    })
+    await expect(
+      webSessions.fetch(session.sessionId, 'https://sub.www.example.com/'),
+    ).rejects.toThrow(/授权范围/)
+  })
+
   it('selects cookies by domain, path, secure and expiry', async () => {
     const sent: string[] = []
     const { webSessions } = setup(async (_input, init) => {

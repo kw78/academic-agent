@@ -5,6 +5,7 @@
   "displayName": "USTC 综合教务系统 · 考试",
   "baseUrl": "https://jw.ustc.edu.cn/",
   "allowedOrigins": ["jw.ustc.edu.cn"],
+  "allowedPathPrefixes": ["/for-std/"],
   "timeZone": "Asia/Shanghai",
   "utcOffsetMinutes": 480,
   "courses": {
