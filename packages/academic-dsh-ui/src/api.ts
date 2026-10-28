@@ -1248,7 +1248,7 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
     async status() {
       return ok({
         host: 'connected' as const,
-        version: '0.1.1',
+        version: '0.2.0',
         generatedAt: app.clock.now(),
         plannerAvailable: app.registry.get('academic.planner.basic') !== undefined,
         notificationAvailable: app.registry.list('notification').length > 0,

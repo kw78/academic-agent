@@ -21156,7 +21156,7 @@ function createAcademicUiApi(app) {
     async status() {
       return ok({
         host: "connected",
-        version: "0.1.1",
+        version: "0.2.0",
         generatedAt: app.clock.now(),
         plannerAvailable: app.registry.get("academic.planner.basic") !== void 0,
         notificationAvailable: app.registry.list("notification").length > 0,

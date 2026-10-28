@@ -1,6 +1,6 @@
 {
   "id": "academic-agent",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "main": "lib/host.js",
   "description": "Academic Agent for DSH: event-sourced courses/tasks/plans, sources, materials, planning and read-only-first Agent tools. Writes require trusted host authorization.",
   "engines": {

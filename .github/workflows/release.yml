@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release (for example v0.2.0)
+        required: true
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Package, publish and index
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Resolve tag
+        id: release
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install from lockfile
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify version matches the tag
+        run: node scripts/verify-release-version.mjs "${{ steps.release.outputs.version }}"
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Build DSH plugin and UI
+        run: |
+          npm run build:dsh
+          npm run build:ui
+
+      - name: Pack plugins and checksums
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          mkdir -p dist/release
+          (cd packages/academic-dsh-plugin && npm pack --pack-destination ../../dist/release)
+          (cd packages/academic-dsh-ui && npm pack --pack-destination ../../dist/release)
+          (cd dist/release && sha256sum "academic-dsh-plugin-${VERSION}.tgz" "academic-dsh-ui-${VERSION}.tgz" > SHA256SUMS)
+          cat dist/release/SHA256SUMS
+
+      - name: Require release notes
+        run: test -f "docs/releases/${{ steps.release.outputs.tag }}.md"
+
+      - name: Create or update GitHub Release
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          TAG="${{ steps.release.outputs.tag }}"
+          ASSETS=(
+            "dist/release/academic-dsh-plugin-${VERSION}.tgz"
+            "dist/release/academic-dsh-ui-${VERSION}.tgz"
+            "dist/release/SHA256SUMS"
+          )
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+          else
+            gh release create "$TAG" \
+              --title "Academic Agent $TAG" \
+              --notes-file "docs/releases/$TAG.md" \
+              "${ASSETS[@]}"
+          fi
+
+      - name: Publish to npm
+        if: env.NPM_TOKEN != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          npm publish "dist/release/academic-dsh-plugin-${VERSION}.tgz" --access public --provenance
+          npm publish "dist/release/academic-dsh-ui-${VERSION}.tgz" --access public --provenance
+
+      - name: npm token missing
+        if: env.NPM_TOKEN == ''
+        run: echo "::warning::NPM_TOKEN secret is not configured; npm publish skipped."
+
+      - name: Update market index
+        run: |
+          node scripts/update-market-index.mjs \
+            "${{ steps.release.outputs.version }}" \
+            "${{ github.sha }}"
+          if git diff --quiet market/index.json; then
+            echo "market index already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add market/index.json
+          git commit -m "docs(market): publish ${{ steps.release.outputs.tag }}"
+          git push origin HEAD:main

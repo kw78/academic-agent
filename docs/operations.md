@@ -108,7 +108,11 @@ find .data -maxdepth 2 -type f \( -name '*.html' -o -name '*.log' -o -name '*.tx
 - 删除全部本地数据：退出 Host/桌面端，备份后删除 `$DSH_HOME/academic-agent/academic.db` 与凭据目录 `%LOCALAPPDATA%\\AcademicAgent\\vault`；此操作不可恢复。
 - 删除单个事项/课程请通过领域命令或后续 UI 提供；不得直接改 SQLite 业务表。
 
-## 10. 升级检查清单
+## 10. 发布与升级
+
+发布由 tag 驱动，npm 发布依赖仓库 secret `NPM_TOKEN`；完整步骤与失败处理见 [release-process.md](release-process.md)。
+
+## 11. 升级检查清单
 
 1. 备份数据库与 profile 配置。
 2. 固定/核对 DSH 版本（当前验证 `0.2.1-rc.3`）。

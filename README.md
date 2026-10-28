@@ -143,7 +143,7 @@ https://kw78.github.io/academic-agent/market/index.json
 - [前端验证记录](docs/frontend-verification.md)
 - [架构决策](docs/adr)
 - [当前路线图](doc/ACADEMIC_AGENT_ROADMAP_MVP_FIRST.md)
-- [v0.1.1 发布说明](docs/releases/v0.1.1.md)
+- [v0.2.0 发布说明](docs/releases/v0.2.0.md)
 - 架构基线：[Intent](doc/Academic_Agent_Intent_v1.0.md)、[Architecture Spec](doc/Academic_Agent_Architecture_Spec_v0.1-1.md)
 
 ## License
