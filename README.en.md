@@ -102,7 +102,7 @@ Full acceptance boundaries: [MVP verification](docs/mvp-verification.md); archit
 - [Frontend verification](docs/frontend-verification.md)
 - [Architecture decisions](docs/adr)
 - [Roadmap](doc/ACADEMIC_AGENT_ROADMAP_MVP_FIRST.md)
-- [v0.1.0 release notes](docs/releases/v0.1.0.md)
+- [v0.1.1 release notes](docs/releases/v0.1.1.md)
 - Architecture baseline: [Intent](doc/Academic_Agent_Intent_v1.0.md), [Architecture Spec](doc/Academic_Agent_Architecture_Spec_v0.1-1.md)
 
 ## License

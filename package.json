@@ -1,6 +1,6 @@
 {
   "name": "academic-agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Academic Agent — event-sourced personal academic assistant following the Academic Agent architecture baseline.",
