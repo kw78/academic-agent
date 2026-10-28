@@ -24,7 +24,7 @@
 
 - 77 项测试通过，包含 DPAPI 加密同步 E2E、认证失败、断开、source mismatch、重启恢复、fail-closed。
 - Agent 工具无法获得凭据；领域事件/核心投影/同步记录中无明文。
-- 真实 Blackboard Adapter 尚未实现，R4 仍未完成。
+- 真实 LMS Adapter 尚未实现，R4 仍未完成。
 
 ## 代价与后续
 

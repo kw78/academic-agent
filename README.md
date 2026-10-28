@@ -65,9 +65,9 @@ npm run demo -- connection add secure-lms "Secure LMS" --auth token --scopes cou
 npm run demo -- connection connect <connectionId>   # 本机隐藏输入，写入系统凭据库
 npm run demo -- connection disconnect <connectionId>
 npm run demo -- source list
-npm run demo -- source add ustc-blackboard "USTC Blackboard" --engine browser-session --auth token --login-mode browser --config "{\"loginUrl\":\"https://www.bb.ustc.edu.cn/\",\"cookieDomains\":[\"bb.ustc.edu.cn\"]}"
-npm run demo -- source login ustc-blackboard
-npm run demo -- source sync ustc-blackboard
+npm run demo -- source add my-lms "My LMS" --engine browser-session --auth token --login-mode browser --config "{\"loginUrl\":\"https://lms.example.edu/\",\"authenticatedUrlPatterns\":[\"^https://lms.example.edu/\"],\"cookieDomains\":[\"lms.example.edu\"]}"
+npm run demo -- source login my-lms
+npm run demo -- source sync my-lms   # 未实现真实 Adapter 时返回 CAPABILITY_UNAVAILABLE
 npm run demo -- web login https://example.com/ --label "课程网站"
 npm run demo -- web list
 npm run demo -- web fetch <sessionId> https://example.com/page --out .data/page.html
@@ -132,7 +132,7 @@ ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-ui-test.db \
   dsh --profile academic-web --no-open --port 0
 ```
 
-打开 DSH 打印的 URL，侧边栏会出现“学业”。“连接”页的 Blackboard 卡片可拉起 Edge/Chrome 登录窗口，完成 SSO 后由宿主保存会话；UI 只通过受认证的 Host Remote API 读写，不接触 SQLite、Event Store、Scheduler 表或 Credential Vault；禁用 UI 不会停止后台同步和提醒。详见 [UI README](packages/academic-dsh-ui/README.md) 与 [验证记录](docs/frontend-verification.md)。
+打开 DSH 打印的 URL，侧边栏会出现“学业”。“连接”页可添加使用 `browser-session` engine 的数据源并拉起 Edge/Chrome 登录窗口，用户完成登录后由宿主保存会话；UI 只通过受认证的 Host Remote API 读写，不接触 SQLite、Event Store、Scheduler 表或 Credential Vault；禁用 UI 不会停止后台同步和提醒。详见 [UI README](packages/academic-dsh-ui/README.md) 与 [验证记录](docs/frontend-verification.md)。
 
 #### 安装到 DSH Desktop
 
@@ -217,7 +217,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 ## 已知限制与后续
 
 - **M0 剩余**：profile 级 HMR、真实 Session 生命周期、DSH 用户审批适配器（当前 Agent 写入保持拒绝）。
-- **R4 未完成**：USTC Blackboard 入口需要登录；安全凭据连接已具备，但 Blackboard Adapter 尚未实现。提供 ICS/API 或授权会话后可继续，详见 [docs/real-sources.md](docs/real-sources.md)。
+- **R4 未完成**：真实 LMS Adapter 尚未实现；安全凭据连接与通用浏览器会话已具备。提供 ICS/API 或授权会话后可继续，详见 [docs/real-sources.md](docs/real-sources.md)。
 - 系统凭据库当前为 Windows DPAPI；Credential Manager/其他 OS vault 是后续可替换实现。
 - **P1 未做**：给定 URL 自动探索、生成/安装 Adapter 插件（Intent 明确不属于 MVP）。
 - **M4**：性能基准（Spec §20）、迁移演练、故障注入扩展。

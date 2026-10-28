@@ -1,6 +1,6 @@
 # @academic/dsh-plugin
 
-DSH（DeepSeek Harness）bundle，把 Academic Agent 的 6 个最小工具暴露给模型。默认只读；写入必须由可信宿主对每次操作授权，模型参数（包括旧版的 `confirmed`）不能作为授权依据。当前 bundle 尚未接入 DSH 审批适配器，因此写入会被拒绝。
+DSH（DeepSeek Harness）bundle，把 Academic Agent 的 12 个模型工具暴露给模型。默认只读；写入必须由可信宿主对每次操作授权，模型参数（包括旧版的 `confirmed`）不能作为授权依据。当前 bundle 尚未接入 DSH 审批适配器，因此写入会被拒绝。
 
 ## 插件拆分
 
@@ -8,7 +8,7 @@ bundle 现在由三个独立 Cordis fiber 组成：
 
 - `@academic/dsh-plugin/host`：创建 Academic App（Event Store、Scheduler、Dispatcher、Notification），提供 `academicApp` 服务。
 - `@academic/dsh-plugin/planner`：注册 Planner 能力；卸载后已有计划仍可读取，新规划请求不可用。
-- `@academic/dsh-plugin/tools`：Agent Bridge，注册 6 个模型工具；卸载后后台同步、调度、提醒继续运行。
+- `@academic/dsh-plugin/tools`：Agent Bridge，注册 12 个模型工具；卸载后后台同步、调度、提醒继续运行。
 
 `cordis.patch.yml` 按 host → planner → tools 插入三行。禁用 `academic-tools` 行即可验证 Agent Bridge 独立卸载。
 
@@ -24,6 +24,12 @@ bundle 现在由三个独立 Cordis fiber 组成：
 | `academic_get_study_plan` | 只读 | 取与时间范围重叠的生效计划 |
 | `academic_update_task` | 写入 | 完成/重开/修改预计时长；需可信宿主授权 |
 | `academic_request_replan` | 运行控制 | 排队重规划请求；需可信宿主授权 + planner 能力 |
+| `academic_list_sources` | 只读 | 列出数据库中的数据源与 engine |
+| `academic_list_source_engines` | 只读 | 列出当前 Host 可用的通用 engine |
+| `academic_create_source` | 写入 | 用已知 engine 与非敏感 config 创建数据源；需可信宿主授权 |
+| `academic_update_source` | 写入 | 修改数据源配置；需可信宿主授权 |
+| `academic_list_web_sessions` | 只读 | 列出已保存的网站会话元数据，不返回 Cookie |
+| `academic_fetch_web_session` | 只读 | 用已保存会话访问同域 URL，返回响应正文但不返回 Cookie |
 
 工具只调用 `@academic/agent-tools` 的宿主无关工具层，最终仍走 Kernel Command API；不拼 SQL、不直接追加事件。
 
@@ -64,7 +70,7 @@ dsh academic --json "hello"
 ```text
 [academic-host] loaded db=D:/project/classhelper/.data/dsh-academic.db
 [academic-planner] capability registered
-[academic-tools] tools=6 registered=true
+[academic-tools] tools=12 registered=true
 [academic-tools] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 
@@ -90,7 +96,7 @@ dsh academic --json "hello"
 
 ## 凭据与连接
 
-Host 创建 Connection Manager 与系统凭据库适配器（当前 Windows DPAPI）。Agent 工具**不接收** Connection Manager 或任何凭据访问能力；连接通过 CLI 管理，秘密不进入 Agent Prompt、工具结果、SQLite 事件或日志。连接元数据与凭据存储共用 profile 数据库/用户目录，可用 `ACADEMIC_AGENT_DB` 指向同一数据库。
+Host 创建 Connection Manager 与系统凭据库适配器（当前 Windows DPAPI）。Agent 工具**不接收** Connection Manager 或任何凭据访问能力；连接与 source 配置通过 CLI/UI 管理，Agent 写入必须由可信宿主逐次授权。秘密不进入 Agent Prompt、工具结果、SQLite 事件或日志。连接元数据与凭据存储共用 profile 数据库/用户目录，可用 `ACADEMIC_AGENT_DB` 指向同一数据库。
 
 ## 截止提醒
 

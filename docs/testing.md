@@ -94,11 +94,12 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 
 `packages/academic-dsh-ui` 的单元、集成与真实 DSH Web 验证见 [frontend-verification.md](frontend-verification.md)。
 
-## Blackboard 登录与探针
+## 通用数据源与网站会话
 
-- `tests/integration/ui-api.test.ts` 使用注入的登录结果验证：宿主 API 会创建 Blackboard 连接、写入凭据存储、标记已连接，且响应不包含 Cookie。
-- `adapters/ustc-blackboard/test/probe.test.ts` 覆盖：课程链接解析、登录页重定向识别、诊断 summary 不包含 Cookie。
-- 真实 `blackboard login` 需要人工在 Edge/Chrome 完成 USTC SSO 与验证码，属于桌面手工验收，不在自动化测试中绕过验证码。
+- `tests/integration/sources.test.ts` 覆盖 DB source 的 engine 路由、版本冲突与配置中的凭据字段拒绝。
+- `tests/integration/ui-api.test.ts` 使用注入的 engine 登录结果验证：宿主 API 只写入会话秘密、标记 connected，响应不包含秘密。
+- `tests/integration/web-sessions.test.ts` 覆盖通用网站会话：Cookie 不进入 SQLite、仅同域 fetch、删除会话。
+- 真实网站登录需要人工完成登录与验证码，属于桌面手工验收，不在自动化测试中绕过验证码。
 - 测试不使用真实账号、密码或会话。
 
 ## DSH Desktop
@@ -166,7 +167,7 @@ ACADEMIC_DB=.data/demo.db npm run demo
 
 - DSH 已完成 bundle 加载、真实 ToolRegistry 工具注册与执行；Cordis HMR、真实 Session 生命周期、审批 UI 与带模型工具调用尚未验证。
 - 性能基线（Spec §20，例如 1000 事项 P95、10000 事件重建）尚未做正式基准。
-- USTC Blackboard 入口重定向到登录页；安全凭据连接已实现，但 Blackboard Adapter 尚未实现，真实 LMS 登录、验证码与限流未覆盖，当前只有 fixture 适配器。详见 [real-sources.md](real-sources.md)。
+- 真实 LMS 尚未接入；安全凭据连接与通用浏览器会话已实现，但真实 Adapter、登录/验证码与限流未覆盖，当前只有 fixture 适配器。详见 [real-sources.md](real-sources.md)。
 - 系统凭据库当前为 Windows DPAPI；Credential Manager 与其他 OS vault 作为后续 CredentialVault 实现。
 - `node:sqlite` 为实验性 API；若升级 Node 需要重新验证。
 - 备份恢复测试覆盖单文件 SQLite；未做跨版本迁移演练。

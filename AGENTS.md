@@ -48,7 +48,6 @@ packages/
   academic-dsh-ui/             # DSH 客户端 UI 插件 + Host Typert Remote API 适配
 adapters/
   fixture-lms/                 # MVP 受控测试数据源
-  ustc-blackboard/             # BB 会话探针（正式 Adapter 待实现）
 apps/
   academic-cli/                # 组合根、最小 CLI/demo、备份恢复
 migrations/                    # 数据库迁移 SQL（权威位置）
@@ -145,7 +144,7 @@ docs/adr/                      # 架构决策记录
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
-| M0 | DSH 版本锁定与框架可运行性验证 | 部分完成：本机 `0.2.1-rc.3` 已验证 bundle 加载、host/planner/tools 分离、真实 Cordis 独立卸载/重载、6 工具注册与执行、Web 客户端 UI 加载/卸载/重载；文件级 HMR/真实 Session 待补 |
+| M0 | DSH 版本锁定与框架可运行性验证 | 部分完成：本机 `0.2.1-rc.3` 已验证 bundle 加载、host/planner/tools 分离、真实 Cordis 独立卸载/重载、12 工具注册与执行、Web 客户端 UI 加载/卸载/重载；文件级 HMR/真实 Session 待补 |
 | M1 | Event-Sourced Kernel、SQLite Event Store、核心投影、迁移 | 已完成（MVP 范围） |
 | M2 | fixture LMS、Connector、Scheduler、StudyTask/StudyPlan、Planner | 已完成（fixture 闭环 + 用户管理/计划锁定） |
 | M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成：宿主无关工具、DSH 工具绑定、DeepSeek 模型自然语言工具调用均通过 |
@@ -182,11 +181,11 @@ docs/adr/                      # 架构决策记录
 
 P0 修复已验证：启动不覆盖调度配置；消费者重启续跑 checkpoint；Agent 写入需可信宿主授权；同步自动生成默认任务且不重复/不覆盖用户修改；Planner 遵守每周可用时间与临时不可用；72h/24h 截止提醒去重且重启补偿。
 
-Blackboard 不再作为应用层 vendor 插件：它是 `academic_sources` 中的一条 `engine=browser-session` 配置；通用浏览器 engine 拉起 Edge/Chrome，用户完成 SSO 与验证码后读取会话 Cookie 写入 DPAPI。UI 只渲染 DB source，不认识学校名称。正式 Blackboard 解析（作业/考试/课程规则）仍待实现，不得声称真实平台同步完成。
+数据源不再作为应用层 vendor 插件：每个网站只是 `academic_sources` 中的一条 `engine + config` 配置；通用 browser-session engine 拉起 Edge/Chrome，用户完成登录与验证码后读取会话 Cookie 写入 DPAPI。UI 只渲染 DB source，不认识具体网站。正式平台的作业/考试/课程解析仍待实现，不得声称真实平台同步完成。
 
 凭据连接 MVP 已验证：连接元数据与秘密分离；Windows DPAPI 加密存储；fail-closed；验证/断开/删除凭据；认证失败停止同步并保留旧数据；source mismatch 拒绝；DB/事件/同步记录无明文；DPAPI 受保护凭据完成端到端同步。
 
-通用网站会话已实现：填写 URL 后宿主拉起 Edge/Chrome，用户点击页面右上角“完成登录”，应用只保存该域名的 Cookie 到 DPAPI；UI 的“网站登录”面板、CLI `web login/list/fetch/delete` 与 Agent 会话 fetch 工具已接入。存储/域名限制/不泄露 Cookie 有自动化测试；真实网站登录窗口仍需手工验收。
+通用网站会话已实现：填写 URL 后宿主拉起 Edge/Chrome，用户点击页面右上角“完成登录”，应用只保存配置站点范围内的 Cookie 到 DPAPI；UI 的“网站登录”面板、CLI `web login/list/fetch/delete` 与 Agent 会话 fetch 工具已接入。存储/域名限制/不泄露 Cookie 有自动化测试；真实网站登录窗口仍需手工验收。
 
 前端 UI 已验证（`packages/academic-dsh-ui`）：侧边栏“学业”入口、总览/任务/计划/连接/自动化/设置页面；任务完成、计划候选确认、锁定、可用时间保存、作业暂停/恢复、提醒已读均经 Host Remote API 生效；候选计划确认使用 Host 端 `previewId`，不信任客户端计划块；UI 不返回/保存 `credentialRef`，未实现真实 Adapter 时不显示认证表单。详细记录见 `docs/frontend-verification.md`。
 
@@ -203,7 +202,7 @@ ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-aca
 
 ## 10. 待确认的环境参数（不阻塞实现）
 
-- 首个真实课程平台：已尝试 USTC Blackboard 入口，重定向到登录页；安全凭据连接已具备（DPAPI + CLI 隐藏输入），但 Blackboard Adapter 与真实同步尚未实现，真实平台 E2E 未完成（当前用 fixture，不能当作真实验收）。
+- 首个真实课程平台：尚未接入；安全凭据连接与通用浏览器会话已具备（DPAPI + 隐藏输入/应用内登录），但真实 Adapter 与同步尚未实现，真实平台 E2E 未完成（当前用 fixture，不能当作真实验收）。
 - 目标运行形态：本地 CLI + SQLite 已验证；DSH `headless` / `web` profile 可挂载；Desktop profile 已安装并验证 Academic Host 与 UI。
 - 通知仅应用内还是系统通知（当前先应用内）。
 - 课程规模、同步频率（当前 15 分钟）、计划粒度（15 分钟）、资源预算。
