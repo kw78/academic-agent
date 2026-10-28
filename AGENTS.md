@@ -154,13 +154,13 @@ docs/adr/                      # 架构决策记录
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| M0 | 基线核对与文档统一 | 已完成：typecheck、152 项测试/31 文件、`build:dsh`/`build:ui` 实测通过 |
+| M0 | 基线核对与文档统一 | 已完成：typecheck、155 项测试/31 文件、`build:dsh`/`build:ui` 实测通过 |
 | M1 | 抓取安全与凭据加固 | 进行中：DNS 固定解析、访问策略、正则与秘密防护 |
 | M2 | Blackboard 垂直闭环 | 已完成：课程/作业/考试/测验解析、文件夹分页、差异预览与真实只读同步；真实账号暂无测试项样本 |
 | M3 | 统一数据源接入流程 | 已完成：快速添加、登录、验证、探测、预览、同步、候选审批均在 UI；高级配置默认收起 |
 | M4 | AI 候选工作流集成 | 已完成（Agent 生成 + 确定性验证 + UI 审批）；未实现 Host 直连模型、多页自动采样与代码沙箱 |
 | M5 | 恢复能力与发布验收 | 已完成：备份恢复、迁移、同步错误/重试、性能基线、候选回滚、运维/删除文档；真实 DSH Session 与文件级 HMR 仍需桌面手工验收 |
-| M6 | 第二平台扩展 | 未开始：需要用户授权第二个真实平台 |
+| M6 | 第二平台扩展 | 已完成考试切片：USTC 综合教务系统 `jw.ustc.edu.cn` 用 Manifest 真实同步 1 门课程/1 个考试；课表/成绩/作业未覆盖 |
 
 仍有限制：DNS rebinding 固定解析、Blackboard 考试/附件/成绩、声明式 XPath/复杂转换、任意脚本沙箱、DSH 审批 UI 未完成。
 
@@ -193,7 +193,7 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（152 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（155 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 

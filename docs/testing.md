@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**152 项测试通过**（31 个测试文件）。
+当前基线：**155 项测试通过**（31 个测试文件）。
 
 ## 分层
 
@@ -124,7 +124,9 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 
 - `packages/academic-adapter-runtime/test/manifest.test.ts`：Manifest Schema、版本注册/激活、HTML/JSON 字段提取、嵌套 JSON path。
 - `tests/integration/declarative.test.ts`：JSON 课程/作业/详情、作业分页、HTML CSS 提取、相对 URL、未授权响应、预览不写库、Connector/Kernel 同步与重复预览 no-op。
-- 已覆盖：允许域名、GET-only、分页上限、正则/trim、ISO/日期截止时间；XPath、字段级复杂转换和代码沙箱仍未实现。
+- 已覆盖：允许域名、GET-only、分页上限、正则/trim、ISO/日期截止时间、`constant`/`template` 字段；XPath、XML、代码沙箱仍未实现。
+- `tests/integration/declarative.test.ts` 的第二平台用例：USTC 教务考试表经 Manifest 得到 1 门课程/2 个考试，时间 `2026-12-20 09:00` 正确转 UTC；同一 source 预览/同步/重复同步走 Connector/Kernel。
+- 真实验证：`jw.ustc.edu.cn` 使用应用登录会话完成候选注册→启用→自动建源→预览→同步→重复 no-op，写入 1 个真实考试；课表/成绩/作业未覆盖。
 
 ## 稳定性与运维
 

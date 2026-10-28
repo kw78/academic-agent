@@ -112,7 +112,7 @@ Academic Agent
 
 -   基线：`main` 提交 `03c062e`，工作区仅含本文档替换。
 -   `npm run typecheck`：通过。
--   `npm test`：31 个测试文件、152 项通过、0 失败、0 跳过。
+-   `npm test`：31 个测试文件、155 项通过、0 失败、0 跳过。
 -   `npm run build:dsh`、`npm run build:ui`：通过。
 -   文档统一采用本路线图的 M0--M6 阶段编号；`doc/ARCHITECTURE.md`
     的现状描述已按实际代码校准，`AGENTS.md`、`docs/testing.md`、
@@ -349,14 +349,34 @@ Manifest 能表达的网站，用户不需要手写适配器代码。
 
 ### 工作项
 
--   [ ] 在 Blackboard 核心闭环稳定后，选择第二个有明确授权的课程平台。
--   [ ] 优先使用 Manifest 实现第二个平台，不为其创建专属 Engine。
--   [ ] 记录新平台需要增加的配置、代码和测试数量。
--   [ ] 评估当前 CSS Selector、JSON Path、GET 请求、分页和 regex/trim
+-   [x] 在 Blackboard 核心闭环稳定后，选择第二个有明确授权的课程平台。
+-   [x] 优先使用 Manifest 实现第二个平台，不为其创建专属 Engine。
+-   [x] 记录新平台需要增加的配置、代码和测试数量。
+-   [x] 评估当前 CSS Selector、JSON Path、GET 请求、分页和 regex/trim
     转换是否足够。
--   [ ] 仅针对真实需求决定是否增加 XPath、复杂字段转换或其他请求能力。
--   [ ] 评估 ICS/日历订阅和标准 API 等更稳定的数据接入方式。
--   [ ] 将平台特定规则与内核领域逻辑保持分离。
+-   [x] 仅针对真实需求决定是否增加 XPath、复杂字段转换或其他请求能力。
+-   [x] 评估 ICS/日历订阅和标准 API 等更稳定的数据接入方式。
+-   [x] 将平台特定规则与内核领域逻辑保持分离。
+
+### M6 核对记录（2026-10-28）
+
+-   第二平台：中国科大综合教务系统 `https://jw.ustc.edu.cn/`（统一身份认证，
+   用户授予只读访问）。
+-   实现：新增 `fixtures/declarative/ustc-jw-exam.manifest.json`，使用 HTML
+   表格选择器读取“考试信息”，没有新增平台专属 Engine，也没有修改 Kernel/
+   核心 Connector。
+-   真实闭环：应用管理登录保存会话；注册并启用 Manifest 候选；Host 自动创建
+   `declarative` 数据源并复制同站点会话；预览 `create:1`，同步成功写入 1 门课程
+   与 1 个考试（2026-11-08 14:30，3C102）；重复预览 `unchanged:1`，重复同步
+   `created:0 updated:0`。
+-   为真实需求新增的通用能力：字段 `constant`、字段 `template`（组合稳定 ID/
+   标题/描述）、同一页面课程去重；用 regex 截取 `YYYY-MM-DD HH:mm` 以正确解析
+   考试时间范围。没有增加 XPath 或脚本执行。
+-   评估：考试页用 CSS + GET + regex/constant/template 已足够；课表/选课数据是
+   内嵌 XML 或需额外参数的接口，当前 Manifest 不能直接表达，未为它增加 XML
+   能力。平台未提供 ICS 订阅。
+-   限制：该 Manifest 目前只覆盖“考试信息”页，因此只能发现本学期有考试的课程；
+   完整课表、成绩、作业仍需后续评估（优先 XML/JSON API 或平台导出）。
 
 ### 验收条件
 

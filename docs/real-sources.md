@@ -67,6 +67,17 @@ ACADEMIC_DB=.data/academic.db npm run demo -- source sync ustc-blackboard
 
 授权与数据边界：只使用用户本人已完成登录的会话，只读访问课程页与作业/测试详情；不保存页面原始 HTML 到数据库，不下载附件；会话 Cookie 只存 DPAPI，删除会话不会删除已同步的学业事件。测试与真实验证均使用临时数据库，不写入桌面端默认库。
 
+## 第二个平台：USTC 综合教务系统（考试切片）
+
+`fixtures/declarative/ustc-jw-exam.manifest.json` 用声明式 Manifest 读取 `https://jw.ustc.edu.cn/for-std/exam-arrange` 的考试表，没有新增平台专属 Engine：
+
+- 会话：应用管理 Edge 登录 `https://jw.ustc.edu.cn/login`，CAS 完成后保存 4 个 Cookie；Cookie 只在 DPAPI。
+- 字段：课堂号 → 课程外部 ID/代码，课程名称 → 课程标题，考试类型 → 标题后缀，日期时间 → 截止时间，考场 → 描述；`termId` 使用 `constant`，稳定事项 ID 使用 `template`。
+- 真实验证（2026-10-28）：预览 `create:1`，同步写入 1 门课程、1 个考试（模拟与数字电路A 期中考试，2026-11-08 14:30，3C102）；重复预览 `unchanged:1`，重复同步不新增。
+- 新增通用能力：`constant` / `template` 字段；同一页面的课程行按外部 ID 去重。没有修改 Kernel/Connector。
+
+限制：只覆盖“考试信息”页，因此只能发现本学期有考试的课程；课表/选课接口返回内嵌 XML 或需要额外参数，当前 Manifest 未支持 XML，未扩大能力；成绩和作业未接入。平台未提供 ICS 订阅。
+
 ## 可行接入路径
 
 按 Intent/Architecture 的优先级：

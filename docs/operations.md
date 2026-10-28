@@ -113,5 +113,6 @@ find .data -maxdepth 2 -type f \( -name '*.html' -o -name '*.log' -o -name '*.tx
 - Blackboard 覆盖课程、作业、考试/测验与文件夹分页；当前账号没有真实测试项样本，考试/测验仍以 fixture 验证；附件、成绩、提交历史未覆盖。
 - 声明式 Runtime 只支持 GET、CSS/JSON path 与 regex/trim；XPath、复杂字段转换与任意脚本沙箱未实现。
 - 候选生成由 DSH Agent 完成，Host 不直接调用模型；样本需显式提供，未实现多页自动采样。
+- 第二个平台（USTC 教务）目前只覆盖考试表；课表/选课接口为内嵌 XML 或需额外参数，Manifest 不支持 XML，成绩与作业未接入。
 - DSH 候选审批在“连接”页完成；Agent 的注册/启用工具仍需要可信宿主逐次授权，没有通用审批弹窗或文件级 HMR 验收。
 - 本机 Desktop 占用默认数据库时，不应再启动使用同一数据库的第二个 Host。
