@@ -20,6 +20,7 @@
 - 用独立数据库 `.data/mvp-web.db` 启动 `academic-web` profile，确认 Academic Host、planner、tools（17 个）加载。
 - 在真实 DSH Web UI 打开“学业”，显示“Host 已连接”；连接页显示快速添加平台、数据源状态、Adapter 候选、网站登录和同步记录。
 - 在 UI 对 Fixture LMS 点击“立即同步”，Host 执行成功，课程 CS101 出现、同步记录成功（2 抓取/2 新增/0 更新）。
+- 用真实 Blackboard 临时库 `.data/bb-m2-sync.db`（2 门课程/7 个作业）启动同一 Web profile：总览显示 9 个进行中任务、2 个近期截止、9 条未读提醒；任务页显示真实 HW1–HW7、来源链接、date-only 考试与 `unknown` 截止（HW4），并明确“本地完成状态不会冒充学校提交状态”。
 - 此前已实测 Desktop profile 加载 UI/Host、创建默认数据库与 3 个后台作业、禁用/启用 UI 后入口恢复且不重复创建资源。
 
 未完成：**本轮未重复启动 DSH Desktop 手工验收**。CLI 无法启动 desktop profile（Electron 独占管理），且默认库可能被桌面占用；需要用户在桌面端执行一次“打开学业面板 → 刷新 → 禁用/启用插件”。DSH Web 的 UI/Host 实测不能替代 Desktop 验收。
@@ -45,6 +46,7 @@ Blackboard（真实账号）：
 - 截止时间从详情页正文解析；无截止日期保留 `unknown`。
 - 重复同步 no-op；部分/失败保留旧数据。
 - 考试/测验仅有 fixture 样本，UI 引擎说明与文档已标注“真实账号暂无测试项样本”。
+- 真实 BB 数据已在 DSH Web UI 核对：课程/作业标题、来源链接、date-only 与 unknown 截止、同步降级状态、任务与提醒均正确显示。
 
 USTC 教务（第二平台，Manifest）：
 
@@ -58,6 +60,7 @@ USTC 教务（第二平台，Manifest）：
 
 - 同步后自动生成默认学习任务；用户修改预计时长/完成后不被同步覆盖（测试覆盖）。
 - 任务完成/重开、计划候选确认/锁定、可用时间、提醒开关与去重均有测试与 UI。
+- 真实 BB 临时库在 UI 中显示 9 个进行中任务、2 个近期截止、9 条未读提醒；任务页展示来源链接和本地状态说明，date-only 与未知截止没有被猜成确定时间。
 - 常规同步、去重、提醒、基础规划不调用模型；Agent 只读取已保存数据。
 
 ## Gate 5 — Agent 候选流程

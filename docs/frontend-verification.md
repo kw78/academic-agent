@@ -60,6 +60,17 @@
 | 同步预览/确认 | Blackboard source 可先“预览同步”，显示新增/更新/未变/跳过与警告，确认后才写库；重复同步显示未变 |
 | 网站登录面板 | 填写 URL + 标签，登录并保存；列表显示 domain/label，无 Cookie 泄露；登录窗口真实网站手工验收待做 |
 
+## 真实平台数据 UI 复核（2026-10-28）
+
+使用真实 Blackboard 临时库 `.data/bb-m2-sync.db`（2 门课程、7 个作业）在独立 `academic-web` profile 启动：
+
+- 总览显示 9 个进行中任务（BB 7 + Fixture 2）、2 个近期截止、9 条未读提醒；
+- 任务页显示真实 HW1–HW7、课程号、来源链接、date-only 考试（标明仅日期）与 HW4 未知截止；
+- 本地任务状态与学校提交状态分开显示；
+- 数据源状态显示 USTC Blackboard“同步降级/部分抓取成功”，未伪报为成功。
+
+该验证只证明真实数据能在 DSH Web UI 正确呈现；Desktop 手工复核本轮未执行。
+
 ## 生命周期验证
 
 通过 DSH Plugins 页面禁用 `@academic/dsh-ui`：
