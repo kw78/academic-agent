@@ -26589,6 +26589,12 @@ async function probeSourcePage(input2) {
   const pathPrefixes = Array.isArray(input2.config.probePathPrefixes) ? input2.config.probePathPrefixes.filter(
     (entry) => typeof entry === "string" && entry.startsWith("/")
   ) : [];
+  if (input2.captureSample && input2.sampleStore) {
+    const cached2 = input2.sampleStore.findByUrl(url2);
+    if (cached2?.evidence) {
+      return { ...cached2.evidence, sampleId: cached2.sampleId };
+    }
+  }
   const result = await safeFetch(url2, {
     cookies,
     allowedHosts,
@@ -26608,11 +26614,14 @@ async function probeSourcePage(input2) {
     input2.probedAt
   );
   if (!input2.captureSample || !input2.sampleStore) return evidence;
-  const captured = input2.sampleStore.put({
-    url: url2,
-    body: result.body,
-    ...result.contentType ? { contentType: result.contentType } : {}
-  });
+  const captured = input2.sampleStore.put(
+    {
+      url: url2,
+      body: result.body,
+      ...result.contentType ? { contentType: result.contentType } : {}
+    },
+    evidence
+  );
   return { ...evidence, sampleId: captured.sampleId };
 }
 
@@ -26624,14 +26633,21 @@ var ProbeSampleStore = class {
   #maxSamples;
   #now;
   constructor(options = {}) {
-    this.#ttlMs = options.ttlMs ?? 15 * 6e4;
+    this.#ttlMs = options.ttlMs ?? 60 * 6e4;
     this.#maxSamples = options.maxSamples ?? 30;
     this.#now = options.now ?? (() => Date.now());
   }
-  put(sample) {
+  put(sample, evidence) {
     const now = this.#now();
     this.#evict(now);
+    const existing = this.findByUrl(sample.url);
+    if (existing && existing.digest === createHash4("sha256").update(sample.body).digest("hex")) {
+      if (evidence) existing.evidence = { ...evidence, sampleId: existing.sampleId };
+      return existing;
+    }
     const body = sample.body.slice(0, 512 * 1024);
+    const evidenceForStore = evidence ? { ...evidence } : void 0;
+    if (evidenceForStore) delete evidenceForStore.sampleId;
     const captured = {
       sampleId: randomUUID(),
       url: sample.url,
@@ -26639,7 +26655,8 @@ var ProbeSampleStore = class {
       ...sample.contentType ? { contentType: sample.contentType } : {},
       digest: createHash4("sha256").update(body).digest("hex"),
       bytes: Buffer.byteLength(body, "utf8"),
-      capturedAt: now
+      capturedAt: now,
+      ...evidenceForStore ? { evidence: evidenceForStore } : {}
     };
     this.#samples.set(captured.sampleId, captured);
     while (this.#samples.size > this.#maxSamples) {
@@ -26648,6 +26665,14 @@ var ProbeSampleStore = class {
       this.#samples.delete(oldest);
     }
     return captured;
+  }
+  findByUrl(url2) {
+    this.#evict(this.#now());
+    let found;
+    for (const sample of this.#samples.values()) {
+      if (sample.url === url2) found = sample;
+    }
+    return found;
   }
   get(sampleId) {
     this.#evict(this.#now());
@@ -26686,6 +26711,47 @@ var ProbeSampleStore = class {
     for (const [id, sample] of this.#samples) {
       if (now - sample.capturedAt > this.#ttlMs) this.#samples.delete(id);
     }
+  }
+};
+
+// packages/academic-sources/src/probe-rate-limit.ts
+var ProbeRateLimiter = class {
+  #windowMs;
+  #maxRequests;
+  #minIntervalMs;
+  #now;
+  #sleep;
+  #events = /* @__PURE__ */ new Map();
+  #last = /* @__PURE__ */ new Map();
+  constructor(options = {}) {
+    this.#windowMs = options.windowMs ?? 10 * 6e4;
+    this.#maxRequests = options.maxRequests ?? 10;
+    this.#minIntervalMs = options.minIntervalMs ?? 1200;
+    this.#now = options.now ?? (() => Date.now());
+    this.#sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  }
+  async acquire(sourceId) {
+    const last = this.#last.get(sourceId);
+    if (last !== void 0) {
+      const wait = this.#minIntervalMs - (this.#now() - last);
+      if (wait > 0) await this.#sleep(wait);
+    }
+    const at = this.#now();
+    const recent = (this.#events.get(sourceId) ?? []).filter(
+      (timestamp) => at - timestamp < this.#windowMs
+    );
+    if (recent.length >= this.#maxRequests) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((this.#windowMs - (at - recent[0])) / 1e3)
+      );
+      throw new Error(
+        `\u63A2\u6D4B\u8BF7\u6C42\u8FC7\u4E8E\u9891\u7E41\uFF1A\u8BF7\u7EA6 ${retryAfterSeconds} \u79D2\u540E\u518D\u8BD5\uFF0C\u907F\u514D\u89E6\u53D1\u5E73\u53F0\u98CE\u63A7`
+      );
+    }
+    recent.push(at);
+    this.#events.set(sourceId, recent);
+    this.#last.set(sourceId, at);
   }
 };
 
@@ -40312,6 +40378,12 @@ function createAcademicTools(dependencies) {
               input2.url,
               input2.capture ? { captureSample: true } : void 0
             );
+            if (evidence.status === 401 || evidence.status === 403) {
+              return failure2(
+                "AUTH_REQUIRED",
+                `Platform returned HTTP ${evidence.status}; confirm session permissions or log in again.`
+              );
+            }
             if (evidence.loginLike) {
               return failure2(
                 "AUTH_REQUIRED",
@@ -44466,6 +44538,9 @@ async function createAcademicApp(options) {
     config: {}
   });
   const probeSamples = new ProbeSampleStore();
+  const probeLimiter = new ProbeRateLimiter({
+    ...options.probeMinIntervalMs !== void 0 ? { minIntervalMs: options.probeMinIntervalMs } : {}
+  });
   const probeSourceById = async (sourceId, url2, probeOptions = {}) => {
     const source = sources.get(sourceId);
     if (!source || source.archived) {
@@ -44482,6 +44557,7 @@ async function createAcademicApp(options) {
       connection.connectionId,
       sourceId
     );
+    await probeLimiter.acquire(sourceId);
     return probeSourcePage({
       sourceId,
       config: source.config,
@@ -44604,8 +44680,8 @@ async function createAcademicApp(options) {
   scheduler.ensureJob({
     jobId: "fixture-lms-sync",
     kind: "connector.sync.fixture-lms",
-    nextRunAt: addMilliseconds2(clock.now(), 15 * 6e4),
-    policy: { intervalMs: 15 * 6e4, timeoutMs: 12e4 }
+    nextRunAt: addMilliseconds2(clock.now(), 60 * 6e4),
+    policy: { intervalMs: 60 * 6e4, timeoutMs: 12e4 }
   });
   scheduler.ensureJob({
     jobId: "planner.process-replans",

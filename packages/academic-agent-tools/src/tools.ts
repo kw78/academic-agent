@@ -453,6 +453,12 @@ export function createAcademicTools(
                       input.url,
                       input.capture ? { captureSample: true } : undefined,
                     )
+                    if (evidence.status === 401 || evidence.status === 403) {
+                      return failure(
+                        'AUTH_REQUIRED',
+                        `Platform returned HTTP ${evidence.status}; confirm session permissions or log in again.`,
+                      )
+                    }
                     if (evidence.loginLike) {
                       return failure(
                         'AUTH_REQUIRED',

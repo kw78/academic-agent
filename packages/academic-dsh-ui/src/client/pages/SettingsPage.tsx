@@ -66,7 +66,7 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
   const [blockStart, setBlockStart] = useState('')
   const [blockEnd, setBlockEnd] = useState('')
   const [blockTitle, setBlockTitle] = useState('')
-  const [interval, setIntervalMinutes] = useState('15')
+  const [interval, setIntervalMinutes] = useState('60')
   const [coursePriorities, setCoursePriorities] = useState<
     Record<string, number>
   >({})

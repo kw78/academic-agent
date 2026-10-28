@@ -36,7 +36,7 @@ import {
   createDefaultCredentialVault,
   type CredentialVault,
 } from '@academic/connections'
-import { SourceConfigStore, ProbeSampleStore, probeSourcePage } from '@academic/sources'
+import { SourceConfigStore, ProbeSampleStore, ProbeRateLimiter, probeSourcePage } from '@academic/sources'
 import {
   WebSessionStore,
   type ResolveHost,
@@ -143,6 +143,8 @@ export interface AcademicAppOptions {
   /** Test seams for the read-only source probe. */
   probeFetch?: typeof fetch
   probeResolveHost?: ResolveHost
+  /** Override the default 1.2s spacing between source probes (tests use 0). */
+  probeMinIntervalMs?: number
 }
 
 export interface AutomationStatus {
@@ -429,6 +431,11 @@ export async function createAcademicApp(
   })
 
   const probeSamples = new ProbeSampleStore()
+  const probeLimiter = new ProbeRateLimiter({
+    ...(options.probeMinIntervalMs !== undefined
+      ? { minIntervalMs: options.probeMinIntervalMs }
+      : {}),
+  })
 
   const probeSourceById = async (
     sourceId: string,
@@ -452,6 +459,7 @@ export async function createAcademicApp(
       connection.connectionId,
       sourceId,
     )
+    await probeLimiter.acquire(sourceId)
     return probeSourcePage({
       sourceId,
       config: source.config,
@@ -597,8 +605,8 @@ export async function createAcademicApp(
   scheduler.ensureJob({
     jobId: 'fixture-lms-sync',
     kind: 'connector.sync.fixture-lms',
-    nextRunAt: addMilliseconds(clock.now(), 15 * 60_000),
-    policy: { intervalMs: 15 * 60_000, timeoutMs: 120_000 },
+    nextRunAt: addMilliseconds(clock.now(), 60 * 60_000),
+    policy: { intervalMs: 60 * 60_000, timeoutMs: 120_000 },
   })
   scheduler.ensureJob({
     jobId: 'planner.process-replans',

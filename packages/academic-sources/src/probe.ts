@@ -312,6 +312,12 @@ export async function probeSourcePage(
         (entry): entry is string => typeof entry === 'string' && entry.startsWith('/'),
       )
     : []
+  if (input.captureSample && input.sampleStore) {
+    const cached = input.sampleStore.findByUrl(url)
+    if (cached?.evidence) {
+      return { ...cached.evidence, sampleId: cached.sampleId }
+    }
+  }
   const result = await safeFetch(url, {
     cookies,
     allowedHosts,
@@ -332,10 +338,13 @@ export async function probeSourcePage(
     input.probedAt,
   )
   if (!input.captureSample || !input.sampleStore) return evidence
-  const captured = input.sampleStore.put({
-    url,
-    body: result.body,
-    ...(result.contentType ? { contentType: result.contentType } : {}),
-  })
+  const captured = input.sampleStore.put(
+    {
+      url,
+      body: result.body,
+      ...(result.contentType ? { contentType: result.contentType } : {}),
+    },
+    evidence,
+  )
   return { ...evidence, sampleId: captured.sampleId }
 }

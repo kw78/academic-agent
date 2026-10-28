@@ -352,3 +352,7 @@ export {
   type ProbeSampleSummary,
   type ProbeSampleStoreOptions,
 } from './sample-store.js'
+export {
+  ProbeRateLimiter,
+  type ProbeRateLimiterOptions,
+} from './probe-rate-limit.js'

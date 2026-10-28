@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { AdapterSample } from '@academic/contracts'
+import type { AdapterSample, SourceProbeEvidence } from '@academic/contracts'
 
 export interface CapturedProbeSample extends AdapterSample {
   sampleId: string
   digest: string
   bytes: number
   capturedAt: number
+  evidence?: SourceProbeEvidence
 }
 
 export interface ProbeSampleSummary {
@@ -34,15 +35,22 @@ export class ProbeSampleStore {
   readonly #now: () => number
 
   constructor(options: ProbeSampleStoreOptions = {}) {
-    this.#ttlMs = options.ttlMs ?? 15 * 60_000
+    this.#ttlMs = options.ttlMs ?? 60 * 60_000
     this.#maxSamples = options.maxSamples ?? 30
     this.#now = options.now ?? (() => Date.now())
   }
 
-  put(sample: AdapterSample): CapturedProbeSample {
+  put(sample: AdapterSample, evidence?: SourceProbeEvidence): CapturedProbeSample {
     const now = this.#now()
     this.#evict(now)
+    const existing = this.findByUrl(sample.url)
+    if (existing && existing.digest === createHash('sha256').update(sample.body).digest('hex')) {
+      if (evidence) existing.evidence = { ...evidence, sampleId: existing.sampleId }
+      return existing
+    }
     const body = sample.body.slice(0, 512 * 1024)
+    const evidenceForStore = evidence ? { ...evidence } : undefined
+    if (evidenceForStore) delete evidenceForStore.sampleId
     const captured: CapturedProbeSample = {
       sampleId: randomUUID(),
       url: sample.url,
@@ -51,6 +59,7 @@ export class ProbeSampleStore {
       digest: createHash('sha256').update(body).digest('hex'),
       bytes: Buffer.byteLength(body, 'utf8'),
       capturedAt: now,
+      ...(evidenceForStore ? { evidence: evidenceForStore } : {}),
     }
     this.#samples.set(captured.sampleId, captured)
     while (this.#samples.size > this.#maxSamples) {
@@ -59,6 +68,15 @@ export class ProbeSampleStore {
       this.#samples.delete(oldest)
     }
     return captured
+  }
+
+  findByUrl(url: string): CapturedProbeSample | undefined {
+    this.#evict(this.#now())
+    let found: CapturedProbeSample | undefined
+    for (const sample of this.#samples.values()) {
+      if (sample.url === url) found = sample
+    }
+    return found
   }
 
   get(sampleId: string): AdapterSample | undefined {

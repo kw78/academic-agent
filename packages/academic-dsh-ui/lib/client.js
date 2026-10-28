@@ -4210,7 +4210,7 @@ function SettingsPage({ ctx, active, onNavigate }) {
   const [blockStart, setBlockStart] = (0, import_react8.useState)("");
   const [blockEnd, setBlockEnd] = (0, import_react8.useState)("");
   const [blockTitle, setBlockTitle] = (0, import_react8.useState)("");
-  const [interval, setIntervalMinutes] = (0, import_react8.useState)("15");
+  const [interval, setIntervalMinutes] = (0, import_react8.useState)("60");
   const [coursePriorities, setCoursePriorities] = (0, import_react8.useState)({});
   const [dirty, setDirty] = (0, import_react8.useState)(false);
   (0, import_react8.useEffect)(() => {

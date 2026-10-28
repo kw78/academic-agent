@@ -1223,7 +1223,7 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
         syncHealth: syncHealth(
           lastSync,
           now,
-          (app.scheduler.getJob(FIXTURE_SYNC_JOB_ID)?.policy.intervalMs ?? 15 * 60_000) * 2,
+          (app.scheduler.getJob(FIXTURE_SYNC_JOB_ID)?.policy.intervalMs ?? 60 * 60_000) * 2,
         ),
         plannerAvailable: app.registry.get('academic.planner.basic') !== undefined,
         projection,
@@ -1606,6 +1606,12 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       }
       try {
         const evidence = await app.probeSource(source.sourceId, body.url)
+        if (evidence.status === 401 || evidence.status === 403) {
+          return failure(
+            'AUTH_REQUIRED',
+            `平台返回 HTTP ${evidence.status}；请确认会话权限或重新登录`,
+          )
+        }
         if (evidence.loginLike) {
           return failure('AUTH_REQUIRED', '会话可能已失效；请重新登录后再探测')
         }
@@ -1987,7 +1993,7 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
         sync: {
           jobId: FIXTURE_SYNC_JOB_ID,
           enabled: job?.enabled ?? false,
-          intervalMinutes: job ? Math.round(job.policy.intervalMs / 60_000) : 15,
+          intervalMinutes: job ? Math.round(job.policy.intervalMs / 60_000) : 60,
           ...(job ? { nextRunAt: job.nextRunAt } : {}),
         },
         plannerAvailable: app.registry.get('academic.planner.basic') !== undefined,

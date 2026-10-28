@@ -21103,7 +21103,7 @@ function createAcademicUiApi(app) {
         syncHealth: syncHealth(
           lastSync,
           now,
-          (app.scheduler.getJob(FIXTURE_SYNC_JOB_ID)?.policy.intervalMs ?? 15 * 6e4) * 2
+          (app.scheduler.getJob(FIXTURE_SYNC_JOB_ID)?.policy.intervalMs ?? 60 * 6e4) * 2
         ),
         plannerAvailable: app.registry.get("academic.planner.basic") !== void 0,
         projection
@@ -21452,6 +21452,12 @@ function createAcademicUiApi(app) {
       }
       try {
         const evidence = await app.probeSource(source.sourceId, body.url);
+        if (evidence.status === 401 || evidence.status === 403) {
+          return failure2(
+            "AUTH_REQUIRED",
+            `\u5E73\u53F0\u8FD4\u56DE HTTP ${evidence.status}\uFF1B\u8BF7\u786E\u8BA4\u4F1A\u8BDD\u6743\u9650\u6216\u91CD\u65B0\u767B\u5F55`
+          );
+        }
         if (evidence.loginLike) {
           return failure2("AUTH_REQUIRED", "\u4F1A\u8BDD\u53EF\u80FD\u5DF2\u5931\u6548\uFF1B\u8BF7\u91CD\u65B0\u767B\u5F55\u540E\u518D\u63A2\u6D4B");
         }
@@ -21801,7 +21807,7 @@ function createAcademicUiApi(app) {
         sync: {
           jobId: FIXTURE_SYNC_JOB_ID,
           enabled: job?.enabled ?? false,
-          intervalMinutes: job ? Math.round(job.policy.intervalMs / 6e4) : 15,
+          intervalMinutes: job ? Math.round(job.policy.intervalMs / 6e4) : 60,
           ...job ? { nextRunAt: job.nextRunAt } : {}
         },
         plannerAvailable: app.registry.get("academic.planner.basic") !== void 0,

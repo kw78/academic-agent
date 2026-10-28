@@ -15,12 +15,14 @@ async function setup(
   options: {
     probeFetch?: typeof fetch
     probeResolveHost?: (hostname: string) => Promise<Array<{ address: string; family: number }>>
+    probeMinIntervalMs?: number
   } = {},
 ) {
   const clock = fixedClock()
   const app = await createAcademicApp({
     databasePath: ':memory:',
     clock,
+    probeMinIntervalMs: 0,
     ...options,
   })
   cleanup.push(() => app.close())
