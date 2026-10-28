@@ -40,9 +40,11 @@ export function AutomationPage({ ctx, active, nav }: PageProps) {
   useEffect(() => {
     if (!data || nav?.focus !== 'notifications') return
     requestAnimationFrame(() => {
-      document.getElementById('ac-notifications')?.scrollIntoView({
-        block: 'start',
-        behavior: 'smooth',
+      requestAnimationFrame(() => {
+        document.getElementById('ac-notifications')?.scrollIntoView({
+          block: 'start',
+          behavior: 'smooth',
+        })
       })
     })
   }, [data, nav?.focus, nav?.nonce])

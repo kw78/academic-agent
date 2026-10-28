@@ -437,8 +437,13 @@ export function TasksPage({ ctx, active, nav }: PageProps) {
         ? `ac-item-${nav.itemId}`
         : undefined
     if (!id) return
-    const row = document.getElementById(id)
-    row?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document
+          .getElementById(id)
+          ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      })
+    })
   }, [data, nav?.itemId, nav?.nonce, nav?.taskId])
 
   const visibleTasks = data?.cards ?? []

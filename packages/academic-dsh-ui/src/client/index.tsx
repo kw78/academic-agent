@@ -150,6 +150,7 @@ function AcademicPanel({ ctx }: { ctx: Context }) {
   const [statusError, setStatusError] = useState<string>()
   const shellRef = useRef<HTMLDivElement>(null)
   const scrollPositions = useRef(new Map<TabId, number>())
+  const pendingFocus = useRef<TabId>()
   const current = history[history.length - 1] ?? { tab: 'today' as const }
   const tab = current.tab
   const nav = current.nav
@@ -215,6 +216,15 @@ function AcademicPanel({ ctx }: { ctx: Context }) {
     [rememberScroll, restoreScroll],
   )
 
+  useEffect(() => {
+    const next = pendingFocus.current
+    if (!next) return
+    pendingFocus.current = undefined
+    window.setTimeout(() => {
+      document.getElementById(`ac-tab-${next}`)?.focus()
+    }, 0)
+  }, [tab])
+
   const goBack = useCallback(() => {
     rememberScroll()
     setHistory((entries) => {
@@ -227,12 +237,6 @@ function AcademicPanel({ ctx }: { ctx: Context }) {
       return entries.slice(0, -1)
     })
   }, [rememberScroll, restoreScroll])
-
-  const focusTab = (id: TabId) => {
-    requestAnimationFrame(() => {
-      document.getElementById(`ac-tab-${id}`)?.focus()
-    })
-  }
 
   const onTabKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
     const index = TABS.findIndex((entry) => entry.id === tab)
@@ -251,8 +255,8 @@ function AcademicPanel({ ctx }: { ctx: Context }) {
     event.preventDefault()
     const next = TABS[nextIndex]
     if (!next) return
+    pendingFocus.current = next.id
     navigate(next.id)
-    focusTab(next.id)
   }
 
   const ask = () => {

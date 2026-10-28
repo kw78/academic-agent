@@ -245,6 +245,59 @@ describe('academic UI host API', () => {
     if (!replay.ok) expect(replay.error.code).toBe('CONFLICT')
   })
 
+  it('keeps a candidate after archiving so the two-step confirm can be retried', async () => {
+    const { api, clock } = await setup()
+    const start = clock.now()
+    const end = new Date(Date.parse(start) + 7 * 86_400_000).toISOString()
+    const first = await api.previewPlan({ start, end })
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    expect((await api.acceptPlan({ previewId: first.value.previewId })).ok).toBe(true)
+
+    const second = await api.previewPlan({ start, end })
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    const archived = await api.archivePlan({})
+    expect(archived.ok).toBe(true)
+
+    const accepted = await api.acceptPlan({ previewId: second.value.previewId })
+    expect(accepted.ok).toBe(true)
+    if (!accepted.ok) return
+    expect(accepted.value.plan?.status).toBe('active')
+  })
+
+  it('computes today and overdue from the business time zone', async () => {
+    const { api } = await setup()
+    const created = await api.createTask({
+      title: 'Today task',
+      estimateMinutes: 30,
+      dueAt: '2026-10-27T10:00:00.000Z',
+    })
+    expect(created.ok).toBe(true)
+
+    const dashboard = await api.dashboard({})
+    expect(dashboard.ok).toBe(true)
+    if (!dashboard.ok) return
+    expect(
+      dashboard.value.todayTasks.some((card) => card.task.title === 'Today task'),
+    ).toBe(true)
+    expect(dashboard.value.counts.todayTasks).toBeGreaterThanOrEqual(1)
+
+    const today = await api.tasks({ status: 'active', due: 'today' })
+    expect(today.ok).toBe(true)
+    if (!today.ok) return
+    expect(today.value.cards.some((card) => card.task.title === 'Today task')).toBe(
+      true,
+    )
+
+    const unknown = await api.tasks({ status: 'active', due: 'unknown' })
+    expect(unknown.ok).toBe(true)
+    if (!unknown.ok) return
+    expect(
+      unknown.value.cards.some((card) => card.task.title === 'Today task'),
+    ).toBe(false)
+  })
+
   it('rejects tampered or expired candidates instead of trusting client blocks', async () => {
     const { api } = await setup()
     const result = await api.acceptPlan({ previewId: 'not-a-preview' })

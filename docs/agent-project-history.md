@@ -118,4 +118,3 @@ ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-aca
 - 课程规模、同步频率（当前 15 分钟）、计划粒度（15 分钟）、资源预算。
 - DSH 版本升级策略（当前固定 0.2.1-rc.3 验证；升级需重跑 bundle/工具自测）。
 - 备份保留策略与恢复演练频率。
-

@@ -151,9 +151,12 @@ export function DashboardPage({ ctx, active, onNavigate }: PageProps) {
         : '任务已重新打开',
     )
 
-  const nextBlock = data?.todayBlocks[0]
+  const nextBlock = data?.todayBlocks.find(
+    (entry) => Date.parse(entry.block.end) > Date.parse(now),
+  )
   const nextCourse = nextBlock
-    ? data.todayTasks.find((card) => card.task.taskId === nextBlock.block.taskId)?.course
+    ? data?.todayTasks.find((card) => card.task.taskId === nextBlock.block.taskId)
+        ?.course
     : undefined
   const remainingToday = Math.max(
     0,

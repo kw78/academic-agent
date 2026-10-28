@@ -1700,9 +1700,11 @@ export function ConnectionsPage({ ctx, active, onNavigate, nav }: PageProps) {
         : undefined
     if (!targetId) return
     requestAnimationFrame(() => {
-      document.getElementById(targetId)?.scrollIntoView({
-        block: 'start',
-        behavior: 'smooth',
+      requestAnimationFrame(() => {
+        document.getElementById(targetId)?.scrollIntoView({
+          block: 'start',
+          behavior: 'smooth',
+        })
       })
     })
   }, [data, nav?.focus, nav?.nonce, nav?.sourceId])
