@@ -10,7 +10,7 @@ import {
   type StudyPlanView,
 } from '@academic/contracts'
 import type { WeeklySlot } from '@academic/planner-basic'
-import { loginWebSession } from '@academic/web-sessions'
+import { loginWebSession, safeUrlForDisplay } from '@academic/web-sessions'
 import { createAcademicApp, type AcademicApp } from './composition.js'
 
 const DATABASE_PATH = process.env.ACADEMIC_DB ?? '.data/academic.db'
@@ -736,12 +736,16 @@ async function runWebFetch(app: AcademicApp, args: string[]): Promise<void> {
   if (out) {
     writeFileSync(out, result.body)
     console.log(
-      `HTTP ${result.status} · ${result.finalUrl} · ${result.body.length} bytes${
+      `HTTP ${result.status} · ${safeUrlForDisplay(result.finalUrl)} · ${result.body.length} bytes${
         result.truncated ? ' (truncated)' : ''
       } · 已写入 ${out}`,
     )
   } else {
-    console.log(`HTTP ${result.status} · ${result.finalUrl}${result.truncated ? ' (truncated)' : ''}`)
+    console.log(
+      `HTTP ${result.status} · ${safeUrlForDisplay(result.finalUrl)}${
+        result.truncated ? ' (truncated)' : ''
+      }`,
+    )
     console.log(result.body.slice(0, 4000))
   }
 }

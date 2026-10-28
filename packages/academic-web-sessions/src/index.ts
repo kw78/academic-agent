@@ -2,20 +2,19 @@ import type { DatabaseSync } from 'node:sqlite'
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core'
 import type { CredentialVault } from '@academic/connections'
 import type { Clock, IdGenerator } from '@academic/contracts'
+import {
+  SafeFetchError,
+  safeFetch,
+  safeUrlForDisplay,
+  validateCookies,
+  type ResolveHost,
+  type WebCookie,
+} from './http.js'
 
-const MAX_BODY_BYTES = 2 * 1024 * 1024
+export { SafeFetchError, safeFetch, safeUrlForDisplay, validateCookies } from './http.js'
+export type { ResolveHost, WebCookie } from './http.js'
+
 const DEFAULT_LOGIN_TIMEOUT_MS = 5 * 60_000
-
-export interface WebCookie {
-  name: string
-  value: string
-  domain?: string
-  path?: string
-  expires?: number
-  httpOnly?: boolean
-  secure?: boolean
-  sameSite?: string
-}
 
 export interface WebSessionView {
   sessionId: string
@@ -60,6 +59,9 @@ export interface WebSessionStoreOptions {
   clock: Clock
   ids: IdGenerator
   fetchImpl?: typeof fetch
+  resolveHost?: ResolveHost
+  timeoutMs?: number
+  maxBytes?: number
 }
 
 function vaultRef(sessionId: string): string {
@@ -82,16 +84,14 @@ function normalizeDomain(hostname: string): string {
   return hostname.toLowerCase().replace(/^\./, '')
 }
 
-function hostMatches(hostname: string, domain: string): boolean {
-  const host = normalizeDomain(hostname)
-  const base = normalizeDomain(domain)
-  return host === base || host.endsWith(`.${base}`)
-}
-
-function cookieHeader(cookies: WebCookie[]): string {
-  return cookies
-    .map((cookie) => `${cookie.name}=${cookie.value}`)
-    .join('; ')
+function cookieDomainApplies(hostname: string, domain: string): boolean {
+  const host = hostname.toLowerCase()
+  const value = domain.toLowerCase()
+  if (value.startsWith('.')) {
+    const base = value.replace(/^\./, '')
+    return host === base || host.endsWith(`.${base}`)
+  }
+  return host === value
 }
 
 function assertHttpUrl(value: string): URL {
@@ -111,6 +111,9 @@ export class WebSessionStore {
   readonly #clock: Clock
   readonly #ids: IdGenerator
   readonly #fetch: typeof fetch
+  readonly #resolveHost: ResolveHost | undefined
+  readonly #timeoutMs: number | undefined
+  readonly #maxBytes: number | undefined
 
   constructor(options: WebSessionStoreOptions) {
     this.#db = options.db
@@ -118,6 +121,9 @@ export class WebSessionStore {
     this.#clock = options.clock
     this.#ids = options.ids
     this.#fetch = options.fetchImpl ?? fetch
+    this.#resolveHost = options.resolveHost
+    this.#timeoutMs = options.timeoutMs
+    this.#maxBytes = options.maxBytes
   }
 
   async create(input: {
@@ -126,8 +132,23 @@ export class WebSessionStore {
     label?: string
   }): Promise<WebSessionView> {
     const url = assertHttpUrl(input.loginUrl)
-    const cookies = input.cookies.filter((cookie) => cookie.name && cookie.value)
+    const cookies = input.cookies
+      .filter((cookie) => cookie.name && cookie.value)
+      .map((cookie) => ({
+        ...cookie,
+        domain: cookie.domain || url.hostname,
+        path: cookie.path || '/',
+      }))
     if (cookies.length === 0) throw new Error('No session cookies were captured')
+    validateCookies(cookies)
+    for (const cookie of cookies) {
+      if (!cookie.domain || !cookieDomainApplies(url.hostname, cookie.domain)) {
+        throw new SafeFetchError(
+          'INVALID_COOKIE',
+          `Cookie ${cookie.name} 不属于登录站点`,
+        )
+      }
+    }
     const sessionId = this.#ids.next()
     const now = this.#clock.now()
     const ref = vaultRef(sessionId)
@@ -141,7 +162,7 @@ export class WebSessionStore {
       )
       .run(
         sessionId,
-        input.loginUrl,
+        safeUrlForDisplay(input.loginUrl),
         normalizeDomain(url.hostname),
         input.label ?? null,
         ref,
@@ -174,48 +195,38 @@ export class WebSessionStore {
     this.#db.prepare('DELETE FROM web_sessions WHERE session_id = ?').run(sessionId)
   }
 
-  async fetch(
-    sessionId: string,
-    targetUrl: string,
-    init: RequestInit = {},
-  ): Promise<WebSessionFetchResult> {
+  async fetch(sessionId: string, targetUrl: string): Promise<WebSessionFetchResult> {
     const row = this.#db
       .prepare('SELECT * FROM web_sessions WHERE session_id = ?')
       .get(sessionId) as unknown as WebSessionRow | undefined
     if (!row) throw new Error('Web session not found')
-    const url = assertHttpUrl(targetUrl)
-    if (!hostMatches(url.hostname, row.domain)) {
-      throw new Error(`URL host does not match session domain ${row.domain}`)
-    }
     const raw = await this.#vault.get(row.vault_ref)
     if (!raw) throw new Error('Web session credential is unavailable')
     const parsed = JSON.parse(raw) as { cookies?: WebCookie[] }
-    const header = cookieHeader(parsed.cookies ?? [])
-    if (!header) throw new Error('Web session has no cookies')
-    const response = await this.#fetch(targetUrl, {
-      ...init,
-      headers: {
-        ...(init.headers ?? {}),
-        Cookie: header,
-      },
-      redirect: 'follow',
+    const cookies = parsed.cookies ?? []
+    if (cookies.length === 0) throw new Error('Web session has no cookies')
+
+    const result = await safeFetch(targetUrl, {
+      cookies,
+      allowedHosts: [row.domain],
+      ...(this.#resolveHost ? { resolveHost: this.#resolveHost } : {}),
+      ...(this.#timeoutMs ? { timeoutMs: this.#timeoutMs } : {}),
+      ...(this.#maxBytes ? { maxBytes: this.#maxBytes } : {}),
+      fetchImpl: this.#fetch,
     })
-    const text = await response.text()
-    const truncated = text.length > MAX_BODY_BYTES
+
     const now = this.#clock.now()
     this.#db
       .prepare('UPDATE web_sessions SET last_used_at = ?, updated_at = ? WHERE session_id = ?')
       .run(now, now, sessionId)
     return {
       sessionId,
-      url: targetUrl,
-      finalUrl: response.url || targetUrl,
-      status: response.status,
-      ...(response.headers.get('content-type')
-        ? { contentType: response.headers.get('content-type')! }
-        : {}),
-      body: truncated ? text.slice(0, MAX_BODY_BYTES) : text,
-      truncated,
+      url: safeUrlForDisplay(targetUrl),
+      finalUrl: safeUrlForDisplay(result.finalUrl),
+      status: result.status,
+      ...(result.contentType ? { contentType: result.contentType } : {}),
+      body: result.body,
+      truncated: result.truncated,
     }
   }
 }

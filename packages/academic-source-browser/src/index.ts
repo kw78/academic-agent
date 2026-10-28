@@ -1,5 +1,10 @@
 import { chromium, type Browser, type BrowserContext } from 'playwright-core'
 import { z } from 'zod'
+import {
+  safeFetch,
+  type ResolveHost,
+  type WebCookie,
+} from '@academic/web-sessions'
 import type {
   SourceEngine,
   SourceEngineContext,
@@ -23,6 +28,8 @@ export interface BrowserSessionEngineOptions {
   /** Test seam: bypass the real browser while keeping the cookie result shape. */
   loginImpl?: (config: BrowserSessionConfig) => Promise<SourceLoginResult>
   fetchImpl?: typeof fetch
+  resolveHost?: ResolveHost
+  timeoutMs?: number
 }
 
 function matchesAny(patterns: string[], value: string): boolean {
@@ -35,19 +42,16 @@ function matchesAny(patterns: string[], value: string): boolean {
   })
 }
 
-function cookieHeader(
-  cookies: Array<{ name: string; value: string; domain: string }>,
-  domains: string[],
-): string {
-  return cookies
-    .filter((cookie) => {
-      const domain = cookie.domain.replace(/^\./, '')
-      return domains.some(
-        (wanted) => domain === wanted || domain.endsWith(`.${wanted}`),
-      )
-    })
-    .map((cookie) => `${cookie.name}=${cookie.value}`)
-    .join('; ')
+function cookieDomainAllowed(cookieDomain: string, domains: string[]): boolean {
+  const domain = cookieDomain.replace(/^\./, '').toLowerCase()
+  return domains.some((wanted) => {
+    const host = wanted.replace(/^\./, '').toLowerCase()
+    return (
+      host === domain ||
+      host.endsWith(`.${domain}`) ||
+      domain.endsWith(`.${host}`)
+    )
+  })
 }
 
 async function launch(channel: 'msedge' | 'chrome' | undefined): Promise<Browser> {
@@ -117,19 +121,22 @@ async function browserLogin(
       throw new Error('登录超时：未检测到已认证页面')
     }
     await loggedPage.waitForLoadState('domcontentloaded').catch(() => undefined)
-    const cookies = await context.cookies()
-    const header = cookieHeader(
-      cookies.map((cookie) => ({
+    const cookies: WebCookie[] = (await context.cookies())
+      .filter((cookie) => cookieDomainAllowed(cookie.domain, config.cookieDomains))
+      .map((cookie) => ({
         name: cookie.name,
         value: cookie.value,
         domain: cookie.domain,
-      })),
-      config.cookieDomains,
-    )
-    if (!header) {
+        path: cookie.path,
+        ...(cookie.expires >= 0 ? { expires: cookie.expires } : {}),
+        ...(cookie.httpOnly ? { httpOnly: true } : {}),
+        ...(cookie.secure ? { secure: true } : {}),
+        ...(cookie.sameSite ? { sameSite: cookie.sameSite } : {}),
+      }))
+    if (cookies.length === 0) {
       throw new Error('登录成功但未读取到会话 Cookie')
     }
-    return { secret: JSON.stringify({ cookie: header }) }
+    return { secret: JSON.stringify({ cookies }) }
   } finally {
     await context?.close().catch(() => undefined)
     await browser.close().catch(() => undefined)
@@ -140,29 +147,31 @@ async function verifySession(
   config: BrowserSessionConfig,
   secret: string,
   fetchImpl: typeof fetch,
+  resolveHost: ResolveHost | undefined,
+  timeoutMs: number | undefined,
 ): Promise<SourceVerification> {
   if (!config.verifyUrl) return { ok: true }
-  let cookie: string
+  let cookies: WebCookie[]
   try {
-    const parsed = JSON.parse(secret) as { cookie?: unknown }
-    cookie = typeof parsed.cookie === 'string' ? parsed.cookie : secret
+    const parsed = JSON.parse(secret) as { cookies?: unknown }
+    if (!Array.isArray(parsed.cookies) || parsed.cookies.length === 0) {
+      return { ok: false, message: '会话格式已过期，请重新登录' }
+    }
+    cookies = parsed.cookies as WebCookie[]
   } catch {
-    cookie = secret
+    return { ok: false, message: '会话格式无效，请重新登录' }
   }
-  if (!cookie) return { ok: false, message: '会话 Cookie 为空' }
   try {
-    const response = await fetchImpl(config.verifyUrl, {
-      headers: {
-        Cookie: cookie,
-        Accept: 'text/html,application/xhtml+xml',
-      },
-      redirect: 'follow',
+    const result = await safeFetch(config.verifyUrl, {
+      cookies,
+      allowedHosts: config.cookieDomains,
+      fetchImpl,
+      ...(resolveHost ? { resolveHost } : {}),
+      ...(timeoutMs ? { timeoutMs } : {}),
     })
-    const html = await response.text()
-    const finalUrl = response.url || config.verifyUrl
     const loggedOut =
-      matchesAny(config.loggedOutPatterns ?? [], finalUrl) ||
-      matchesAny(config.loggedOutPatterns ?? [], html)
+      matchesAny(config.loggedOutPatterns ?? [], result.finalUrl) ||
+      matchesAny(config.loggedOutPatterns ?? [], result.body)
     return loggedOut
       ? { ok: false, message: '会话已失效或被重定向到登录页' }
       : { ok: true }
@@ -196,7 +205,13 @@ export function createBrowserSessionEngine(
     },
     async verify(context: SourceEngineContext, secret: string) {
       const config = browserConfigSchema.parse(context.config)
-      return verifySession(config, secret, fetchImpl)
+      return verifySession(
+        config,
+        secret,
+        fetchImpl,
+        options.resolveHost,
+        options.timeoutMs,
+      )
     },
   }
 }

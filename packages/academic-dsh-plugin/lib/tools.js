@@ -19724,6 +19724,42 @@ function date4(params) {
   return _coercedDate(ZodDate, params);
 }
 
+// packages/academic-web-sessions/src/index.ts
+import { chromium } from "playwright-core";
+
+// packages/academic-web-sessions/src/http.ts
+import { BlockList, isIP } from "node:net";
+var DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
+var BLOCKED_NETWORKS = new BlockList();
+BLOCKED_NETWORKS.addSubnet("0.0.0.0", 8, "ipv4");
+BLOCKED_NETWORKS.addSubnet("10.0.0.0", 8, "ipv4");
+BLOCKED_NETWORKS.addSubnet("100.64.0.0", 10, "ipv4");
+BLOCKED_NETWORKS.addSubnet("127.0.0.0", 8, "ipv4");
+BLOCKED_NETWORKS.addSubnet("169.254.0.0", 16, "ipv4");
+BLOCKED_NETWORKS.addSubnet("172.16.0.0", 12, "ipv4");
+BLOCKED_NETWORKS.addSubnet("192.0.0.0", 24, "ipv4");
+BLOCKED_NETWORKS.addSubnet("192.0.2.0", 24, "ipv4");
+BLOCKED_NETWORKS.addSubnet("192.88.99.0", 24, "ipv4");
+BLOCKED_NETWORKS.addSubnet("192.168.0.0", 16, "ipv4");
+BLOCKED_NETWORKS.addSubnet("198.18.0.0", 15, "ipv4");
+BLOCKED_NETWORKS.addSubnet("198.51.100.0", 24, "ipv4");
+BLOCKED_NETWORKS.addSubnet("203.0.113.0", 24, "ipv4");
+BLOCKED_NETWORKS.addSubnet("224.0.0.0", 4, "ipv4");
+BLOCKED_NETWORKS.addSubnet("240.0.0.0", 4, "ipv4");
+BLOCKED_NETWORKS.addAddress("::", "ipv6");
+BLOCKED_NETWORKS.addAddress("::1", "ipv6");
+BLOCKED_NETWORKS.addSubnet("::", 96, "ipv6");
+BLOCKED_NETWORKS.addSubnet("fc00::", 7, "ipv6");
+BLOCKED_NETWORKS.addSubnet("fe80::", 10, "ipv6");
+BLOCKED_NETWORKS.addSubnet("ff00::", 8, "ipv6");
+BLOCKED_NETWORKS.addSubnet("2001:db8::", 32, "ipv6");
+BLOCKED_NETWORKS.addSubnet("64:ff9b::", 96, "ipv6");
+BLOCKED_NETWORKS.addSubnet("2002::", 16, "ipv6");
+BLOCKED_NETWORKS.addSubnet("2001::", 32, "ipv6");
+
+// packages/academic-web-sessions/src/index.ts
+var DEFAULT_LOGIN_TIMEOUT_MS = 5 * 6e4;
+
 // packages/academic-contracts/src/primitives.ts
 var ACTOR_KINDS = ["user", "automation", "agent", "system"];
 var actorSchema = external_exports.object({
