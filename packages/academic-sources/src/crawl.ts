@@ -62,7 +62,7 @@ function crawlScope(
         (entry): entry is string => typeof entry === 'string',
       )
     : []
-  const allowAnyPublicHost = config.probeAllowAnyPublicHost === true
+  const allowAnyPublicHost = config.probeAllowAnyPublicHost !== false
   const allowedHosts = allowAnyPublicHost
     ? ['*']
     : uniqueStrings([...cookieDomains, ...extraHosts])
@@ -80,9 +80,11 @@ function crawlScope(
           typeof entry === 'string' && entry.startsWith('/'),
       )
     : []
-  const defaultPathPrefix = start.pathname.endsWith('/')
-    ? start.pathname
-    : start.pathname.slice(0, start.pathname.lastIndexOf('/') + 1) || '/'
+  const defaultPathPrefix = allowAnyPublicHost
+    ? '/'
+    : start.pathname.endsWith('/')
+      ? start.pathname
+      : start.pathname.slice(0, start.pathname.lastIndexOf('/') + 1) || '/'
   return {
     allowedHosts,
     pathPrefixes: configured.length > 0 ? configured : [defaultPathPrefix],

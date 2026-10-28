@@ -26783,7 +26783,7 @@ async function probeSourcePage(input2) {
   const probeAllowedHosts = Array.isArray(input2.config.probeAllowedHosts) ? input2.config.probeAllowedHosts.filter(
     (entry) => typeof entry === "string"
   ) : [];
-  const allowAnyPublicHost = input2.config.probeAllowAnyPublicHost === true;
+  const allowAnyPublicHost = input2.config.probeAllowAnyPublicHost !== false;
   const allowedHosts = [
     .../* @__PURE__ */ new Set([...cookieDomains, ...probeAllowedHosts])
   ];
@@ -26931,7 +26931,7 @@ var ProbeRateLimiter = class {
   #sleep;
   #last = /* @__PURE__ */ new Map();
   constructor(options = {}) {
-    this.#minIntervalMs = options.minIntervalMs ?? 2e4;
+    this.#minIntervalMs = options.minIntervalMs ?? 1e4;
     this.#now = options.now ?? (() => Date.now());
     this.#sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   }
@@ -26970,7 +26970,7 @@ function crawlScope(config2, start) {
   const extraHosts = Array.isArray(config2.probeAllowedHosts) ? config2.probeAllowedHosts.filter(
     (entry) => typeof entry === "string"
   ) : [];
-  const allowAnyPublicHost = config2.probeAllowAnyPublicHost === true;
+  const allowAnyPublicHost = config2.probeAllowAnyPublicHost !== false;
   const allowedHosts = allowAnyPublicHost ? ["*"] : uniqueStrings([...cookieDomains, ...extraHosts]);
   if (allowedHosts.length === 0) {
     throw new Error("\u8BE5\u6765\u6E90\u672A\u914D\u7F6E\u6388\u6743\u57DF\u540D\uFF0C\u4E0D\u80FD\u6293\u53D6\u7AD9\u70B9");
@@ -26983,7 +26983,7 @@ function crawlScope(config2, start) {
   const configured = Array.isArray(config2.probePathPrefixes) ? config2.probePathPrefixes.filter(
     (entry) => typeof entry === "string" && entry.startsWith("/")
   ) : [];
-  const defaultPathPrefix = start.pathname.endsWith("/") ? start.pathname : start.pathname.slice(0, start.pathname.lastIndexOf("/") + 1) || "/";
+  const defaultPathPrefix = allowAnyPublicHost ? "/" : start.pathname.endsWith("/") ? start.pathname : start.pathname.slice(0, start.pathname.lastIndexOf("/") + 1) || "/";
   return {
     allowedHosts,
     pathPrefixes: configured.length > 0 ? configured : [defaultPathPrefix],
@@ -27444,7 +27444,7 @@ var browserConfigSchema = external_exports.object({
   verifyUrl: external_exports.string().url().optional(),
   loggedOutPatterns: external_exports.array(external_exports.string().min(1)).optional(),
   probePathPrefixes: external_exports.array(external_exports.string().regex(/^\//, "Expected a path beginning with /")).max(20).optional(),
-  /** Opt-in: allow the read-only probe/crawl to visit any public HTTPS host. */
+  /** Defaults to true; set false to restrict probe/crawl to cookieDomains/probeAllowedHosts. */
   probeAllowAnyPublicHost: external_exports.boolean().optional(),
   /** Extra hosts the user explicitly allows the read-only probe to visit. */
   probeAllowedHosts: external_exports.array(

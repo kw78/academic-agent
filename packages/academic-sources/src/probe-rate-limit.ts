@@ -6,7 +6,7 @@ export interface ProbeRateLimiterOptions {
 
 /**
  * Per-source spacing for read-only exploration. It allows at most one probe
- * every 20 seconds (3 per minute, without bursts) and never holds a tool call
+ * every 10 seconds (6 per minute, without bursts) and never holds a tool call
  * for a long wait; a too-early call gets a controlled "try again in N seconds"
  * error instead.
  */
@@ -17,7 +17,7 @@ export class ProbeRateLimiter {
   readonly #last = new Map<string, number>()
 
   constructor(options: ProbeRateLimiterOptions = {}) {
-    this.#minIntervalMs = options.minIntervalMs ?? 20_000
+    this.#minIntervalMs = options.minIntervalMs ?? 10_000
     this.#now = options.now ?? (() => Date.now())
     this.#sleep =
       options.sleep ??

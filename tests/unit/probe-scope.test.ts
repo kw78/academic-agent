@@ -38,7 +38,7 @@ describe('source probe host scope', () => {
     await expect(
       probeSourcePage({
         sourceId: 'source-1',
-        config: config(),
+        config: { ...config(), probeAllowAnyPublicHost: false },
         secret: secret(),
         probedAt: '2026-10-28T10:00:00.000Z',
         url: target,
@@ -60,7 +60,7 @@ describe('source probe host scope', () => {
     }) as typeof fetch
     const evidence = await probeSourcePage({
       sourceId: 'source-1',
-      config: { ...config(), probeAllowAnyPublicHost: true },
+      config: config(),
       secret: secret(),
       probedAt: '2026-10-28T10:00:00.000Z',
       url: 'https://other.example/course',
@@ -89,10 +89,7 @@ describe('source probe host scope', () => {
     }) as typeof fetch
     const result = await crawlSourcePages({
       sourceId: 'source-1',
-      config: {
-        ...config(),
-        probeAllowAnyPublicHost: true,
-      },
+      config: config(),
       secret: secret(),
       startUrl: 'https://i.chaoxing.com/space/index',
       options: { maxPages: 2, maxDepth: 1, pathPrefix: '/space', delayMs: 0 },
@@ -168,7 +165,7 @@ describe('source probe host scope', () => {
 
     const result = await crawlSourcePages({
       sourceId: 'source-1',
-      config: config(['i.mooc.chaoxing.com']),
+      config: { ...config(['i.mooc.chaoxing.com']), probeAllowAnyPublicHost: false },
       secret: secret(),
       startUrl: target,
       options: { maxPages: 3, maxDepth: 1, pathPrefix: '/space', delayMs: 0 },
@@ -199,7 +196,7 @@ describe('source probe host scope', () => {
 
     const evidence = await probeSourcePage({
       sourceId: 'source-1',
-      config: config(['i.mooc.chaoxing.com']),
+      config: { ...config(['i.mooc.chaoxing.com']), probeAllowAnyPublicHost: false },
       secret: secret(),
       probedAt: '2026-10-28T10:00:00.000Z',
       url: target,

@@ -379,7 +379,7 @@ export async function probeSourcePage(
         (entry): entry is string => typeof entry === 'string',
       )
     : []
-  const allowAnyPublicHost = input.config.probeAllowAnyPublicHost === true
+  const allowAnyPublicHost = input.config.probeAllowAnyPublicHost !== false
   const allowedHosts = [
     ...new Set([...cookieDomains, ...probeAllowedHosts]),
   ]

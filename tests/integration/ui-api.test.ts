@@ -283,6 +283,7 @@ describe('academic UI host API', () => {
       verifyUrl: 'https://lms.example.edu/home',
       authenticatedUrlPatterns: ['^https://lms\\.example\\.edu/'],
       cookieDomains: ['lms.example.edu'],
+      probeAllowAnyPublicHost: false,
     }
     app.sources.create({
       sourceId: 'probe-source',
