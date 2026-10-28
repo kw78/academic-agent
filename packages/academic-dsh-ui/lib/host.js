@@ -19969,7 +19969,50 @@ var CapabilityUnavailableError = class extends Error {
 
 // packages/academic-web-sessions/src/index.ts
 import { chromium } from "playwright-core";
-var MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+// packages/academic-web-sessions/src/http.ts
+import { BlockList, isIP } from "node:net";
+var DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
+var BLOCKED_NETWORKS = new BlockList();
+BLOCKED_NETWORKS.addSubnet("0.0.0.0", 8, "ipv4");
+BLOCKED_NETWORKS.addSubnet("10.0.0.0", 8, "ipv4");
+BLOCKED_NETWORKS.addSubnet("100.64.0.0", 10, "ipv4");
+BLOCKED_NETWORKS.addSubnet("127.0.0.0", 8, "ipv4");
+BLOCKED_NETWORKS.addSubnet("169.254.0.0", 16, "ipv4");
+BLOCKED_NETWORKS.addSubnet("172.16.0.0", 12, "ipv4");
+BLOCKED_NETWORKS.addSubnet("192.0.0.0", 24, "ipv4");
+BLOCKED_NETWORKS.addSubnet("192.0.2.0", 24, "ipv4");
+BLOCKED_NETWORKS.addSubnet("192.88.99.0", 24, "ipv4");
+BLOCKED_NETWORKS.addSubnet("192.168.0.0", 16, "ipv4");
+BLOCKED_NETWORKS.addSubnet("198.18.0.0", 15, "ipv4");
+BLOCKED_NETWORKS.addSubnet("198.51.100.0", 24, "ipv4");
+BLOCKED_NETWORKS.addSubnet("203.0.113.0", 24, "ipv4");
+BLOCKED_NETWORKS.addSubnet("224.0.0.0", 4, "ipv4");
+BLOCKED_NETWORKS.addSubnet("240.0.0.0", 4, "ipv4");
+BLOCKED_NETWORKS.addAddress("::", "ipv6");
+BLOCKED_NETWORKS.addAddress("::1", "ipv6");
+BLOCKED_NETWORKS.addSubnet("::", 96, "ipv6");
+BLOCKED_NETWORKS.addSubnet("fc00::", 7, "ipv6");
+BLOCKED_NETWORKS.addSubnet("fe80::", 10, "ipv6");
+BLOCKED_NETWORKS.addSubnet("ff00::", 8, "ipv6");
+BLOCKED_NETWORKS.addSubnet("2001:db8::", 32, "ipv6");
+BLOCKED_NETWORKS.addSubnet("64:ff9b::", 96, "ipv6");
+BLOCKED_NETWORKS.addSubnet("2002::", 16, "ipv6");
+BLOCKED_NETWORKS.addSubnet("2001::", 32, "ipv6");
+function safeUrlForDisplay(value) {
+  try {
+    const url2 = new URL(value);
+    url2.username = "";
+    url2.password = "";
+    url2.search = "";
+    url2.hash = "";
+    return url2.toString();
+  } catch {
+    return "";
+  }
+}
+
+// packages/academic-web-sessions/src/index.ts
 var DEFAULT_LOGIN_TIMEOUT_MS = 5 * 6e4;
 function normalizeDomain(hostname3) {
   return hostname3.toLowerCase().replace(/^\./, "");
@@ -20330,7 +20373,7 @@ function parse3(schema, input2) {
 }
 function safeMessage(error62) {
   const message = error62 instanceof Error ? error62.message : String(error62);
-  return message.replace(/\s+/g, " ").slice(0, 500);
+  return message.replace(/https?:\/\/[^\s"'<>]+/gi, (match) => safeUrlForDisplay(match) || "[url]").replace(/\s+/g, " ").slice(0, 500);
 }
 function fromError(error62) {
   if (error62 instanceof CapabilityUnavailableError) {
@@ -20940,8 +20983,8 @@ function createAcademicUiApi(app) {
         return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u5F15\u64CE\u5C1A\u672A\u52A0\u8F7D");
       }
       try {
-        app.sources.create(body);
-        const source = sourceStatusFor(app, body.sourceId ?? "");
+        const created = app.sources.create(body);
+        const source = sourceStatusFor(app, created.sourceId);
         return source ? ok(source) : failure2("NOT_FOUND", "\u6570\u636E\u6E90\u5DF2\u521B\u5EFA\u4F46\u672A\u80FD\u8BFB\u53D6");
       } catch (error62) {
         return fromError(error62);

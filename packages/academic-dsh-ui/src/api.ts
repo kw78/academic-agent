@@ -17,7 +17,7 @@ import {
 } from '@academic/contracts'
 import type { AcademicApp } from '@academic/cli'
 import type { NotificationView } from '@academic/notifications'
-import { loginWebSession } from '@academic/web-sessions'
+import { loginWebSession, safeUrlForDisplay } from '@academic/web-sessions'
 import { zonedDateTimeToUtc, type PlanSuggestion } from '@academic/planner-basic'
 import type { JobRun, ScheduledJob } from '@academic/scheduler'
 import type {
@@ -232,7 +232,10 @@ function parse<T>(schema: z.ZodType<T>, input: unknown): { ok: true; value: T } 
 
 function safeMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
-  return message.replace(/\s+/g, ' ').slice(0, 500)
+  return message
+    .replace(/https?:\/\/[^\s"'<>]+/gi, (match) => safeUrlForDisplay(match) || '[url]')
+    .replace(/\s+/g, ' ')
+    .slice(0, 500)
 }
 
 function fromError(error: unknown): UiResult<never> {
@@ -978,8 +981,8 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
         return failure('CAPABILITY_UNAVAILABLE', '该数据源引擎尚未加载')
       }
       try {
-        app.sources.create(body)
-        const source = sourceStatusFor(app, body.sourceId ?? '')
+        const created = app.sources.create(body)
+        const source = sourceStatusFor(app, created.sourceId)
         return source
           ? ok(source)
           : failure('NOT_FOUND', '数据源已创建但未能读取')

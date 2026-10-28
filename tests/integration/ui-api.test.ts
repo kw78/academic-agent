@@ -315,4 +315,24 @@ describe('generic DB-backed source login', () => {
     expect(source?.authKind).toBe('token')
     expect(JSON.stringify(listed.value)).not.toContain('test-session-secret')
   })
+
+  it('returns the generated sourceId when the caller omits one', async () => {
+    const { api } = await setup()
+    const created = await api.createSource({
+      engine: 'fixture',
+      displayName: 'Second fixture',
+      authKind: 'none',
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(created.value.sourceId).toBeTruthy()
+    expect(created.value.sourceId).not.toBe('')
+
+    const listed = await api.connections({})
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    expect(
+      listed.value.sources.some((entry) => entry.sourceId === created.value.sourceId),
+    ).toBe(true)
+  })
 })
