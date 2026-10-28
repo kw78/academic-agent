@@ -22,6 +22,8 @@ jobs:
     name: Package, publish and index
     runs-on: windows-latest
     timeout-minutes: 40
+    outputs:
+      version: ${{ steps.release.outputs.version }}
     defaults:
       run:
         shell: bash
@@ -112,11 +114,25 @@ jobs:
         if: env.NPM_TOKEN == ''
         run: echo "::warning::NPM_TOKEN secret is not configured; npm publish skipped."
 
-      - name: Update market index
+  market:
+    name: Update market index
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Point the index at the release tag
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
-          node scripts/update-market-index.mjs \
-            "${{ steps.release.outputs.version }}" \
-            "${{ github.sha }}"
+          TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
+          node scripts/update-market-index.mjs "$VERSION" "$TAG_COMMIT"
           if git diff --quiet market/index.json; then
             echo "market index already current"
             exit 0
@@ -124,5 +140,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add market/index.json
-          git commit -m "docs(market): publish ${{ steps.release.outputs.tag }}"
+          git commit -m "docs(market): publish $TAG"
           git push origin HEAD:main
