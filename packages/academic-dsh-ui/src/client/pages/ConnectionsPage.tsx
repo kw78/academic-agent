@@ -300,7 +300,8 @@ function SourceCard({
           <div className="ac-secret-form">
             <p className="ac-muted">
               探测结果（只读）：HTTP {probe.status} · {probe.title || '无标题'} ·{' '}
-              {probe.bytes} 字节{probe.truncated ? '（已截断）' : ''}
+              {probe.bytes} 字节{probe.truncated ? '（已截断）' : ''} · 证据哈希{' '}
+              {probe.digest.slice(0, 12)}
             </p>
             <p className="ac-muted">
               最终地址：{probe.finalUrl} · 表单 {probe.formCount} · 表格{' '}

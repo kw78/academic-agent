@@ -513,6 +513,7 @@ describe('academic UI host API', () => {
     if (!probed.ok) return
     expect(probed.value.jsonShape).toContain('student:')
     expect(probed.value.jsonShape).toContain('courses: array(1')
+    expect(probed.value.digest).toMatch(/^[a-f0-9]{64}$/)
     const serialized = JSON.stringify(probed.value)
     for (const secret of [
       '张三',

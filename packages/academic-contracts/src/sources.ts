@@ -160,6 +160,7 @@ export interface SourceProbeEvidence {
   loginLike: boolean
   warnings: string[]
   probedAt: string
+  digest: string
 }
 
 export class SourceEngineRegistry implements SourceEngineRegistryApi {

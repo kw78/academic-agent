@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type {
   SourceProbeEvidence,
   SourceProbeLink,
@@ -170,6 +171,7 @@ function buildEvidence(
     loginLike: loginLikePage(result.finalUrl, result.body, patterns),
     warnings: result.truncated ? ['响应超过大小上限，仅分析前 512KB'] : [],
     probedAt,
+    digest: createHash('sha256').update(result.body).digest('hex'),
   }
 }
 
