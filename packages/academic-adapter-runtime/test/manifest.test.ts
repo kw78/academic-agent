@@ -118,6 +118,26 @@ describe('declarative manifest', () => {
     expect(readJsonPath({ data: { items: [{ id: 'x' }] } }, 'data.items[0].id')).toBe('x')
   })
 
+  it('supports constant fields and field templates', () => {
+    const manifest = parseManifest({
+      ...htmlManifest,
+      courses: {
+        ...htmlManifest.courses,
+        fields: {
+          ...htmlManifest.courses.fields,
+          termId: { constant: '2026FA' },
+          itemKey: { template: '{{externalCourseId}}|{{code}}' },
+        },
+      },
+    })
+    const page = extractPage(fixture('portal.html'), manifest.courses)
+    expect(page.rows[0]).toMatchObject({
+      externalCourseId: 'C1',
+      termId: '2026FA',
+      itemKey: 'C1|CS101.01.2026FA',
+    })
+  })
+
   it('rejects unsafe regex, encodes template values and caps extracted rows', () => {
     expect(regexSafetyError('(a+)+')).toBeTruthy()
     expect(regexSafetyError('(.*)*')).toBeTruthy()

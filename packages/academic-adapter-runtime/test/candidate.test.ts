@@ -126,6 +126,20 @@ describe('adapter candidate replay and registry', () => {
     const httpReport = await replayManifest(insecure, samples())
     expect(httpReport.ok).toBe(false)
     expect(httpReport.errors.join(' ')).toMatch(/HTTPS/)
+
+    const badTemplate = {
+      ...manifest,
+      courses: {
+        ...manifest.courses,
+        fields: {
+          ...manifest.courses.fields,
+          externalItemId: { template: '{{missingField}}' },
+        },
+      },
+    }
+    const templateReport = await replayManifest(badTemplate, samples())
+    expect(templateReport.ok).toBe(false)
+    expect(templateReport.errors.join(' ')).toMatch(/模板引用了未知字段/)
   })
 
   it('stores candidates, activates validated versions and rolls back', async () => {

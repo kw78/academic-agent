@@ -354,6 +354,7 @@ class ManifestAdapter implements AcademicSourceAdapter {
       title: string
       termId: string
     }> = []
+    const seenCourses = new Set<string>()
     for (const row of loaded.rows) {
       const externalCourseId = requiredText(row, 'externalCourseId')
       const code = requiredText(row, 'code')
@@ -370,6 +371,8 @@ class ManifestAdapter implements AcademicSourceAdapter {
       ) {
         continue
       }
+      if (seenCourses.has(externalCourseId)) continue
+      seenCourses.add(externalCourseId)
       courses.push({ ...row, externalCourseId, code, title, termId })
       if (courses.length >= (this.#config.maxCourses ?? 20)) break
     }
@@ -630,15 +633,29 @@ function validateManifestStatic(manifest: AdapterManifest): string[] {
       errors.push(`${name} URL 无效`)
     }
     for (const [field, extractor] of Object.entries(request.fields)) {
-      if (request.responseType === 'html' && !extractor.selector) {
+      const derived =
+        extractor.constant !== undefined || extractor.template !== undefined
+      if (request.responseType === 'html' && !derived && !extractor.selector) {
         errors.push(`${name}.${field} 需要 selector`)
       }
-      if (request.responseType === 'json' && !extractor.path) {
+      if (request.responseType === 'json' && !derived && !extractor.path) {
         errors.push(`${name}.${field} 需要 path`)
       }
       if (extractor.regex) {
         const regexError = regexSafetyError(extractor.regex)
         if (regexError) errors.push(`${name}.${field} 正则不安全：${regexError}`)
+      }
+      if (extractor.template) {
+        for (const match of extractor.template.matchAll(
+          /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+        )) {
+          const reference = match[1]
+          if (!reference || !request.fields[reference]) {
+            errors.push(`${name}.${field} 模板引用了未知字段：${reference ?? ''}`)
+          } else if (request.fields[reference]?.template) {
+            errors.push(`${name}.${field} 模板不能引用另一个模板字段`)
+          }
+        }
       }
     }
   }

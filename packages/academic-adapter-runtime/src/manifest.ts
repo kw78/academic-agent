@@ -4,14 +4,22 @@ const extractorSchema = z
   .object({
     selector: z.string().min(1).max(500).optional(),
     path: z.string().min(1).max(500).optional(),
+    constant: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    template: z.string().min(1).max(1_000).optional(),
     attribute: z.string().min(1).max(100).optional(),
     regex: z.string().min(1).max(500).optional(),
     group: z.number().int().min(0).max(20).optional(),
     trim: z.boolean().optional(),
   })
-  .refine((value) => Boolean(value.selector) !== Boolean(value.path), {
-    message: 'Each field needs exactly one of selector or path',
-  })
+  .refine(
+    (value) =>
+      [value.selector, value.path, value.constant, value.template].filter(
+        (entry) => entry !== undefined,
+      ).length === 1,
+    {
+      message: 'Each field needs exactly one of selector, path, constant or template',
+    },
+  )
 
 const requestSchema = z.object({
   url: z.string().min(1).max(2000),

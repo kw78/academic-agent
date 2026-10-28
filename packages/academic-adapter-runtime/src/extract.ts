@@ -101,6 +101,47 @@ function extractJsonField(
   return extractor.trim === false ? matched : matched.trim()
 }
 
+function scalarText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return undefined
+}
+
+function renderFieldTemplate(
+  template: string,
+  record: Record<string, unknown>,
+): string {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, path: string) => {
+    return scalarText(readJsonPath(record, path)) ?? ''
+  })
+}
+
+function extractRecord(
+  row: unknown,
+  request: ManifestRequest,
+  html: boolean,
+): Record<string, unknown> {
+  const record: Record<string, unknown> = {}
+  const entries = Object.entries(request.fields)
+  for (const [name, extractor] of entries) {
+    if (extractor.constant !== undefined) record[name] = extractor.constant
+  }
+  for (const [name, extractor] of entries) {
+    if (extractor.constant !== undefined || extractor.template !== undefined) continue
+    const value = html
+      ? extractHtmlField(row as HtmlRow, extractor)
+      : extractJsonField(row, extractor)
+    if (value !== undefined) record[name] = value
+  }
+  for (const [name, extractor] of entries) {
+    if (!extractor.template) continue
+    const raw = renderFieldTemplate(extractor.template, record)
+    const value = extractor.trim === false ? raw : raw.trim()
+    if (value) record[name] = value
+  }
+  return record
+}
+
 export function extractPage(
   payload: string,
   request: ManifestRequest,
@@ -120,14 +161,7 @@ export function extractPage(
         : []
     const rows = allRows.slice(0, MAX_ROWS_PER_PAGE)
     const result: ExtractedPage = {
-      rows: rows.map((row) => {
-        const record: Record<string, unknown> = {}
-        for (const [name, extractor] of Object.entries(request.fields)) {
-          const value = extractJsonField(row, extractor)
-          if (value !== undefined) record[name] = value
-        }
-        return record
-      }),
+      rows: rows.map((row) => extractRecord(row, request, false)),
       ...(allRows.length > rows.length ? { truncated: true } : {}),
     }
     if (request.next) {
@@ -143,14 +177,7 @@ export function extractPage(
   ) as unknown as HtmlRow[]
   const rows = allRows.slice(0, MAX_ROWS_PER_PAGE)
   const result: ExtractedPage = {
-    rows: rows.map((row) => {
-      const record: Record<string, unknown> = {}
-      for (const [name, extractor] of Object.entries(request.fields)) {
-        const value = extractHtmlField(row, extractor)
-        if (value !== undefined) record[name] = value
-      }
-      return record
-    }),
+    rows: rows.map((row) => extractRecord(row, request, true)),
     ...(allRows.length > rows.length ? { truncated: true } : {}),
   }
   if (request.next) {

@@ -113,11 +113,79 @@ const htmlManifest = {
   },
 } as const
 
+const jwManifest = {
+  schemaVersion: 1,
+  adapterId: 'ustc-jw-exam',
+  version: '1.0.0',
+  displayName: 'USTC 综合教务系统 · 考试',
+  baseUrl: 'https://jw.example.edu/',
+  allowedOrigins: ['jw.example.edu'],
+  timeZone: 'Asia/Shanghai',
+  utcOffsetMinutes: 480,
+  courses: {
+    url: '/for-std/exam-arrange',
+    responseType: 'html',
+    items: 'table.table tbody tr',
+    fields: {
+      externalCourseId: { selector: 'td:nth-child(1)' },
+      code: { selector: 'td:nth-child(1)' },
+      title: { selector: 'td:nth-child(3)' },
+      termId: { constant: '2026FA' },
+    },
+  },
+  assignments: {
+    url: '/for-std/exam-arrange',
+    responseType: 'html',
+    items: 'table.table tbody tr',
+    fields: {
+      courseExternalId: { selector: 'td:nth-child(1)' },
+      courseName: { selector: 'td:nth-child(3)' },
+      examType: { selector: 'td:nth-child(2)' },
+      dateTime: { selector: 'td:nth-child(4)' },
+      room: { selector: 'td:nth-child(5)' },
+      externalItemId: { template: '{{courseExternalId}}:{{dateTime}}' },
+      title: { template: '{{courseName}} · {{examType}}' },
+      description: { template: '考场：{{room}}' },
+      kind: { constant: 'exam' },
+      due: {
+        selector: 'td:nth-child(4)',
+        regex: '(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2})',
+      },
+      sourceUrl: { constant: 'https://jw.example.edu/for-std/exam-arrange' },
+    },
+  },
+} as const
+
 const credentials: CredentialAccess = {
   getSecret: async () =>
     JSON.stringify({
       cookies: [{ name: 'sid', value: 'fixture', domain: 'lms.example.edu', path: '/' }],
     }),
+}
+
+const jwCredentials: CredentialAccess = {
+  getSecret: async () =>
+    JSON.stringify({
+      cookies: [
+        {
+          name: 'sid',
+          value: 'fixture',
+          domain: 'jw.example.edu',
+          path: '/',
+        },
+      ],
+    }),
+}
+
+const jwConfig = {
+  loginUrl: 'https://jw.example.edu/login',
+  authenticatedUrlPatterns: ['^https://jw\\.example\\.edu/'],
+  cookieDomains: ['jw.example.edu'],
+  manifestId: 'ustc-jw-exam',
+  termFilter: ['2026FA'],
+  maxCourses: 10,
+  maxAssignments: 10,
+  delayMs: 0,
 }
 
 const publicResolver = async () => [{ address: '93.184.216.34', family: 4 }]
@@ -141,6 +209,7 @@ function router(): Router {
         '/api/assignments/A1': 'detail-A1.json',
         '/api/assignments/A2': 'detail-A2.json',
         '/api/assignments/A3': 'detail-A3.json',
+        '/for-std/exam-arrange': 'ustc-jw-exam.html',
         '/portal.html': 'portal.html',
         '/course/C1.html': 'assignments.html',
         '/assignment/A1.html': 'detail-A1.html',
@@ -250,6 +319,73 @@ describe('declarative adapter runtime', () => {
       date: '2026-11-10',
       zone: 'Asia/Shanghai',
     })
+  })
+
+  it('maps a second platform exam table through constants and templates', async () => {
+    const state = router()
+    const engine = engineFor(jwManifest, state)
+    const context = { sourceId: 'jw', config: jwConfig }
+
+    const courses = await engine.listCourses!(context, jwCredentials)
+    expect(courses).toEqual([
+      {
+        sourceId: 'jw',
+        externalCourseId: 'CS101.01',
+        termId: '2026FA',
+        code: 'CS101.01',
+        title: '数据结构',
+      },
+    ])
+
+    const result = await engine.createAdapter!(context).fetch({
+      credentials: jwCredentials,
+    })
+    expect(result.completeness).toBe('full')
+    expect(result.items).toHaveLength(2)
+    expect(result.items[0]).toMatchObject({
+      kind: 'exam',
+      title: '数据结构 · 期末考试',
+      description: '考场：3A101',
+      externalItemId: 'CS101.01:2026-12-20 09:00~11:00',
+    })
+    expect(result.items[0]?.due).toEqual({
+      kind: 'instant',
+      utc: '2026-12-20T01:00:00.000Z',
+      zone: 'Asia/Shanghai',
+    })
+
+    const app = await createAcademicApp({
+      databasePath: ':memory:',
+      credentialVault: new InMemoryCredentialVault(),
+      sourceEngines: [engine],
+    })
+    cleanup.push(() => app.close())
+    app.sources.create({
+      sourceId: 'jw',
+      engine: 'declarative',
+      displayName: 'USTC 教务考试',
+      authKind: 'token',
+      loginMode: 'browser',
+      capabilities: ['academic.sync'],
+      config: jwConfig,
+    })
+    const connection = app.connections.create({
+      sourceId: 'jw',
+      displayName: 'USTC 教务考试',
+      authKind: 'token',
+    })
+    await app.connections.setSecret(
+      connection.connectionId,
+      await jwCredentials.getSecret(),
+    )
+    const preview = await app.previewSourceSync('jw', connection.connectionId)
+    expect(preview.counts.create).toBe(2)
+    const first = await app.syncSource('jw', connection.connectionId)
+    expect(first).toMatchObject({ status: 'success', created: 2 })
+    const again = await app.previewSourceSync('jw', connection.connectionId)
+    expect(again.counts.unchanged).toBe(2)
+    const second = await app.syncSource('jw', connection.connectionId)
+    expect(second).toMatchObject({ status: 'success', created: 0, updated: 0 })
   })
 
   it('maps an unauthorized response to AdapterAuthError', async () => {

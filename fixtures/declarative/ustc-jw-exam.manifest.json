@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "adapterId": "ustc-jw-exam",
+  "version": "2026FA.1",
+  "displayName": "USTC 综合教务系统 · 考试",
+  "baseUrl": "https://jw.ustc.edu.cn/",
+  "allowedOrigins": ["jw.ustc.edu.cn"],
+  "timeZone": "Asia/Shanghai",
+  "utcOffsetMinutes": 480,
+  "courses": {
+    "url": "/for-std/exam-arrange",
+    "responseType": "html",
+    "items": "table.table tbody tr",
+    "fields": {
+      "externalCourseId": { "selector": "td:nth-child(1)" },
+      "code": { "selector": "td:nth-child(1)" },
+      "title": { "selector": "td:nth-child(3)" },
+      "termId": { "constant": "2026FA" }
+    }
+  },
+  "assignments": {
+    "url": "/for-std/exam-arrange",
+    "responseType": "html",
+    "items": "table.table tbody tr",
+    "fields": {
+      "courseExternalId": { "selector": "td:nth-child(1)" },
+      "courseName": { "selector": "td:nth-child(3)" },
+      "examType": { "selector": "td:nth-child(2)" },
+      "dateTime": { "selector": "td:nth-child(4)" },
+      "room": { "selector": "td:nth-child(5)" },
+      "externalItemId": { "template": "{{courseExternalId}}:{{dateTime}}" },
+      "title": { "template": "{{courseName}} · {{examType}}" },
+      "description": { "template": "考场：{{room}}" },
+      "kind": { "constant": "exam" },
+      "due": {
+        "selector": "td:nth-child(4)",
+        "regex": "(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2})"
+      },
+      "sourceUrl": {
+        "constant": "https://jw.ustc.edu.cn/for-std/exam-arrange"
+      }
+    }
+  }
+}
