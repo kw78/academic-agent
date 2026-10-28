@@ -338,19 +338,6 @@ export async function createAcademicApp(
     capabilities: ['academic.reminder.in-app'],
     requiredPermissions: [],
   })
-  const sources = new SourceConfigStore({
-    db: store.database,
-    clock,
-    ids,
-  })
-  sources.ensure({
-    sourceId: 'fixture-lms',
-    engine: 'fixture',
-    displayName: 'Fixture LMS（内置演示）',
-    authKind: 'none',
-    capabilities: ['academic.sync', 'academic.courses.probe'],
-    config: {},
-  })
   const sourceEngines = new SourceEngineRegistry()
   const manifestRegistry = options.manifestRegistry ?? new ManifestRegistry()
   const manifestStore = new ManifestStore({ db: store.database, clock })
@@ -388,6 +375,42 @@ export async function createAcademicApp(
   for (const engine of configuredEngines) {
     sourceEngineRegistrations.push(sourceEngines.register(engine))
   }
+
+  const sources = new SourceConfigStore({
+    db: store.database,
+    clock,
+    ids,
+    validateSource(input) {
+      const registered = sourceEngines.get(input.engine)
+      if (!registered) return `未知 engine：${input.engine}`
+      const descriptor = registered.descriptor
+      if (
+        descriptor.authKinds &&
+        !(descriptor.authKinds as readonly string[]).includes(input.authKind)
+      ) {
+        return `该引擎不支持认证方式 ${input.authKind}`
+      }
+      if (input.loginMode) {
+        if (input.authKind === 'none') return '认证方式为 none 时不应配置登录方式'
+        if (!descriptor.supportsLogin) return '该引擎不支持登录流程'
+        if (
+          descriptor.loginModes &&
+          !(descriptor.loginModes as readonly string[]).includes(input.loginMode)
+        ) {
+          return `该引擎不支持登录方式 ${input.loginMode}`
+        }
+      }
+      return descriptor.validateConfig?.(input.config)
+    },
+  })
+  sources.ensure({
+    sourceId: 'fixture-lms',
+    engine: 'fixture',
+    displayName: 'Fixture LMS（内置演示）',
+    authKind: 'none',
+    capabilities: ['academic.sync', 'academic.courses.probe'],
+    config: {},
+  })
 
   const host = new InMemoryToolHost()
   const agentRegistration = registerAcademicTools(host, {

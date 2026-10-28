@@ -17,6 +17,10 @@ const fakeEngine: SourceEngine = {
     supportsSync: true,
     supportsLogin: false,
     supportsVerify: false,
+    authKinds: ['none', 'token'],
+    validateConfig(config) {
+      return typeof config.baseUrl === 'string' ? undefined : 'baseUrl is required'
+    },
   },
   createAdapter(context) {
     return {
@@ -94,6 +98,44 @@ describe('database-backed sources', () => {
       }),
     ).toThrow(/must not contain credentials/)
 
+    for (const config of [
+      { sessionCookie: 'x' },
+      { clientSecret: 'x' },
+      { refreshToken: 'x' },
+      { auth: { accessToken: 'x' } },
+      { baseUrl: 'https://example.invalid/page?access_token=x' },
+      { baseUrl: 'https://user:pass@example.invalid/' },
+    ]) {
+      expect(() =>
+        app.sources.create({
+          sourceId: 'variant-source',
+          engine: 'fake-http',
+          displayName: 'Variant',
+          authKind: 'none',
+          config,
+        }),
+      ).toThrow(/credentials|authentication parameters/)
+    }
+
+    expect(() =>
+      app.sources.create({
+        sourceId: 'missing-config',
+        engine: 'fake-http',
+        displayName: 'Missing',
+        authKind: 'none',
+      }),
+    ).toThrow(/Source config invalid: baseUrl is required/)
+
+    expect(() =>
+      app.sources.create({
+        sourceId: 'wrong-auth',
+        engine: 'fake-http',
+        displayName: 'Wrong auth',
+        authKind: 'password',
+        config: { baseUrl: 'https://example.invalid' },
+      }),
+    ).toThrow(/不支持认证方式/)
+
     const updated = app.sources.update(
       'fake-source',
       { displayName: 'Fake Source 2', config: { baseUrl: 'https://example.invalid/2' } },
@@ -115,6 +157,7 @@ describe('database-backed sources', () => {
       displayName: 'Fake Source',
       authKind: 'none',
       capabilities: ['academic.sync'],
+      config: { baseUrl: 'https://example.invalid' },
     })
     const summary = await app.syncSource('fake-source')
     expect(summary.status).toBe('success')

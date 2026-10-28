@@ -146,29 +146,47 @@ describe('academic UI host API', () => {
     if (!accepted.ok) expect(accepted.error.code).toBe('CONFLICT')
   })
 
-  it('never exposes credential references and refuses auth for missing engines', async () => {
+  it('never exposes credential references and refuses unknown engines', async () => {
     const { app, api } = await setup()
-    app.sources.create({
-      sourceId: 'secure-lms',
+    expect(() =>
+      app.sources.create({
+        sourceId: 'secure-lms',
+        engine: 'missing-engine',
+        displayName: 'Secure LMS',
+        authKind: 'password',
+      }),
+    ).toThrow(/未知 engine/)
+
+    const missing = await api.createSource({
       engine: 'missing-engine',
       displayName: 'Secure LMS',
-      authKind: 'password',
+      authKind: 'none',
+    })
+    expect(missing.ok).toBe(false)
+    if (!missing.ok) expect(missing.error.code).toBe('CAPABILITY_UNAVAILABLE')
+
+    app.sources.create({
+      sourceId: 'secure-lms',
+      engine: 'browser-session',
+      displayName: 'Secure LMS',
+      authKind: 'token',
+      loginMode: 'manual',
+      config: {
+        loginUrl: 'https://www.example.com/login',
+        authenticatedUrlPatterns: ['^https://www\\.example\\.com/'],
+        cookieDomains: ['www.example.com'],
+      },
     })
     const connection = app.connections.create({
       sourceId: 'secure-lms',
       displayName: 'Secure LMS',
-      authKind: 'password',
+      authKind: 'token',
     })
     const secretResult = await api.setConnectionSecret({
       connectionId: connection.connectionId,
       secret: 'super-secret-value',
     })
-    expect(secretResult.ok).toBe(false)
-    if (!secretResult.ok) expect(secretResult.error.code).toBe('CAPABILITY_UNAVAILABLE')
-
-    const verify = await api.verifyConnection({ connectionId: connection.connectionId })
-    expect(verify.ok).toBe(false)
-    if (!verify.ok) expect(verify.error.code).toBe('CAPABILITY_UNAVAILABLE')
+    expect(secretResult.ok).toBe(true)
 
     const listed = await api.connections({})
     expect(listed.ok).toBe(true)
@@ -178,8 +196,9 @@ describe('academic UI host API', () => {
     expect(serialized).not.toContain('credential_ref')
     expect(serialized).not.toContain('super-secret-value')
     const source = listed.value.sources.find((entry) => entry.sourceId === 'secure-lms')
-    expect(source?.adapterAvailable).toBe(false)
-    expect(source?.state).toBe('unavailable')
+    expect(source?.adapterReady).toBe(false)
+    expect(source?.syncAvailable).toBe(false)
+    expect(source?.canLogin).toBe(true)
   })
 
   it('rejects malformed requests with a validation error, not a fake success', async () => {

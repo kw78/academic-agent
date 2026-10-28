@@ -13,18 +13,74 @@ import {
 
 const AUTH_KINDS = ['none', 'password', 'token', 'oauth'] as const
 const MAX_CONFIG_BYTES = 64 * 1024
-const FORBIDDEN_CONFIG_KEYS = new Set([
+const SECRET_SUFFIXES = [
   'password',
+  'passwd',
+  'pwd',
   'token',
-  'access_token',
-  'refresh_token',
   'cookie',
-  'authorization',
   'secret',
-  'credential',
   'apikey',
-  'api_key',
+  'authorization',
+  'credential',
+  'sessionid',
+] as const
+const SECRET_PREFIXES = ['secret', 'password', 'authorization', 'credential'] as const
+const COOKIE_SECRET_KEYS = new Set([
+  'cookie',
+  'cookies',
+  'cookieheader',
+  'cookievalue',
+  'cookiejar',
 ])
+const SECRET_PARAMS = new Set([
+  'pwd',
+  'session',
+  'sessionid',
+  'sid',
+  'auth',
+  'code',
+])
+
+function normalizedKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function isSensitiveKey(key: string): boolean {
+  const normalized = normalizedKey(key)
+  if (SECRET_PARAMS.has(normalized)) return true
+  if (COOKIE_SECRET_KEYS.has(normalized)) return true
+  if (SECRET_SUFFIXES.some((suffix) => normalized === suffix || normalized.endsWith(suffix))) {
+    return true
+  }
+  return SECRET_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+}
+
+function assertSafeString(value: string, path: string): void {
+  if (/^\s*bearer\s+/i.test(value)) {
+    throw new SourceConflictError(
+      `Source config must not contain credentials (${path}); use the credential vault`,
+    )
+  }
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return
+  }
+  if (url.username || url.password) {
+    throw new SourceConflictError(
+      `Source config must not contain credentials (${path}); use the credential vault`,
+    )
+  }
+  for (const key of url.searchParams.keys()) {
+    if (isSensitiveKey(key)) {
+      throw new SourceConflictError(
+        `Source config URL must not contain authentication parameters (${path}.${key})`,
+      )
+    }
+  }
+}
 
 const sourceInputSchema = z.object({
   sourceId: z.string().min(1).max(200).optional(),
@@ -62,13 +118,17 @@ interface SourceRow {
 }
 
 function assertNoSecrets(value: unknown, path = 'config'): void {
+  if (typeof value === 'string') {
+    assertSafeString(value, path)
+    return
+  }
   if (Array.isArray(value)) {
     value.forEach((entry, index) => assertNoSecrets(entry, `${path}[${index}]`))
     return
   }
   if (value === null || typeof value !== 'object') return
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    if (FORBIDDEN_CONFIG_KEYS.has(key.toLowerCase())) {
+    if (isSensitiveKey(key)) {
       throw new SourceConflictError(
         `Source config must not contain credentials (${path}.${key}); use the credential vault`,
       )
@@ -87,10 +147,19 @@ function parseConfig(value: Record<string, unknown> | undefined): string {
   return serialized
 }
 
+export interface SourceValidationInput {
+  engine: string
+  authKind: string
+  loginMode?: string
+  config: Record<string, unknown>
+}
+
 export interface SourceConfigStoreOptions {
   db: DatabaseSync
   clock: Clock
   ids: IdGenerator
+  /** Engine-specific schema and capability check; must not accept secrets. */
+  validateSource?: (input: SourceValidationInput) => string | undefined
 }
 
 /** Operational source definitions; secrets never live in this table. */
@@ -98,11 +167,20 @@ export class SourceConfigStore implements SourceConfigStoreApi {
   readonly #db: DatabaseSync
   readonly #clock: Clock
   readonly #ids: IdGenerator
+  readonly #validateSource: SourceConfigStoreOptions['validateSource']
 
   constructor(options: SourceConfigStoreOptions) {
     this.#db = options.db
     this.#clock = options.clock
     this.#ids = options.ids
+    this.#validateSource = options.validateSource
+  }
+
+  #assertValid(input: SourceValidationInput): void {
+    const error = this.#validateSource?.(input)
+    if (error) {
+      throw new SourceConflictError(`Source config invalid: ${error}`)
+    }
   }
 
   ensure(input: SourceConfigInput & { sourceId: string }): SourceConfig {
@@ -112,6 +190,13 @@ export class SourceConfigStore implements SourceConfigStoreApi {
 
   create(input: SourceConfigInput): SourceConfig {
     const parsed = sourceInputSchema.parse(input)
+    const configJson = parseConfig(parsed.config)
+    this.#assertValid({
+      engine: parsed.engine,
+      authKind: parsed.authKind,
+      ...(parsed.loginMode ? { loginMode: parsed.loginMode } : {}),
+      config: parsed.config ?? {},
+    })
     const sourceId = parsed.sourceId ?? this.#ids.next()
     if (this.get(sourceId)) {
       throw new SourceConflictError(`Source already exists: ${sourceId}`)
@@ -132,7 +217,7 @@ export class SourceConfigStore implements SourceConfigStoreApi {
           parsed.displayName,
           parsed.authKind,
           parsed.loginMode ?? null,
-          parseConfig(parsed.config),
+          configJson,
           JSON.stringify(parsed.capabilities ?? []),
           parsed.enabled === false ? 0 : 1,
           now,
@@ -193,6 +278,13 @@ export class SourceConfigStore implements SourceConfigStoreApi {
       capabilities: parsed.capabilities ?? current.capabilities,
       enabled: parsed.enabled ?? current.enabled,
     }
+    const configJson = parseConfig(next.config)
+    this.#assertValid({
+      engine: current.engine,
+      authKind: next.authKind,
+      ...(next.loginMode ? { loginMode: next.loginMode } : {}),
+      config: next.config,
+    })
     const now = this.#clock.now()
     this.#db
       .prepare(
@@ -206,7 +298,7 @@ export class SourceConfigStore implements SourceConfigStoreApi {
         next.displayName,
         next.authKind,
         next.loginMode ?? null,
-        parseConfig(next.config),
+        configJson,
         JSON.stringify(next.capabilities),
         next.enabled ? 1 : 0,
         now,
