@@ -44943,7 +44943,10 @@ async function createAcademicApp(options) {
       sourceEngines.register(createBrowserSessionEngine())
     );
   }
-  if (!configuredIds.has("blackboard")) {
+  const hasExistingBlackboardSource = store.database.prepare(
+    "SELECT 1 AS present FROM academic_sources WHERE engine = 'blackboard' LIMIT 1"
+  ).get() !== void 0;
+  if (!configuredIds.has("blackboard") && (hasExistingBlackboardSource || options.enableBlackboardEngine)) {
     sourceEngineRegistrations.push(
       sourceEngines.register(createBlackboardEngine())
     );

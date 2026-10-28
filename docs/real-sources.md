@@ -33,7 +33,9 @@ ACADEMIC_DB=.data/source.db npm run demo -- source sync my-lms
 
 凭据只进入 DPAPI；source `config_json` 拒绝 password/token/cookie 等凭据字段。调试 HTML/诊断文件应放在 `.data` 并定期删除；不要把 Cookie 粘贴到聊天、Issue、日志或任何远端工具。
 
-## 首个真实平台：Blackboard Learn（只读）
+## 首个真实平台：Blackboard Learn（只读，旧版兼容）
+
+> **定位：** `engine=blackboard` 是旧版兼容专用引擎，不是新接入的首选。新平台统一使用 `browser-session` + 声明式 Manifest/Agent 候选；新数据库默认不加载 Blackboard 引擎，只有已存在 `engine=blackboard` 的 source 时才自动加载（或显式 `enableBlackboardEngine`）。
 
 `engine=blackboard` 复用浏览器登录/验证，读取课程、作业、考试与测验，不提交作业、不修改平台数据。推荐配置：
 

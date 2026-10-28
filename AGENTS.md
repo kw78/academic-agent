@@ -154,7 +154,7 @@ docs/adr/                      # 架构决策记录
 
 | Gate | 内容 | 状态 |
 |---|---|---|
-| Gate 0 | 真实基线 | 已完成：typecheck、182 项测试/35 文件、两个构建、DSH selftest；桌面干净启动待复核 |
+| Gate 0 | 真实基线 | 已完成：typecheck、183 项测试/35 文件、两个构建、DSH selftest；桌面干净启动待复核 |
 | Gate 1 | 桌面端可启动、可操作 | 用户已手工检查当前 Desktop 基本流程，无阻塞；链接配置已置顶；文件级 HMR/完整生命周期专项仍未验证 |
 | Gate 2 | 真实平台登录与会话 | 已完成：BB 与 USTC 教务真实登录/验证；正式同步新增“连接必须已验证”闸门；删除凭据不删学业数据 |
 | Gate 3 | 一个平台的数据同步闭环 | 已完成：BB 真实课程/作业/文件夹；考试/测验 fixture 验证并标注；JW 考试真实同步 |
@@ -164,7 +164,7 @@ docs/adr/                      # 架构决策记录
 
 仍有限制：DSH Desktop 文件级 HMR/真实 Session 手工复验、Blackboard 真实测试项样本、Manifest XML/POST/多页自动采样、任意脚本沙箱未完成。
 
-首个真实平台只读 Adapter 已落地在 `adapters/ustc-blackboard`：读取课程、作业、考试与测验，支持文件夹/下一页遍历，不提交作业、不读取附件与成绩；`engine=blackboard` 复用通用浏览器登录/会话。真实会话已验证 13 门 `2026FA` 课程中的 5 门内容区、9 个含文件夹作业与截止时间；当前账号没有暴露测试项，考试/测验仍以脱敏 fixture 验证，不得声称测试模块已完整真实验收。
+首个真实平台只读 Adapter 已落地在 `adapters/ustc-blackboard`：读取课程、作业、考试与测验，支持文件夹/下一页遍历，不提交作业、不读取附件与成绩；`engine=blackboard` 复用通用浏览器登录/会话。**该专用 engine 现在只作旧版兼容：新数据库默认不加载；存在 `engine=blackboard` 的已有 source 时才自动加载，或在 createAcademicApp 显式传 `enableBlackboardEngine: true`。新平台统一用 browser-session/declarative + Manifest。** 真实会话已验证 13 门 `2026FA` 课程中的 5 门内容区、9 个含文件夹作业与截止时间；当前账号没有暴露测试项，考试/测验仍以脱敏 fixture 验证，不得声称测试模块已完整真实验收。
 
 声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、常量/模板、类型转换/默认值/必需字段诊断、`next`/页码/offset 分页、字段映射、允许主机与路径、总请求/行/字节/时长上限、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选流水线已实现：Agent 可调用只读 `academic_probe_source` 获取带 SHA-256 摘要的脱敏证据，生成 Manifest 并用显式样本离线回放；验证按 schema、字段契约、访问范围、样本回放分阶段报告，候选摘要包含允许主机/路径/数据类型/字段；候选保存与启用分开：Agent 可暂存候选（不需要写权限，不激活、不建源），只有 validated 版本可启用，启用仍需可信宿主逐次授权。激活语义统一在应用服务中实现：UI、CLI 与提供回调的 Agent 工具都会创建/更新可同步的 declarative 数据源并复制同站点会话，不返回秘密；自动建源命名为 `<Manifest 显示名>（同步）`，原登录源保留，UI 标记“登录源/同步源”；激活时从候选表重新注册 Manifest，不需要重启 Host。`assignments.scope=source` 让静态作业/考试列表只请求一次并按行内课程 ID 归属，避免按课程重复抓取。UI“连接”页提供快速添加、探测、候选列表、文件导入、验证报告、启用/回滚；样本回放明确标注“未做真实同步”。CLI `adapter validate/register/activate/rollback` 同样可用。设置页提供默认关闭的“Agent 自动接入”偏好：开启后 Agent 可启用 validated 候选，并用 `academic_preview_source_sync` / `academic_sync_source` 预览、同步 declarative 源，不需要逐次审核；仍不能启用未验证候选、操作非 declarative 源、读取凭据、修改任务或提交作业。尚未实现 Host 直接调用模型生成、多页自动采样、任意 JavaScript 生成与沙箱执行。
 
@@ -195,7 +195,7 @@ MVP 后能力（2026-10-28）：Host 统一返回数据源阶段与唯一下一�
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（182 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（183 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/编辑/归档/删除/恢复、来源事项归档/恢复、任务创建/编辑/完成/重开/删除/恢复/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、Agent 自动接入开关、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 

@@ -3413,12 +3413,12 @@ function QuickAdd({
   });
   const platforms = [
     {
-      id: "blackboard",
-      label: "Blackboard Learn\uFF08\u8BFE\u7A0B\u3001\u4F5C\u4E1A\u3001\u8003\u8BD5\u3001\u6D4B\u9A8C\uFF09"
-    },
-    {
       id: "browser-session",
       label: "\u901A\u7528\u7F51\u7AD9\uFF08\u5148\u767B\u5F55\uFF0C\u518D\u751F\u6210\u9002\u914D\u5668\uFF09"
+    },
+    {
+      id: "blackboard",
+      label: "Blackboard Learn\uFF08\u65E7\u7248\u517C\u5BB9\uFF0C\u4EC5\u5EFA\u8BAE\u5DF2\u6709\u6E90\u4F7F\u7528\uFF09"
     }
   ].filter((platform2) => data.engines.some((engine) => engine.id === platform2.id));
   const [platform, setPlatform] = (0, import_react6.useState)(platforms[0]?.id ?? "");

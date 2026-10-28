@@ -783,12 +783,12 @@ function QuickAdd({
   })
   const platforms = [
     {
-      id: 'blackboard',
-      label: 'Blackboard Learn（课程、作业、考试、测验）',
-    },
-    {
       id: 'browser-session',
       label: '通用网站（先登录，再生成适配器）',
+    },
+    {
+      id: 'blackboard',
+      label: 'Blackboard Learn（旧版兼容，仅建议已有源使用）',
     },
   ].filter((platform) => data.engines.some((engine) => engine.id === platform.id))
   const [platform, setPlatform] = useState(platforms[0]?.id ?? '')

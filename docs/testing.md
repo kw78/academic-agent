@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**182 项测试通过**（35 个测试文件）。
+当前基线：**183 项测试通过**（35 个测试文件）。
 
 ## 分层
 

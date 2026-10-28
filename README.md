@@ -26,7 +26,7 @@ GitHub: <https://github.com/kw78/academic-agent>
 - **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，当前 19 个工具（含 2 个自动接入工具），并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
 - 前端 UI 已验证（`packages/academic-dsh-ui`）：见 [前端验证记录](docs/frontend-verification.md)。
 - 数据源状态已拆分为配置、认证、同步健康与 Adapter 就绪度；表单只允许 engine 声明的 `authKind` / `loginMode`。
-- **Blackboard 只读 Adapter 已接入**：`engine=blackboard` 复用浏览器会话读取课程/作业，支持预览后确认同步；真实会话已在临时库验证（2 门课程、7 个作业），不提交作业。
+- **Blackboard 只读 Adapter（旧版兼容）**：`engine=blackboard` 复用浏览器会话读取课程/作业；新数据库默认不加载该专用引擎，新平台统一用 `browser-session` + Manifest/Agent 候选。已有 Blackboard 源仍会自动加载兼容引擎。真实会话已在临时库验证（2 门课程、7 个作业），不提交作业。
 - **声明式 Adapter Runtime 已落地**：`engine=declarative` 通过版本化 Manifest 驱动 HTML/JSON 提取、字段类型转换/默认值、`next`/页码/offset 分页和字段映射，并受请求数、行数、字节与时长限制；作业列表可声明 `scope=source`，静态 URL 只请求一次并按行内课程 ID 归属，避免按课程重复抓取；新网站优先加 Manifest，不新增 engine。
 - **教学 skill 包装**：`skills/academic-tutor` 提供稳定的教学契约（事实/材料/推断分离、不提交作业、不编造材料），`modes/` 可增量添加 explain/hint/check/review 等模式，不需要新增工具或代码；安装方式见该目录 README。
 - **AI 候选 Adapter 流水线已落地**：AI 可生成 Manifest，并用真实页面样本或 Host 捕获的 `sampleId` 做离线回放；原始响应的 body 只留在宿主内存（60 分钟 TTL，按 URL 复用），不进入模型上下文；验证按 schema、字段契约、访问范围、样本回放分阶段报告，候选列表展示允许主机/路径/数据类型/字段；Agent 可暂存候选但不会激活或建源，启用仍需用户操作/可信授权，并会创建或更新 declarative 同步源；CLI 与 UI 的启用行为一致，不需要重启；支持版本启用/回滚。样本回放不等于真实同步，UI 会明确标注。设置页可开启“Agent 自动接入”（默认关闭）：开启后 Agent 可自行启用已验证候选并预览/同步其 declarative 源，不再逐次审核；仍不能启用未验证候选、读取凭据或提交作业。
@@ -233,7 +233,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 
 ## 已知限制与后续
 
-- **Gate 0/2–6 已完成**：类型检查、182 项测试、构建、DSH selftest、DSH Web UI 独立库同步、真实 BB/JW 平台闭环均已实测；详见 [docs/mvp-verification.md](docs/mvp-verification.md)。
+- **Gate 0/2–6 已完成**：类型检查、183 项测试、构建、DSH selftest、DSH Web UI 独立库同步、真实 BB/JW 平台闭环均已实测；详见 [docs/mvp-verification.md](docs/mvp-verification.md)。
 - **Gate 1**：DSH Web 已验证 UI/Host/同步；用户已在 Desktop 当前构建手工检查基本流程，未报告问题；文件级 HMR/完整生命周期专项仍未验证。
 - 系统凭据库当前为 Windows DPAPI；Credential Manager/其他 OS vault 是后续可替换实现。
 - **接入流程**：给定 HTTPS 网址后可登录、验证、只读探测；探测支持同一来源主机内的额外 URL、同站脚本、候选接口、表格表头/class 与容器 class，`capture=true` 可把真实响应存入 Host 临时样本并返回 `sampleId`，Agent 用 `sampleIds` 直接验证 Manifest，无需你手工导出 DOM/Network。探测按来源限速（每个来源最多 3 次/分钟，按 20 秒间隔执行），429/403/登录页立即停止；相同 URL 样本复用。用户在“连接”页确认启用/回滚。仍未实现任意站点全自动多页发现或任意 JavaScript。
@@ -251,4 +251,4 @@ npm test
 npm run build:dsh
 ```
 
-共 182 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态、Blackboard 只读解析/同步、声明式 Adapter（含 source 级作业请求）、AI 候选暂存/校验/启用、个人数据编辑/软删除/恢复、同步重试/并发与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。
+共 183 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态、Blackboard 只读解析/同步、声明式 Adapter（含 source 级作业请求）、AI 候选暂存/校验/启用、个人数据编辑/软删除/恢复、同步重试/并发与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。

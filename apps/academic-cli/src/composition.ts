@@ -140,6 +140,8 @@ export interface AcademicAppOptions {
   defaultTaskEstimates?: Partial<Record<'assignment' | 'exam' | 'quiz', number>>
   /** Additional vendor-neutral engines (tests or reviewed extensions). */
   sourceEngines?: SourceEngine[]
+  /** Explicitly load the legacy Blackboard engine for new databases. */
+  enableBlackboardEngine?: boolean
   manifestRegistry?: ManifestRegistry
   /** Test seams for the read-only source probe. */
   probeFetch?: typeof fetch
@@ -443,7 +445,16 @@ export async function createAcademicApp(
       sourceEngines.register(createBrowserSessionEngine()),
     )
   }
-  if (!configuredIds.has('blackboard')) {
+  const hasExistingBlackboardSource =
+    store.database
+      .prepare(
+        "SELECT 1 AS present FROM academic_sources WHERE engine = 'blackboard' LIMIT 1",
+      )
+      .get() !== undefined
+  if (
+    !configuredIds.has('blackboard') &&
+    (hasExistingBlackboardSource || options.enableBlackboardEngine)
+  ) {
     sourceEngineRegistrations.push(
       sourceEngines.register(createBlackboardEngine()),
     )

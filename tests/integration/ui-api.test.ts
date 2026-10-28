@@ -60,6 +60,17 @@ describe('academic UI host API', () => {
     expect(tasks.value.timeZone).toBeTruthy()
   })
 
+  it('does not offer the legacy Blackboard engine for new sources', async () => {
+    const { app, api } = await setup()
+    expect(app.sourceEngines.get('blackboard')).toBeUndefined()
+    const listed = await api.connections({})
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    expect(listed.value.engines.map((engine) => engine.id)).not.toContain(
+      'blackboard',
+    )
+  })
+
   it('routes task transitions through Command API and refreshes state', async () => {
     const { api } = await setup()
     const tasks = await api.tasks({ status: 'active' })

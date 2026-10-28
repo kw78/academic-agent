@@ -115,7 +115,7 @@ npm test
 - `tests/integration/preferences.test.ts`：课程优先级持久化与计划排序。
 - `tests/integration/web-sessions.test.ts`、`source-browser.test.ts`：Cookie 作用域、逐跳重定向、SSRF、超时与流式响应上限。
 
-当前基线：182 项测试通过（35 个测试文件）。
+当前基线：183 项测试通过（35 个测试文件）。
 
 ## 未完成/未验证
 
