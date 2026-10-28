@@ -171,6 +171,13 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 - `tests/integration/dispatcher.test.ts`：消费者在自己的处理器中被卸载后，同批次不再收到后续事件。
 - `tests/e2e/app.test.ts`：`close()` 等待在途作业结束后才关闭存储。
 
+## 日常使用导向 UI（UX-001–008）
+
+- `tests/integration/ui-api.test.ts`：505 个任务时 `tasks` 仍返回全量 `total/counts`，第二页之外的任务可通过 Host `search` 筛到；25 个近期事项的 `upcomingTotal` 不被 20 条展示切片误计；今天/逾期按业务时区计算；归档旧计划后保留 `previewId`，候选可继续确认。
+- `tests/unit/ui-view.test.ts`：任务标题/来源标题搜索筛选；既有截止时间、仅日期、未知截止和计划分组回归。
+- `tests/unit/ui-security.test.ts`：客户端只保存页面 tab 与首次引导关闭标记两个非敏感偏好，不出现凭据引用、会话存储或直接 `fetch`。
+- 浏览器点验覆盖导航分组、今天主流程、课程上下文、资料课程绑定、连接页单一主动作、计划差异/两步确认、设置分区、提醒入口、390–1280 px 无横向溢出、键盘切页与 Esc；未验证暗色主题、Desktop 与失败注入，详见 [前端验证记录](frontend-verification.md#日常使用导向-ui-改版2026-10-28)。
+
 ## 应用备份与多步骤恢复
 
 - `tests/e2e/backup-application.test.ts`：应用备份包含数据库、资料原文件与 SHA-256 清单；恢复到新目录后课程/事项/资料检索可用；资料文件被篡改或目标已存在时拒绝恢复且不留下目标目录。

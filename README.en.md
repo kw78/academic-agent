@@ -102,7 +102,7 @@ dsh plugin --profile academic-web add \
   <path-to-repo>/packages/academic-dsh-ui
 ```
 
-The UI includes: Overview, Tasks, Plan, Connections, Materials, Automation and Settings.
+The UI is grouped into Daily (Today, Tasks, Plan, Courses, Materials) and Manage (Connections, Automation, Settings). Today leads with the next confirmed block, today's tasks and overdue work; each course page aggregates tasks, sources and materials.
 
 The Agent is read-only by default. Writes such as changing tasks or importing/deleting materials require per-call approval from the trusted host. Without a DSH approval UI, those writes are rejected; CLI and direct UI actions still work. The “Agent auto-connect” setting described above is a separate, limited user authorization for validated candidate activation and declarative source preview / sync.
 

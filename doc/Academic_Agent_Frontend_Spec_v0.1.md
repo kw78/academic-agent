@@ -404,7 +404,7 @@ Intent 决定产品方向；主 Architecture Spec
 若本 Spec 与 Intent 冲突，以 Intent
 为准。若锁定版本不支持某项设计，应记录实际限制并提出最小调整方案，不得默默改变方向。
 
-## 16. 日常使用导向的 UI 改进设计（2026-10-28，待实施）
+## 16. 日常使用导向的 UI 改进设计（2026-10-28，已实施；部分边界待验收）
 
 ### 16.1 分析结论与证据边界
 
@@ -547,7 +547,7 @@ Intent 决定产品方向；主 Architecture Spec
 
 ### 16.10 验收与实施映射
 
-执行任务见 [Roadmap §16.1](ACADEMIC_AGENT_ROADMAP_MVP_FIRST.md#161-ui-改进执行队列2026-10-28新增)。每项完成后记录实现、自动化、Web、Desktop 四类证据；当前均为待实施。
+执行任务见 [Roadmap §16.1](ACADEMIC_AGENT_ROADMAP_MVP_FIRST.md#161-ui-改进执行队列2026-10-28新增)。2026-10-28 已完成实现并通过自动化与 DSH Web 点验，证据见 [前端验证记录](../docs/frontend-verification.md#日常使用导向-ui-改版2026-10-28)；Desktop、暗色主题、真实登录与计划失败注入仍待专项验收。
 
 | 用例 | 可检查的通过条件 |
 |---|---|
