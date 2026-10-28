@@ -1127,6 +1127,40 @@ export function ConnectionsPage({ ctx, active }: PageProps) {
 
       {data && (
         <>
+          <Section
+            title="添加平台"
+            subtitle="先配置平台链接并完成登录；后续验证、预览和同步都以这里为入口"
+          >
+            <QuickAdd ctx={ctx} data={data} onCreated={refresh} />
+          </Section>
+
+          <Section
+            title="数据源"
+            subtitle="数据库中的 source 配置 + 通用 engine；凭据与状态分开保存"
+          >
+            {data.sources.length === 0 ? (
+              <EmptyState title="还没有数据源">
+                在上方填写平台网址添加数据源。
+              </EmptyState>
+            ) : (
+              <ul className="ac-source-grid">
+                {data.sources.map((source) => (
+                  <SourceCard
+                    key={source.sourceId}
+                    ctx={ctx}
+                    source={source}
+                    timeZone={timeZone}
+                    refresh={refresh}
+                  />
+                ))}
+              </ul>
+            )}
+            <details className="ac-advanced">
+              <summary>高级：手动配置 Engine 与 JSON</summary>
+              <SourceForm ctx={ctx} data={data} onCreated={refresh} />
+            </details>
+          </Section>
+
           <Section title="课程" subtitle="课程身份与外部来源分开保存">
             <form
               className="ac-form-card"
@@ -1183,34 +1217,6 @@ export function ConnectionsPage({ ctx, active }: PageProps) {
               timeZone={timeZone}
               onChanged={refresh}
             />
-          </Section>
-
-          <Section
-            title="数据源"
-            subtitle="数据库中的 source 配置 + 通用 engine；凭据与状态分开保存"
-          >
-            {data.sources.length === 0 ? (
-              <EmptyState title="还没有数据源">
-                在下方选择 engine 并添加数据源配置。
-              </EmptyState>
-            ) : (
-              <ul className="ac-source-grid">
-                {data.sources.map((source) => (
-                  <SourceCard
-                    key={source.sourceId}
-                    ctx={ctx}
-                    source={source}
-                    timeZone={timeZone}
-                    refresh={refresh}
-                  />
-                ))}
-              </ul>
-            )}
-            <QuickAdd ctx={ctx} data={data} onCreated={refresh} />
-            <details className="ac-advanced">
-              <summary>高级：手动配置 Engine 与 JSON</summary>
-              <SourceForm ctx={ctx} data={data} onCreated={refresh} />
-            </details>
           </Section>
 
           <CandidatePanel ctx={ctx} active={active} onChanged={refresh} />
