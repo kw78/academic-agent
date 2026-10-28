@@ -27044,6 +27044,7 @@ function normalizeFixtureSnapshot(snapshot) {
 var FixtureLmsAdapter = class {
   id;
   sourceId;
+  version = "1.0.0";
   #fixturePath;
   #snapshot;
   constructor(options = {}) {
@@ -27620,6 +27621,7 @@ var BlackboardClient = class {
 };
 var BlackboardReadOnlyAdapter = class {
   id = "blackboard.readonly";
+  version = "1.0.0";
   sourceId;
   #config;
   #options;
@@ -39076,12 +39078,14 @@ ${result.body.slice(0, 4e3)}`);
 var ManifestAdapter = class {
   id;
   sourceId;
+  version;
   #manifest;
   #config;
   #options;
   constructor(manifest, sourceId, config2, options) {
     this.id = `declarative.${manifest.adapterId}`;
     this.sourceId = sourceId;
+    this.version = manifest.version;
     this.#manifest = manifest;
     this.#config = config2;
     this.#options = options;
@@ -40320,7 +40324,11 @@ var ConnectorService = class {
   async sync(adapter2, options = {}) {
     const runId = this.#ids.next();
     const startedAt = this.#clock.now();
-    this.#insertRunningRun(runId, adapter2.sourceId, startedAt);
+    const adapterInfo = {
+      adapterId: adapter2.id,
+      ...adapter2.version ? { adapterVersion: adapter2.version } : {}
+    };
+    this.#insertRunningRun(runId, adapter2.sourceId, startedAt, adapter2);
     let credentials;
     if (options.connection) {
       try {
@@ -40340,7 +40348,8 @@ var ConnectorService = class {
           updated: 0,
           warnings: [],
           errorCode: "CONNECTION_UNAVAILABLE",
-          errorMessage: errorMessage(error62)
+          errorMessage: errorMessage(error62),
+          ...adapterInfo
         };
         this.#finishRun(summary2);
         return summary2;
@@ -40382,7 +40391,8 @@ var ConnectorService = class {
         updated: 0,
         warnings: [],
         errorCode: authFailure ? "AUTH_REQUIRED" : "TRANSIENT",
-        errorMessage: errorMessage(error62)
+        errorMessage: errorMessage(error62),
+        ...adapterInfo
       };
       this.#finishRun(summary2);
       return summary2;
@@ -40463,7 +40473,8 @@ var ConnectorService = class {
         itemsSeen: adapterResult.items.length,
         created,
         updated,
-        warnings
+        warnings,
+        ...adapterInfo
       };
       if (options.connection) {
         await options.connection.credentials.markSynced(
@@ -40485,7 +40496,8 @@ var ConnectorService = class {
         updated,
         warnings,
         errorCode: "SYNC_FAILED",
-        errorMessage: errorMessage(error62)
+        errorMessage: errorMessage(error62),
+        ...adapterInfo
       };
       this.#finishRun(summary2);
       return summary2;
@@ -40627,19 +40639,27 @@ var ConnectorService = class {
       payload
     });
   }
-  #insertRunningRun(runId, sourceId, startedAt) {
+  #insertRunningRun(runId, sourceId, startedAt, adapter2) {
     this.#db.prepare(
       `INSERT INTO sync_runs (
            run_id, source_id, status, started_at, items_seen, created,
-           updated, warnings_json, correlation_id
-         ) VALUES (?, ?, 'running', ?, 0, 0, 0, '[]', ?)`
-    ).run(runId, sourceId, startedAt, runId);
+           updated, warnings_json, correlation_id, adapter_id, adapter_version
+         ) VALUES (?, ?, 'running', ?, 0, 0, 0, '[]', ?, ?, ?)`
+    ).run(
+      runId,
+      sourceId,
+      startedAt,
+      runId,
+      adapter2.id,
+      adapter2.version ?? null
+    );
   }
   #finishRun(summary2) {
     this.#db.prepare(
       `UPDATE sync_runs SET
            status = ?, finished_at = ?, items_seen = ?, created = ?, updated = ?,
-           warnings_json = ?, error_code = ?, error_message = ?
+           warnings_json = ?, error_code = ?, error_message = ?,
+           adapter_id = ?, adapter_version = ?
          WHERE run_id = ?`
     ).run(
       summary2.status,
@@ -40650,6 +40670,8 @@ var ConnectorService = class {
       JSON.stringify(summary2.warnings),
       summary2.errorCode ?? null,
       summary2.errorMessage ?? null,
+      summary2.adapterId ?? null,
+      summary2.adapterVersion ?? null,
       summary2.runId
     );
   }
@@ -43875,7 +43897,9 @@ var SqliteQueryService = class {
       updated: Number(row.updated),
       warnings: parseJson3(row.warnings_json),
       errorCode: row.error_code == null ? void 0 : String(row.error_code),
-      errorMessage: row.error_message == null ? void 0 : String(row.error_message)
+      errorMessage: row.error_message == null ? void 0 : String(row.error_message),
+      adapterId: row.adapter_id == null ? void 0 : String(row.adapter_id),
+      adapterVersion: row.adapter_version == null ? void 0 : String(row.adapter_version)
     };
   }
 };
