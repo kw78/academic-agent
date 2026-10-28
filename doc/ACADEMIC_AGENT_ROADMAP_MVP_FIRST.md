@@ -291,7 +291,7 @@ Desktop 证据分别标注。
 **目标：** 最新 Quick Add、候选流程和 UI bundle 必须在真实 Desktop
 中验收；历史记录或 Web profile 不能替代当前构建。
 
-### C-01 --- Desktop 启动与插件生命周期 `[P0 / BLOCKED]`
+### C-01 --- Desktop 启动与插件生命周期 `[P0 / PARTIAL]`
 
 -   在真实 DSH Desktop 启动当前构建。
 -   验证"学业"入口、总览、连接、任务、计划、自动化和设置页面。

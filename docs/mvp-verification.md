@@ -31,9 +31,8 @@
 - 用真实 Blackboard 临时库 `.data/bb-m2-sync.db`（2 门课程/7 个作业）启动同一 Web profile：总览显示 9 个进行中任务、2 个近期截止、9 条未读提醒；任务页显示真实 HW1–HW7、来源链接、date-only 考试与 `unknown` 截止（HW4），并明确“本地完成状态不会冒充学校提交状态”。
 - 此前已实测 Desktop profile 加载 UI/Host、创建默认数据库与 3 个后台作业、禁用/启用 UI 后入口恢复且不重复创建资源。
 
-未完成：**本轮未重复启动 DSH Desktop 手工验收**。CLI 无法启动 desktop profile（Electron 独占管理），且默认库可能被桌面占用；需要用户在桌面端执行一次“打开学业面板 → 刷新 → 禁用/启用插件”。DSH Web 的 UI/Host 实测不能替代 Desktop 验收。
-
-用户已明确选择跳过本轮 Desktop 手工复核，因此该项按“未验证”保留，不标记为通过；此前 Desktop 实测记录仍可作为历史证据。
+用户已在当前 Desktop 构建上手工检查基本启动、页面与数据展示，反馈“没什么问题”；同时要求把平台链接配置放到“连接”页最前面，已修复。
+仍保留未验证项：Desktop 文件级 HMR、真实 Session 生命周期、禁用/启用插件后的资源计数专项复核。DSH Web 的 UI/Host 实测不能替代这些 Desktop 专项。
 
 ## Gate 2 — 登录与会话
 
