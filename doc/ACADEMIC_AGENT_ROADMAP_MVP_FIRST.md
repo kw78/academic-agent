@@ -932,11 +932,11 @@ SaaS、分布式微服务、插件市场，以及没有数据依据的学习能�
 - **F-01/F-02/F-03 DONE**：Manifest 明确拒绝未知 `schemaVersion`；候选验证按 schema、字段契约、访问范围、样本回放分阶段报告；字段支持类型转换、默认值、必需字段与结构退化诊断；分页支持 `next`、页码与 offset，并受页数、行数、总字节、时长与请求数限制，截断不误报完整。
 - **G-01/G-02/G-04/G-05/G-06 DONE**：Host 返回统一接入阶段与唯一下一步；探测证据含 SHA-256 摘要；候选列表展示允许主机、路径、数据类型与字段；同步失败分类为认证/网络/权限/结构/质量并给出不扩大权限的修复建议。
 - **H-01/H-02 DONE**：课程优先级持久化在 `user_preferences`，仅作为任务优先级之后的排序依据；设置页可查看/修改。计划候选显示可安排/已安排/未安排时长，容量不足与截止已过分开解释，并用真实 Blackboard 任务快照评估。H-03/H-04 为 PARTIAL：UI 已带入课程上下文与按课程复习清单，但尚无持久化反馈与真实模型讲解验收；H-05 继续 PARKED。
-- **G-03 PARTIAL**：已支持同主机 URL 探测、脚本 URL、候选接口路径和 Host 侧临时样本捕获（sampleId，15 分钟 TTL）；自动多页发现、全局采样上限与跨进程样本持久化仍未实现。
+- **G-03 PARTIAL**：已支持同主机 URL 探测、脚本 URL、候选接口路径和 Host 侧临时样本捕获（sampleId，60 分钟 TTL、按 URL 复用）；自动多页发现、全局采样上限与跨进程样本持久化仍未实现。
 - **I-03/I-04/I-05 DONE**：`restore <backup> <target>` 在独立目录执行完整性与投影校验；1k/10k 事项性能基线由 `npm run benchmark` 记录；`sync_runs` 记录 Adapter ID/版本；0010→当前迁移升级测试验证数据保留。I-01/I-02/I-06 仍为 PARTIAL：事件本身未写 Adapter 版本、文件级 HMR/真实 DSH Session 生命周期与 profile 升级演练未完成。
 - **K-01/K-02 PARTIAL，K-03 DONE**：当前能力注册、停用与设置页只读能力/权限展示已有实现；未建设插件市场或额外抽象。J 组保持独立决策，未启动。
 
-验证：`npm run typecheck`、`npm test`（33 文件/171 项）、`npm run build:dsh`、`npm run build:ui` 通过。仍需真实环境确认的边界：Desktop 文件级 HMR/完整生命周期、Blackboard 真实考试/测验样本、JW 会话过期后的重新登录 E2E，以及新 UI 面板的真实浏览器点验。
+验证：`npm run typecheck`、`npm test`（34 文件/173 项）、`npm run build:dsh`、`npm run build:ui` 通过。仍需真实环境确认的边界：Desktop 文件级 HMR/完整生命周期、Blackboard 真实考试/测验样本、JW 会话过期后的重新登录 E2E，以及新 UI 面板的真实浏览器点验。
 
 ## 19. 当前唯一正确的推进策略
 

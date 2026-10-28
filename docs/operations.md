@@ -55,7 +55,9 @@ ACADEMIC_DB=.data/academic.db npm run demo -- adapter rollback <adapterId> [vers
 ACADEMIC_DB=.data/academic.db npm run demo -- adapter list
 ```
 
-- `samples.json` 是 `[{ "url": "https://...", "body": "..." }]`，必须覆盖 Manifest 会请求的每个 URL。Agent 也可以对真实页面调用 `academic_probe_source` 并传 `capture=true`，宿主把原始响应保存在内存（15 分钟 TTL、最多 30 个），只把 `sampleId` 返回给 Agent；随后用 `sampleIds` 调用验证，原始 body 不进入模型上下文。合成 HTML 只能用于开发测试，不能用于验收。
+- `samples.json` 是 `[{ "url": "https://...", "body": "..." }]`，必须覆盖 Manifest 会请求的每个 URL。Agent 也可以对真实页面调用 `academic_probe_source` 并传 `capture=true`，宿主把原始响应保存在内存（60 分钟 TTL、按 URL 复用、最多 30 个），只把 `sampleId` 返回给 Agent；随后用 `sampleIds` 调用验证，原始 body 不进入模型上下文。合成 HTML 只能用于开发测试，不能用于验收。
+- 探测限速：每个来源 10 分钟内最多 10 次请求，最小间隔 1.2 秒；429/403/登录页/验证码立即停止，不自动重试；相同 URL 的捕获样本在 TTL 内复用，避免重复抓取。测试环境可通过 `probeMinIntervalMs: 0` 关闭间隔。
+- 新建数据库的内置同步任务默认 60 分钟；已有数据库保持原周期，需在设置页调整。提醒扫描仍是本地确定性操作，不访问外部站点。
 - 候选不会自动进入同步；只有显式启用的 validated 版本会被 `engine=declarative` 使用。UI 启用后会创建/更新 `adapter-<adapterId>` 数据源；若已有同站点浏览器会话，Host 在内部复制会话到新连接，成功响应不包含秘密。
 - Agent 的 `academic_validate_adapter_candidate` 与 `academic_probe_source` 只读；注册/启用需要可信宿主逐次授权。CLI 操作用户或 UI 点击即授权者。
 - 记录：候选报告与状态持久化，激活时间在 `adapter_active.activated_at`；旧 validated 版本可回滚。
