@@ -28,6 +28,7 @@ GitHub: <https://github.com/kw78/academic-agent>
 - 数据源状态已拆分为配置、认证、同步健康与 Adapter 就绪度；表单只允许 engine 声明的 `authKind` / `loginMode`。
 - **Blackboard 只读 Adapter 已接入**：`engine=blackboard` 复用浏览器会话读取课程/作业，支持预览后确认同步；真实会话已在临时库验证（2 门课程、7 个作业），不提交作业。
 - **声明式 Adapter Runtime 已落地**：`engine=declarative` 通过版本化 Manifest 驱动 HTML/JSON 提取、字段类型转换/默认值、`next`/页码/offset 分页和字段映射，并受请求数、行数、字节与时长限制；新网站优先加 Manifest，不新增 engine。
+- **教学 skill 包装**：`skills/academic-tutor` 提供稳定的教学契约（事实/材料/推断分离、不提交作业、不编造材料），`modes/` 可增量添加 explain/hint/check/review 等模式，不需要新增工具或代码；安装方式见该目录 README。
 - **AI 候选 Adapter 流水线已落地**：AI 可生成 Manifest，并用真实页面样本或 Host 捕获的 `sampleId` 做离线回放；原始响应的 body 只留在宿主内存（60 分钟 TTL，按 URL 复用），不进入模型上下文；验证按 schema、字段契约、访问范围、样本回放分阶段报告，候选列表展示允许主机/路径/数据类型/字段；保存后需校验通过、显式启用才进入同步，支持版本启用/回滚；Agent 校验只读，注册/启用需要可信授权。
 - **接入状态可解释**：Host 统一返回“待登录/已登录未验证/待首次同步/已启用/部分同步/失败”等阶段与唯一“下一步”；同步失败按认证、网络、权限、结构、质量分类并给出修复建议。
 - **用户控制扩展**：课程优先级持久化并作为计划排序的第二依据；任务页提供按课程分组的复习清单与带上下文的 Agent 入口。
