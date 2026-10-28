@@ -60,7 +60,9 @@ import type {
   SettingsView,
   SourceIdRequest,
   SourceProbeEvidence,
+  SourceNextStep,
   SourceSecretRequest,
+  SourceStage,
   SourceStatus,
   SyncNowRequest,
   TaskCard,
@@ -533,6 +535,96 @@ function sourceState(source: SourceStatus): SourceStatus['state'] {
   return 'configured'
 }
 
+function sourceStage(source: SourceStatus): SourceStage {
+  if (source.configuration === 'archived') return 'archived'
+  if (source.configuration === 'disabled') return 'disabled'
+  if (!source.engineKnown) return 'unsupported'
+  if (source.syncHealth === 'running') return 'syncing'
+  if (
+    source.syncHealth === 'auth-required' ||
+    source.authentication === 'missing' ||
+    source.authentication === 'expired' ||
+    source.authentication === 'rejected'
+  ) {
+    return 'login-required'
+  }
+  if (source.authentication === 'saved') return 'login-saved'
+  if (!source.adapterReady) return 'verified'
+  if (source.syncHealth === 'failed') return 'failed'
+  if (source.syncHealth === 'partial') return 'degraded'
+  if (source.syncHealth === 'never-synced') return 'ready'
+  return 'enabled'
+}
+
+function sourceNextStep(source: SourceStatus): SourceNextStep {
+  if (source.configuration === 'archived') {
+    return { action: 'none', label: '数据源已归档；历史数据仍保留' }
+  }
+  if (source.configuration === 'disabled') {
+    return { action: 'none', label: '数据源已停用；启用后才能同步' }
+  }
+  if (!source.engineKnown) {
+    return {
+      action: 'fix',
+      label: '加载或升级对应数据源引擎',
+      reason: '当前版本未加载该引擎',
+    }
+  }
+  if (
+    source.syncHealth === 'auth-required' ||
+    source.authentication === 'missing' ||
+    source.authentication === 'expired' ||
+    source.authentication === 'rejected'
+  ) {
+    if (source.canLogin) {
+      return {
+        action: 'login',
+        label:
+          source.authentication === 'missing' ? '登录平台' : '重新登录平台',
+        ...(source.connection?.lastError
+          ? { reason: source.connection.lastError }
+          : {}),
+      }
+    }
+    return {
+      action: 'fix',
+      label: '配置认证会话',
+      reason: '该引擎没有浏览器登录入口',
+    }
+  }
+  if (source.authentication === 'saved') {
+    return source.canVerify
+      ? { action: 'verify', label: '验证连接后同步' }
+      : { action: 'fix', label: '当前引擎不支持会话验证' }
+  }
+  if (!source.adapterReady) {
+    return {
+      action: 'none',
+      label: '生成或配置同步 Adapter',
+      reason: '当前引擎没有可用的同步 Adapter',
+    }
+  }
+  if (source.syncHealth === 'running') {
+    return { action: 'none', label: '同步进行中' }
+  }
+  if (source.syncHealth === 'failed') {
+    return {
+      action: 'sync',
+      label: '查看失败原因后重试同步',
+      ...(source.connection?.lastError
+        ? { reason: source.connection.lastError }
+        : {}),
+    }
+  }
+  if (source.syncHealth === 'partial') {
+    return { action: 'sync', label: '重新同步（上次为部分结果）' }
+  }
+  if (source.syncHealth === 'never-synced') {
+    return { action: 'sync', label: '预览并同步' }
+  }
+  return { action: 'sync', label: '立即同步' }
+}
+
 function sourceDetail(source: SourceStatus): string {
   if (!source.engineKnown) return '当前版本未加载该数据源引擎'
   if (source.configuration === 'archived') return '数据源已归档'
@@ -595,6 +687,8 @@ function buildSources(
         config.authKind === 'none' ? 'not-required' : 'missing',
       syncHealth: 'never-synced',
       state: 'unconfigured',
+      stage: 'login-required',
+      nextStep: { action: 'none', label: '正在检查数据源状态' },
       ...(engine?.descriptor.description
         ? { detail: engine.descriptor.description }
         : {}),
@@ -624,6 +718,12 @@ function buildSources(
         authentication: 'missing',
         syncHealth: 'never-synced',
         state: 'unavailable',
+        stage: 'unsupported',
+        nextStep: {
+          action: 'fix',
+          label: '加载或升级对应数据源引擎',
+          reason: '当前版本未加载该引擎',
+        },
         connection,
       })
     }
@@ -635,6 +735,8 @@ function buildSources(
     source.authentication = authenticationState(source)
     source.syncHealth = syncHealthState(source.lastSync, now)
     source.state = sourceState(source)
+    source.stage = sourceStage(source)
+    source.nextStep = sourceNextStep(source)
     const detail = sourceDetail(source)
     if (detail) source.detail = detail
   }

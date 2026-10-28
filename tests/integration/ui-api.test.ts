@@ -695,6 +695,8 @@ describe('generic DB-backed source login', () => {
     expect(fixture?.adapterReady).toBe(true)
     expect(fixture?.syncHealth).toBe('healthy')
     expect(fixture?.state).toBe('connected')
+    expect(fixture?.stage).toBe('enabled')
+    expect(fixture?.nextStep.action).toBe('sync')
 
     const created = await api.createSource({
       engine: 'browser-session',
@@ -714,6 +716,8 @@ describe('generic DB-backed source login', () => {
     expect(created.value.adapterReady).toBe(false)
     expect(created.value.syncHealth).toBe('never-synced')
     expect(created.value.state).toBe('unconfigured')
+    expect(created.value.stage).toBe('login-required')
+    expect(created.value.nextStep.action).toBe('login')
   })
 
   it('previews source items without writing and then syncs them', async () => {

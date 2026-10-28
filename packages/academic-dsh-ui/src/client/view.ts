@@ -317,6 +317,58 @@ export function sourceStateLabel(state: string): string {
   }
 }
 
+export function sourceStageLabel(stage: string): string {
+  switch (stage) {
+    case 'archived':
+      return '已归档'
+    case 'disabled':
+      return '已停用'
+    case 'unsupported':
+      return '引擎不可用'
+    case 'login-required':
+      return '待登录'
+    case 'login-saved':
+      return '已登录未验证'
+    case 'verified':
+      return '已验证'
+    case 'ready':
+      return '待首次同步'
+    case 'syncing':
+      return '同步中'
+    case 'degraded':
+      return '部分同步'
+    case 'failed':
+      return '同步失败'
+    case 'enabled':
+      return '已启用'
+    default:
+      return stage
+  }
+}
+
+export function sourceStageTone(
+  stage: string,
+): 'ok' | 'warn' | 'bad' | 'neutral' | 'info' {
+  switch (stage) {
+    case 'enabled':
+      return 'ok'
+    case 'ready':
+    case 'syncing':
+      return 'info'
+    case 'login-saved':
+    case 'verified':
+      return 'warn'
+    case 'login-required':
+    case 'degraded':
+      return 'warn'
+    case 'failed':
+    case 'unsupported':
+      return 'bad'
+    default:
+      return 'neutral'
+  }
+}
+
 export function sourceConfigurationLabel(state: string): string {
   switch (state) {
     case 'configured':

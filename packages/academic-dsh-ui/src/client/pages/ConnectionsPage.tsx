@@ -24,8 +24,8 @@ import {
   formatDateTimeOrDash,
   sourceAuthenticationLabel,
   sourceConfigurationLabel,
-  sourceStateLabel,
-  sourceStateTone,
+  sourceStageLabel,
+  sourceStageTone,
   sourceSyncHealthLabel,
   sourceSyncHealthTone,
   syncStatusLabel,
@@ -131,19 +131,7 @@ function SourceCard({
   const connection = source.connection
   const browserLogin = source.canLogin && source.loginMode === 'browser'
   const manualCredential = source.authKind !== 'none' && !browserLogin
-  const needsVerification =
-    source.authKind !== 'none' && source.authentication !== 'verified'
-  const nextStep = !browserLogin && manualCredential && !connection?.hasCredential
-    ? '下一步：提交凭据'
-    : connection === undefined && source.canLogin
-      ? '下一步：完成登录'
-      : source.authentication !== 'verified' &&
-          source.authentication !== 'not-required' &&
-          source.canVerify
-        ? '下一步：验证连接'
-        : source.adapterReady
-          ? '下一步：预览同步并确认写入'
-          : '下一步：配置或生成 Adapter（高级设置 / Agent）'
+  const syncAllowed = source.nextStep.action === 'sync'
 
   const askForAdapter = () => {
     const ok = askAgent(
@@ -202,14 +190,17 @@ function SourceCard({
       <div className="ac-source-main">
         <div className="ac-task-title">
           <strong>{source.displayName}</strong>
-          <Badge tone={sourceStateTone(source.state)}>{sourceStateLabel(source.state)}</Badge>
+          <Badge tone={sourceStageTone(source.stage)}>
+            {sourceStageLabel(source.stage)}
+          </Badge>
           <Badge tone={source.engineKnown ? 'info' : 'bad'}>引擎：{source.engine}</Badge>
           {source.syncAvailable && <Badge tone="ok">同步可用</Badge>}
           {source.canLogin && <Badge tone="info">登录可用</Badge>}
         </div>
         <p className="ac-muted">{source.detail}</p>
         <p className="ac-muted">
-          <strong>{nextStep}</strong>
+          <strong>下一步：{source.nextStep.label}</strong>
+          {source.nextStep.reason ? ` · ${source.nextStep.reason}` : ''}
         </p>
         <div className="ac-task-title">
           <Badge tone="neutral">
@@ -427,17 +418,17 @@ function SourceCard({
           className="ac-button"
           disabled={
             !source.syncAvailable ||
-            needsVerification ||
+            !syncAllowed ||
             action.pending !== undefined
           }
-          title={needsVerification ? '请先验证连接' : undefined}
+          title={syncAllowed ? undefined : source.nextStep.label}
           onClick={() => void action.run('sync', sync, '同步完成')}
         >
           {action.pending === 'sync'
             ? '同步中…'
-            : needsVerification
-              ? '先验证连接'
-              : '立即同步'}
+            : syncAllowed
+              ? '立即同步'
+              : '先完成下一步'}
         </button>
         {connection && source.canVerify && (
           <button

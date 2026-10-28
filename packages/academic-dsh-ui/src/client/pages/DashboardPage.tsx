@@ -17,8 +17,8 @@ import {
   formatDue,
   formatMinutes,
   localDate,
-  sourceStateLabel,
-  sourceStateTone,
+  sourceStageLabel,
+  sourceStageTone,
   syncStatusLabel,
 } from '../view.js'
 import type { DashboardView, UiResult } from '../../protocol.js'
@@ -354,8 +354,8 @@ export function DashboardPage({ ctx, active, onNavigate }: PageProps) {
                       {formatDateTimeOrDash(source.lastSync?.finishedAt, timeZone)}
                     </span>
                   </div>
-                  <Badge tone={sourceStateTone(source.state)}>
-                    {sourceStateLabel(source.state)}
+                  <Badge tone={sourceStageTone(source.stage)}>
+                    {sourceStageLabel(source.stage)}
                   </Badge>
                 </li>
               ))}

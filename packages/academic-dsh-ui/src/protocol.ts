@@ -90,6 +90,32 @@ export type SourceSyncHealth =
   | 'failed'
   | 'stale'
 
+export type SourceStage =
+  | 'archived'
+  | 'disabled'
+  | 'unsupported'
+  | 'login-required'
+  | 'login-saved'
+  | 'verified'
+  | 'ready'
+  | 'syncing'
+  | 'degraded'
+  | 'failed'
+  | 'enabled'
+
+export type SourceNextAction =
+  | 'login'
+  | 'verify'
+  | 'sync'
+  | 'fix'
+  | 'none'
+
+export interface SourceNextStep {
+  action: SourceNextAction
+  label: string
+  reason?: string
+}
+
 export interface SourceStatus {
   sourceId: string
   displayName: string
@@ -118,6 +144,8 @@ export interface SourceStatus {
     | 'disconnected'
     | 'unavailable'
     | 'degraded'
+  stage: SourceStage
+  nextStep: SourceNextStep
   connection?: ConnectionView
   lastSync?: SyncRunSummary
   detail?: string
