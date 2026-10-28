@@ -8,10 +8,18 @@
 | 检查 | 命令 | 结果 |
 |---|---|---|
 | 类型检查 | `npm run typecheck` | 通过 |
-| 全量测试 | `npm test` | 通过：31 个文件、156 项 |
+| 全量测试 | `npm test` | 通过：31 个文件、158 项 |
 | DSH 构建 | `npm run build:dsh` | 通过 |
 | UI 构建 | `npm run build:ui` | 通过 |
 | DSH 自测 | `ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=.data/dsh-academic.db dsh academic --json "hello"` | 通过：host/planner/tools 加载，`tools=17 registered=true`，只读查询成功，未授权写入 `FORBIDDEN` |
+
+## 安全 P0（SEC-001–004）
+
+- **SEC-001 探测 JSON 原文**：`SourceProbeEvidence` 不再包含 `jsonPreview`；只返回字段名/类型/数组形状。含姓名、学号、邮箱、token 和课程名的 JSON 测试确认返回值中无这些值。
+- **SEC-002 Manifest 授权范围**：Manifest 必须声明 `allowedPathPrefixes`；主机按精确匹配（不做隐式子域）；协议/端口来自 baseUrl；`safeFetch` 对初始、模板、分页、详情和重定向统一执行路径/主机策略。越权路径与子域在候选验证阶段被拒绝。
+- **SEC-003 正则执行**：静态拒绝嵌套量词、含分支组的量词、环视、过大重复与连续无限通配；实际执行放入受限 `vm` 上下文，单次 100ms 超时、每页 500ms 预算；超时返回受控错误。
+- **SEC-004 会话/Cookie 范围**：Web Session、browser-session、Blackboard 与 Manifest 均按精确主机校验；不再隐式把父域 Cookie 用于子域；Cookie 的 Domain/Path/Secure/Expiry 规则保留。
+- 验证：`npm run typecheck`、158 项测试通过；新增越权路径/子域、敏感 JSON、恶意正则、子域 Cookie 回归样本。
 
 ## Gate 1 — 桌面端可启动、可操作
 

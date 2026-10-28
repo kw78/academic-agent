@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**156 项测试通过**（31 个测试文件）。
+当前基线：**158 项测试通过**（31 个测试文件）。
 
 ## 分层
 
@@ -114,6 +114,14 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 `tests/integration/source-browser.test.ts` 覆盖 browser-session 验证复用同一套安全抓取：按路径发送 Cookie、识别登录页跳转，旧格式未分域会话直接失败并要求重新登录。
 
 已知边界：DNS 在请求前解析并校验，但尚未通过自定义 dispatcher 固定解析结果，DNS rebinding 仍是后续加固项。
+
+## 安全 P0（SEC-001–004）
+
+- `tests/integration/ui-api.test.ts`：探测含姓名/学号/邮箱/token/课程名的 JSON，只返回结构（字段名、类型、数组形状），断言响应不含原始值。
+- `packages/academic-adapter-runtime/test/candidate.test.ts`：Manifest 路径越界、隐式子域、未知模板字段、不安全正则均在候选验证阶段拒绝。
+- `packages/academic-adapter-runtime/test/manifest.test.ts`：嵌套量词、含分支组量词、环视、过大重复与连续通配被拒绝；正常 ISO 日期正则可运行。
+- `tests/integration/web-sessions.test.ts`：父域 Cookie 不能隐式用于子域；域名/路径/Secure/Expiry 规则仍通过。
+- 正则执行使用受限 `vm` 上下文，单次 100ms、每页 500ms 预算；恶意正则返回受控错误，不进入正式数据。
 
 ## 数据源状态与能力
 
