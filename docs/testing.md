@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**119 项测试通过**（24 个测试文件）。
+当前基线：**129 项测试通过**（26 个测试文件）。
 
 ## 分层
 
@@ -119,6 +119,12 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 
 - `tests/integration/ui-api.test.ts` 覆盖：未传 ID 时返回生成的 `sourceId`；拒绝 engine 不支持的 `authKind` / `loginMode`；engine 配置校验失败返回 `VALIDATION`；配置、认证、同步健康与 Adapter 就绪度分别返回，fixture 同步后为 `connected/healthy`，browser-session 未登录为 `missing/never-synced`。
 - `tests/unit/ui-view.test.ts` 覆盖各维度标签与颜色语义。
+
+## Blackboard 只读切片
+
+- `adapters/ustc-blackboard/test/parse.test.ts`：课程链接/学期过滤、作业区定位、作业链接去重、中英文/ISO 截止时间、登录页识别、内容 hash 稳定性。
+- `tests/integration/blackboard.test.ts`：课程/作业标准化、会话过期映射为 `AdapterAuthError`、单页失败保留 `partial`、预览不写库、Connector/Kernel 同步与重复同步 no-op。
+- 真实会话手工验证：在临时库用 `termFilter=2026FA`、`maxCourses=2` 同步到 2 门课程、7 个作业；HW4 页面无截止日期，保留 `unknown`。
 
 ## DSH Desktop
 

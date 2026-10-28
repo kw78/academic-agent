@@ -150,6 +150,10 @@ docs/adr/                      # 架构决策记录
 | M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成：宿主无关工具、DSH 工具绑定、DeepSeek 模型自然语言工具调用均通过 |
 | M4 | 生命周期、故障注入、备份恢复、迁移与性能 | 部分完成（生命周期/故障/备份/Upcaster/重启/调度与消费恢复/提醒补偿已测；性能与迁移演练待做） |
 
+`doc/ROADMAP.md` 的 M0（会话安全）、M1（数据源生命周期）已完成；M2 首个真实平台只读切片已完成：`engine=blackboard` 读取课程/作业，支持预览、确认和经 Connector/Kernel 同步，真实会话在临时库验证通过。M3–M5 进行中。
+
+首个真实平台只读 Adapter 已落地在 `adapters/ustc-blackboard`：只读取课程和作业，不提交作业；`engine=blackboard` 复用通用浏览器登录/会话，解析器有脱敏 fixture 与真实页面验证。考试/测验、文件夹分页、附件与成绩尚未覆盖，不得声称已完整同步 Blackboard。
+
 架构测试矩阵进度：
 
 | 编号 | 状态 | 覆盖位置 |
@@ -175,7 +179,7 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（119 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（129 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 

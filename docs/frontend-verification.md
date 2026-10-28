@@ -57,6 +57,7 @@
 | 通知全部已读 | 未读数归零 |
 | “咨询 Agent” | 打开 DSH 原生聊天并填入非敏感问题，不自动授予写入 |
 | 通用 source 表单 | 在“连接”页选择 browser-session engine 并创建 DB source；认证方式/登录方式随 engine 能力收敛，高级 JSON 配置由 engine 校验；卡片显示 source 名称与登录入口，说明来自 engine + config，不是 vendor UI |
+| 同步预览/确认 | Blackboard source 可先“预览同步”，显示新增/更新/未变/跳过与警告，确认后才写库；重复同步显示未变 |
 | 网站登录面板 | 填写 URL + 标签，登录并保存；列表显示 domain/label，无 Cookie 泄露；登录窗口真实网站手工验收待做 |
 
 ## 生命周期验证
@@ -102,7 +103,7 @@ npm test
 - `tests/integration/ui-api.test.ts`：Query API 读取、Command API 任务变更、候选/确认分离、防篡改确认、凭据引用不泄露、未支持 Adapter 拒绝认证、输入校验、作业暂停/恢复、可用时间与提醒设置、通知已读、同步结果。
 - `tests/integration/web-sessions.test.ts`、`source-browser.test.ts`：Cookie 作用域、逐跳重定向、SSRF、超时与流式响应上限。
 
-当前基线：119 项测试通过（24 个测试文件）。
+当前基线：129 项测试通过（26 个测试文件）。
 
 ## 未完成/未验证
 
