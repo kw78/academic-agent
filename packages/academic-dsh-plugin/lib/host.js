@@ -25815,10 +25815,10 @@ function normalizeHostname(hostname3) {
 function normalizeDomain(domain2) {
   return normalizeHostname(domain2).replace(/^\./, "");
 }
-function hostMatches(hostname3, allowed) {
+function hostMatches(hostname3, allowed, allowSubdomains = true) {
   const host = normalizeHostname(hostname3);
   const base = normalizeDomain(allowed);
-  return host === base || host.endsWith(`.${base}`);
+  return host === base || allowSubdomains && host.endsWith(`.${base}`);
 }
 function isBlockedHostname(hostname3) {
   const host = normalizeHostname(hostname3);
@@ -25897,10 +25897,12 @@ function assertUrlPolicy(url2, allowedProtocols, allowedPorts, allowedPathPrefix
     throw new SafeFetchError("UNSAFE_PATH", `\u76EE\u6807\u8DEF\u5F84\u4E0D\u5728\u6388\u6743\u8303\u56F4\u5185\uFF1A${url2.pathname}`);
   }
 }
-async function assertSafeTarget(url2, allowedHosts, resolveHost, signal, allowedProtocols, allowedPorts, allowedPathPrefixes) {
+async function assertSafeTarget(url2, allowedHosts, resolveHost, signal, allowedProtocols, allowedPorts, allowedPathPrefixes, allowSubdomains) {
   assertUrlPolicy(url2, allowedProtocols, allowedPorts, allowedPathPrefixes);
   const host = normalizeHostname(url2.hostname);
-  if (!allowedHosts.some((allowed) => hostMatches(host, allowed))) {
+  if (!allowedHosts.some(
+    (allowed) => hostMatches(host, allowed, allowSubdomains)
+  )) {
     throw new SafeFetchError("UNSAFE_HOST", `\u76EE\u6807\u4E3B\u673A\u4E0D\u5728\u6388\u6743\u8303\u56F4\u5185\uFF1A${host}`);
   }
   if (isBlockedHostname(host)) {
@@ -26144,7 +26146,8 @@ async function safeFetch(input2, options) {
         controller.signal,
         allowedProtocols,
         allowedPorts,
-        options.allowedPathPrefixes
+        options.allowedPathPrefixes,
+        options.allowSubdomains ?? true
       );
       const cookie = cookieHeaderFor(cookies, current, now());
       let response;
@@ -26337,6 +26340,7 @@ var WebSessionStore = class {
     const result = await safeFetch(targetUrl, {
       cookies,
       allowedHosts: [row.domain],
+      allowSubdomains: false,
       allowedProtocols: this.#allowedProtocols,
       ...this.#allowedPorts ? { allowedPorts: this.#allowedPorts } : {},
       ...this.#allowedPathPrefixes ? { allowedPathPrefixes: this.#allowedPathPrefixes } : {},
@@ -26472,10 +26476,7 @@ ${text2}`);
     paginationLinks,
     formCount: (result.body.match(/<form\b/gi) ?? []).length,
     tableCount: (result.body.match(/<table\b/gi) ?? []).length,
-    ...contentType?.includes("json") ? {
-      jsonPreview: result.body.slice(0, 2e3),
-      ...jsonShapeText ? { jsonShape: jsonShapeText } : {}
-    } : {},
+    ...contentType?.includes("json") && jsonShapeText ? { jsonShape: jsonShapeText } : {},
     loginLike: loginLikePage(result.finalUrl, result.body, patterns),
     warnings: result.truncated ? ["\u54CD\u5E94\u8D85\u8FC7\u5927\u5C0F\u4E0A\u9650\uFF0C\u4EC5\u5206\u6790\u524D 512KB"] : [],
     probedAt
@@ -26892,6 +26893,7 @@ async function verifySession(config2, secret, fetchImpl, requestImpl, resolveHos
     const result = await safeFetch(config2.verifyUrl, {
       cookies,
       allowedHosts: config2.cookieDomains,
+      allowSubdomains: false,
       allowedProtocols: protocolsFor(config2),
       ...fetchImpl ? { fetchImpl } : {},
       ...requestImpl ? { requestImpl } : {},
@@ -27566,6 +27568,7 @@ var BlackboardClient = class {
       const result = await safeFetch(url2, {
         cookies: this.#cookies,
         allowedHosts: this.#config.cookieDomains,
+        allowSubdomains: false,
         allowedProtocols: this.#config.allowHttp ? ["http:", "https:"] : ["https:"],
         ...this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {},
         ...this.#fetchImpl ? { fetchImpl: this.#fetchImpl } : {},
@@ -27897,6 +27900,7 @@ var adapterManifestSchema = external_exports.object({
   description: external_exports.string().max(2e3).optional(),
   baseUrl: external_exports.string().url(),
   allowedOrigins: external_exports.array(external_exports.string().regex(/^[a-z0-9.-]+$/i, "Expected a host name")).min(1).max(20),
+  allowedPathPrefixes: external_exports.array(external_exports.string().regex(/^\//, "Expected a path beginning with /")).min(1).max(20),
   allowHttp: external_exports.boolean().optional(),
   timeZone: external_exports.string().min(1).optional(),
   utcOffsetMinutes: external_exports.number().int().min(-840).max(840).optional(),
@@ -27948,6 +27952,9 @@ var ManifestRegistry = class {
     }));
   }
 };
+
+// packages/academic-adapter-runtime/src/extract.ts
+import { createContext, Script as Script3 } from "node:vm";
 
 // node_modules/linkedom/esm/shared/symbols.js
 var CHANGED = /* @__PURE__ */ Symbol("changed");
@@ -38511,18 +38518,55 @@ setPrototypeOf(Document4, Document2).prototype = Document2.prototype;
 // packages/academic-adapter-runtime/src/extract.ts
 var MAX_REGEX_INPUT = 1e4;
 var MAX_ROWS_PER_PAGE = 1e3;
+var REGEX_BUDGET_MS = 500;
+var REGEX_TIMEOUT_MS = 100;
+var regexContext = createContext({
+  pattern: "",
+  value: ""
+});
+var regexScript = new Script3(
+  "(() => {const m = new RegExp(pattern).exec(value);return m ? Array.prototype.map.call(m, (entry) => entry === undefined ? null : String(entry)) : null})()"
+);
 function regexSafetyError(pattern) {
   if (pattern.length > 300) return "\u6B63\u5219\u8868\u8FBE\u5F0F\u8FC7\u957F";
   if (/\\[1-9]/.test(pattern)) return "\u4E0D\u5141\u8BB8\u6B63\u5219\u53CD\u5411\u5F15\u7528";
+  if (/\(\?[=!<]/.test(pattern)) return "\u4E0D\u5141\u8BB8\u73AF\u89C6\u6216\u540E\u884C\u65AD\u8A00";
   if (/\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)\s*(?:[+*]|\{\d+,?\d*\})/.test(pattern)) {
     return "\u4E0D\u5141\u8BB8\u5D4C\u5957\u91CF\u8BCD";
   }
+  if (/\((?:[^()\\]|\\.)*\|(?:[^()\\]|\\.)*\)\s*(?:[+*]|\{\d+,?\d*\})/.test(pattern)) {
+    return "\u4E0D\u5141\u8BB8\u5BF9\u542B\u5206\u652F\u7684\u7EC4\u4F7F\u7528\u91CF\u8BCD";
+  }
+  for (const match of pattern.matchAll(/\{\s*(\d+)(?:\s*,\s*(\d*))?\s*\}/g)) {
+    const upper = match[2] && match[2] !== "" ? Number(match[2]) : Number(match[1]);
+    if (upper > 1e3) return "\u4E0D\u5141\u8BB8\u8FC7\u5927\u7684\u6709\u754C\u91CD\u590D";
+  }
+  if (/(?:\.\*|\.\+)(?:[^()|]{0,40})(?:\.\*|\.\+)/.test(pattern)) {
+    return "\u4E0D\u5141\u8BB8\u8FDE\u7EED\u65E0\u9650\u901A\u914D\u91CF\u8BCD";
+  }
   return void 0;
 }
-function safeRegex(pattern) {
+function runRegex(pattern, value, budget) {
   const error62 = regexSafetyError(pattern);
   if (error62) throw new Error(`Unsafe regex: ${error62}`);
-  return new RegExp(pattern);
+  const timeout = Math.max(
+    1,
+    Math.min(REGEX_TIMEOUT_MS, Math.floor(budget.remainingMs))
+  );
+  const started = Date.now();
+  let result;
+  try {
+    regexContext.pattern = pattern;
+    regexContext.value = value.slice(0, MAX_REGEX_INPUT);
+    result = regexScript.runInContext(regexContext, { timeout });
+  } catch {
+    throw new Error("\u6B63\u5219\u6267\u884C\u8D85\u65F6\u6216\u8FC7\u4E8E\u590D\u6742");
+  }
+  budget.remainingMs -= Date.now() - started;
+  if (budget.remainingMs <= 0) {
+    throw new Error("\u6B63\u5219\u6267\u884C\u8D85\u8FC7\u9875\u9762\u9884\u7B97");
+  }
+  return result;
 }
 function segments(path) {
   const normalized2 = path.replace(/^\$?\.?/, "");
@@ -38554,26 +38598,26 @@ function readJsonPath(value, path) {
   }
   return current;
 }
-function applyRegex(value, extractor) {
+function applyRegex(value, extractor, budget) {
   if (!extractor.regex) return value;
-  const match = safeRegex(extractor.regex).exec(value.slice(0, MAX_REGEX_INPUT));
+  const match = runRegex(extractor.regex, value, budget);
   if (!match) return void 0;
   return match[extractor.group ?? 1] ?? "";
 }
-function extractHtmlField(row, extractor) {
+function extractHtmlField(row, extractor, budget) {
   if (!extractor.selector) return void 0;
   const element = row.querySelector(extractor.selector);
   if (!element) return void 0;
   const raw = extractor.attribute ? element.getAttribute(extractor.attribute) ?? "" : element.textContent ?? "";
-  const matched = applyRegex(raw, extractor);
+  const matched = applyRegex(raw, extractor, budget);
   if (matched === void 0) return void 0;
   return extractor.trim === false ? matched : matched.trim();
 }
-function extractJsonField(row, extractor) {
+function extractJsonField(row, extractor, budget) {
   if (!extractor.path) return void 0;
   const value = readJsonPath(row, extractor.path);
   if (typeof value !== "string") return value;
-  const matched = applyRegex(value, extractor);
+  const matched = applyRegex(value, extractor, budget);
   if (matched === void 0) return void 0;
   return extractor.trim === false ? matched : matched.trim();
 }
@@ -38587,7 +38631,7 @@ function renderFieldTemplate(template, record2) {
     return scalarText(readJsonPath(record2, path)) ?? "";
   });
 }
-function extractRecord(row, request, html) {
+function extractRecord(row, request, html, budget) {
   const record2 = {};
   const entries2 = Object.entries(request.fields);
   for (const [name, extractor] of entries2) {
@@ -38595,7 +38639,7 @@ function extractRecord(row, request, html) {
   }
   for (const [name, extractor] of entries2) {
     if (extractor.constant !== void 0 || extractor.template !== void 0) continue;
-    const value = html ? extractHtmlField(row, extractor) : extractJsonField(row, extractor);
+    const value = html ? extractHtmlField(row, extractor, budget) : extractJsonField(row, extractor, budget);
     if (value !== void 0) record2[name] = value;
   }
   for (const [name, extractor] of entries2) {
@@ -38607,6 +38651,7 @@ function extractRecord(row, request, html) {
   return record2;
 }
 function extractPage(payload, request) {
+  const budget = { remainingMs: REGEX_BUDGET_MS };
   if (request.responseType === "json") {
     let parsed;
     try {
@@ -38618,7 +38663,7 @@ function extractPage(payload, request) {
     const allRows2 = Array.isArray(rawRows) ? rawRows : rawRows !== void 0 && rawRows !== null ? [rawRows] : [];
     const rows2 = allRows2.slice(0, MAX_ROWS_PER_PAGE);
     const result2 = {
-      rows: rows2.map((row) => extractRecord(row, request, false)),
+      rows: rows2.map((row) => extractRecord(row, request, false, budget)),
       ...allRows2.length > rows2.length ? { truncated: true } : {}
     };
     if (request.next) {
@@ -38633,7 +38678,7 @@ function extractPage(payload, request) {
   );
   const rows = allRows.slice(0, MAX_ROWS_PER_PAGE);
   const result = {
-    rows: rows.map((row) => extractRecord(row, request, true)),
+    rows: rows.map((row) => extractRecord(row, request, true, budget)),
     ...allRows.length > rows.length ? { truncated: true } : {}
   };
   if (request.next) {
@@ -38782,6 +38827,8 @@ var ManifestClient = class {
       const result = await safeFetch(url2, {
         cookies: this.#cookies,
         allowedHosts: this.#manifest.allowedOrigins,
+        allowedPathPrefixes: this.#manifest.allowedPathPrefixes,
+        allowSubdomains: false,
         allowedProtocols: this.#protocols,
         allowedPorts: this.#ports,
         ...this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {},
@@ -39076,7 +39123,14 @@ function createDeclarativeEngine(registry2, options = {}) {
   };
 }
 function hostAllowed2(host, origins) {
-  return origins.some((origin) => host === origin || host.endsWith(`.${origin}`));
+  return origins.includes(host);
+}
+function pathAllowed2(pathname, prefixes) {
+  return prefixes.some((prefix) => {
+    if (prefix === "/") return true;
+    if (pathname === prefix) return true;
+    return pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
+  });
 }
 function validateManifestStatic(manifest) {
   const errors = [];
@@ -39118,6 +39172,11 @@ function validateManifestStatic(manifest) {
         const port = resolved.port ? Number(resolved.port) : resolved.protocol === "https:" ? 443 : 80;
         if (port !== basePort) {
           errors.push(`${name} URL \u7AEF\u53E3\u5FC5\u987B\u4E0E baseUrl \u4E00\u81F4\uFF1A${port}`);
+        }
+        if (!pathAllowed2(resolved.pathname, manifest.allowedPathPrefixes)) {
+          errors.push(
+            `${name} URL \u8DEF\u5F84\u4E0D\u5728 allowedPathPrefixes\uFF1A${resolved.pathname}`
+          );
         }
       }
     } catch {

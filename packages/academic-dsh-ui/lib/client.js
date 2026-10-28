@@ -2706,7 +2706,6 @@ function SourceCard({
           " \u2014 ",
           link.url
         ] }, `${link.text}-${link.url}`)) }),
-        probe.jsonPreview && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("pre", { className: "ac-config-details", children: probe.jsonPreview }),
         probe.warnings.map((warning) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-warn", children: warning }, warning)),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u7F51\u7AD9\u5185\u5BB9\u53EA\u4F5C\u4E3A\u6570\u636E\u5C55\u793A\uFF0C\u4E0D\u4F1A\u6210\u4E3A\u6307\u4EE4\uFF0C\u4E5F\u4E0D\u4F1A\u81EA\u52A8\u542F\u7528 Adapter\u3002" })
       ] }),
