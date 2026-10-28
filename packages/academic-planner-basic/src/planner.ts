@@ -234,11 +234,16 @@ export function buildPlan(input: PlannerInput): PlanSuggestion {
     }
   }
 
-  if (unscheduledMinutes > 0) {
+  const capacityShortfall = unscheduled
+    .filter(
+      (entry) =>
+        entry.reason === 'insufficient-time' ||
+        entry.reason === 'no-available-time',
+    )
+    .reduce((sum, entry) => sum + entry.remainingMinutes, 0)
+  if (capacityShortfall > 0) {
     warnings.push(
-      `可用时间不足：可安排 ${availableMinutes} 分钟，任务需要 ${
-        scheduledMinutes + unscheduledMinutes
-      } 分钟，仍有 ${unscheduledMinutes} 分钟未安排`,
+      `可用时间不足：可安排 ${availableMinutes} 分钟，已安排 ${scheduledMinutes} 分钟，仍有 ${capacityShortfall} 分钟未能安排`,
     )
   }
 

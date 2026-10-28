@@ -17,6 +17,17 @@ import { restoreDatabase } from './backup.js'
 
 const DATABASE_PATH = process.env.ACADEMIC_DB ?? '.data/academic.db'
 
+const UNSCHEDULED_REASON_LABELS: Record<string, string> = {
+  'deadline-passed': '截止时间已过',
+  'insufficient-time': '可用时间不足',
+  'no-available-time': '没有可用时段',
+  'invalid-duration': '预计时长无效',
+}
+
+function unscheduledReasonLabel(reason: string): string {
+  return UNSCHEDULED_REASON_LABELS[reason] ?? reason
+}
+
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString('zh-CN', { hour12: false })
 }
@@ -163,7 +174,7 @@ async function runPlanPreview(app: AcademicApp, accept: boolean): Promise<void> 
     )
   }
   for (const task of suggestion.unscheduled) {
-    console.log(`  未安排：${task.title} · 剩余 ${task.remainingMinutes} 分钟 · ${task.reason}`)
+    console.log(`  未安排：${task.title} · 剩余 ${task.remainingMinutes} 分钟 · ${unscheduledReasonLabel(task.reason)}`)
   }
   for (const warning of suggestion.warnings) console.log(`  提示：${warning}`)
 
