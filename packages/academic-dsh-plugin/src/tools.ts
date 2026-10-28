@@ -112,7 +112,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     name: ACADEMIC_TOOL_NAMES.ProbeSource,
     description:
-      'Read one authorized page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). The URL host must be in the source cookieDomains or the explicit probeAllowedHosts list. Read-only; never returns cookies or URL query strings.',
+      'Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host\'s cookies. Read-only; never returns cookies or URL query strings.',
     parameters: {
       sourceId: {
         type: 'string',
@@ -122,7 +122,7 @@ export const TOOL_SPECS: ToolSpec[] = [
       url: {
         type: 'string',
         description:
-          'Optional URL to probe; host must be in cookieDomains or probeAllowedHosts; defaults to the configured portal/verify URL',
+          'Optional URL to probe; any public HTTPS host is allowed by default (cross-host requests carry no cookies for that host); defaults to the configured portal/verify URL',
       },
       capture: {
         type: 'boolean',
@@ -135,7 +135,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     name: ACADEMIC_TOOL_NAMES.CrawlSource,
     description:
-      'Read a bounded section of a site from one URL with a saved source session. Follows GET links only, stays on cookieDomains/probeAllowedHosts and a path prefix, never submits forms. Read-only; max 10 pages and depth 2.',
+      'Read a bounded section of a site from one URL with a saved source session. Follows GET links only, stays within a path prefix, allows any public HTTPS host by default (restrictable via probeAllowAnyPublicHost=false/probeAllowedHosts), never submits forms. Read-only; max 10 pages and depth 2.',
     parameters: {
       sourceId: { type: 'string', required: true, description: 'Source id with a saved session' },
       url: { type: 'string', required: true, description: 'Start URL; host must be authorized' },

@@ -71,7 +71,7 @@ function crawlScope(
   }
   if (!hostAllowed(start.hostname, allowedHosts)) {
     throw new Error(
-      `抓取 URL 主机未授权：${start.hostname}。已授权主机：${allowedHosts.join(', ')}；跨主机只读抓取需在来源配置的 probeAllowedHosts 中显式加入该主机，或由用户开启 probeAllowAnyPublicHost`,
+      `抓取 URL 主机未授权：${start.hostname}。当前允许主机：${allowedHosts.join(', ')}；该来源设置了 probeAllowAnyPublicHost=false，可改为 true 或把主机加入 probeAllowedHosts`,
     )
   }
   const configured = Array.isArray(config.probePathPrefixes)

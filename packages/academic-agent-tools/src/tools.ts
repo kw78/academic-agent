@@ -527,7 +527,7 @@ export function createAcademicTools(
             ? [
                 defineTool(
                   ACADEMIC_TOOL_NAMES.ProbeSource,
-                  'Read one authorized page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). The URL host must be in the source cookieDomains or the explicit probeAllowedHosts list. Read-only; never returns cookies or URL query strings.',
+                  'Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host\'s cookies. Read-only; never returns cookies or URL query strings.',
                   z.object({
                     sourceId: z.string().min(1).max(200),
                     url: z.string().url().optional(),
@@ -559,7 +559,7 @@ export function createAcademicTools(
 
           defineTool(
             ACADEMIC_TOOL_NAMES.CrawlSource,
-            'Read a bounded section of a site starting from one URL using a saved source session. Follows GET links only, stays on cookieDomains/probeAllowedHosts and a path prefix, never submits forms, and returns sanitized page evidence. Read-only.',
+            'Read a bounded section of a site starting from one URL using a saved source session. Follows GET links only, stays within a path prefix, and allows any public HTTPS host by default (restrictable via probeAllowAnyPublicHost=false/probeAllowedHosts); never submits forms, and returns sanitized page evidence. Read-only.',
             crawlSourceSchema,
             async (input) => {
               if (!dependencies.crawlSource) {

@@ -26793,7 +26793,7 @@ async function probeSourcePage(input2) {
   const effectiveHosts = allowAnyPublicHost ? ["*"] : allowedHosts.length > 0 ? allowedHosts : [host];
   if (!hostAllowed(host, effectiveHosts)) {
     throw new Error(
-      `\u63A2\u6D4B URL \u4E3B\u673A\u672A\u6388\u6743\uFF1A${host}\u3002\u5DF2\u6388\u6743\u4E3B\u673A\uFF1A${effectiveHosts.join(", ")}\uFF1B\u8DE8\u4E3B\u673A\u7684\u53EA\u8BFB\u63A2\u6D4B\u9700\u5728\u6765\u6E90\u914D\u7F6E\u7684 probeAllowedHosts \u4E2D\u663E\u5F0F\u52A0\u5165\u8BE5\u4E3B\u673A\uFF0C\u6216\u7531\u7528\u6237\u5F00\u542F probeAllowAnyPublicHost\uFF08\u4E0D\u4F1A\u81EA\u52A8\u643A\u5E26\u8BE5\u57DF\u540D\u7684 Cookie\uFF09`
+      `\u63A2\u6D4B URL \u4E3B\u673A\u672A\u6388\u6743\uFF1A${host}\u3002\u5F53\u524D\u5141\u8BB8\u4E3B\u673A\uFF1A${effectiveHosts.join(", ")}\uFF1B\u8BE5\u6765\u6E90\u8BBE\u7F6E\u4E86 probeAllowAnyPublicHost=false\uFF0C\u53EF\u6539\u4E3A true \u6216\u628A\u4E3B\u673A\u52A0\u5165 probeAllowedHosts\uFF08\u8DE8\u4E3B\u673A\u4E0D\u4F1A\u81EA\u52A8\u643A\u5E26\u8BE5\u57DF\u540D\u7684 Cookie\uFF09`
     );
   }
   const pathPrefixes = Array.isArray(input2.config.probePathPrefixes) ? input2.config.probePathPrefixes.filter(
@@ -26977,7 +26977,7 @@ function crawlScope(config2, start) {
   }
   if (!hostAllowed(start.hostname, allowedHosts)) {
     throw new Error(
-      `\u6293\u53D6 URL \u4E3B\u673A\u672A\u6388\u6743\uFF1A${start.hostname}\u3002\u5DF2\u6388\u6743\u4E3B\u673A\uFF1A${allowedHosts.join(", ")}\uFF1B\u8DE8\u4E3B\u673A\u53EA\u8BFB\u6293\u53D6\u9700\u5728\u6765\u6E90\u914D\u7F6E\u7684 probeAllowedHosts \u4E2D\u663E\u5F0F\u52A0\u5165\u8BE5\u4E3B\u673A\uFF0C\u6216\u7531\u7528\u6237\u5F00\u542F probeAllowAnyPublicHost`
+      `\u6293\u53D6 URL \u4E3B\u673A\u672A\u6388\u6743\uFF1A${start.hostname}\u3002\u5F53\u524D\u5141\u8BB8\u4E3B\u673A\uFF1A${allowedHosts.join(", ")}\uFF1B\u8BE5\u6765\u6E90\u8BBE\u7F6E\u4E86 probeAllowAnyPublicHost=false\uFF0C\u53EF\u6539\u4E3A true \u6216\u628A\u4E3B\u673A\u52A0\u5165 probeAllowedHosts`
     );
   }
   const configured = Array.isArray(config2.probePathPrefixes) ? config2.probePathPrefixes.filter(
@@ -42721,7 +42721,7 @@ function createAcademicTools(dependencies) {
       ...dependencies.probeSource ? [
         defineTool(
           ACADEMIC_TOOL_NAMES.ProbeSource,
-          "Read one authorized page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). The URL host must be in the source cookieDomains or the explicit probeAllowedHosts list. Read-only; never returns cookies or URL query strings.",
+          "Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host's cookies. Read-only; never returns cookies or URL query strings.",
           external_exports.object({
             sourceId: external_exports.string().min(1).max(200),
             url: external_exports.string().url().optional(),
@@ -42751,7 +42751,7 @@ function createAcademicTools(dependencies) {
       ] : [],
       defineTool(
         ACADEMIC_TOOL_NAMES.CrawlSource,
-        "Read a bounded section of a site starting from one URL using a saved source session. Follows GET links only, stays on cookieDomains/probeAllowedHosts and a path prefix, never submits forms, and returns sanitized page evidence. Read-only.",
+        "Read a bounded section of a site starting from one URL using a saved source session. Follows GET links only, stays within a path prefix, and allows any public HTTPS host by default (restrictable via probeAllowAnyPublicHost=false/probeAllowedHosts); never submits forms, and returns sanitized page evidence. Read-only.",
         crawlSourceSchema,
         async (input2) => {
           if (!dependencies.crawlSource) {

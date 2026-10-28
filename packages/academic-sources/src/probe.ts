@@ -393,7 +393,7 @@ export async function probeSourcePage(
       : [host]
   if (!hostAllowed(host, effectiveHosts)) {
     throw new Error(
-      `探测 URL 主机未授权：${host}。已授权主机：${effectiveHosts.join(', ')}；跨主机的只读探测需在来源配置的 probeAllowedHosts 中显式加入该主机，或由用户开启 probeAllowAnyPublicHost（不会自动携带该域名的 Cookie）`,
+      `探测 URL 主机未授权：${host}。当前允许主机：${effectiveHosts.join(', ')}；该来源设置了 probeAllowAnyPublicHost=false，可改为 true 或把主机加入 probeAllowedHosts（跨主机不会自动携带该域名的 Cookie）`,
     )
   }
   const pathPrefixes = Array.isArray(input.config.probePathPrefixes)
