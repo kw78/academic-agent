@@ -2,8 +2,8 @@
 
 > 文档状态：建议架构基线（Draft for implementation）\
 > 规划日期：2026-10-28\
-> 审查基准：本次审查读取的 `kw78/academic-agent` `main` 分支，提交
-> `a5cb688`。若代码已变化，请在合并前对照当前实现校准。\
+> 审查基准：`kw78/academic-agent` `main` 分支，提交
+> `03c062e`；2026-10-28 按路线图 v2 校准。若代码已变化，请在合并前对照当前实现校准。\
 > 配套路线图：[`ROADMAP.md`](./ROADMAP.md)
 
 ## 1. 概述
@@ -47,11 +47,13 @@ Connector/Kernel 路径进入应用的事件与查询模型，并由 DSH UI 展�
 ### 当前尚未形成的闭环
 
 -   通用 `web_sessions` 会话不会自动转化为可同步的 Academic 数据源。
--   `browser-session` 引擎当前主要提供登录/验证能力，尚无完整的
-    `createAdapter` 同步实现。
--   AI
-    生成候选、沙箱测试、版本注册、审批、启用和回滚的流水线尚未完整实现。
--   会话抓取的 DNS 解析已在请求前校验，但尚未固定解析结果，DNS rebinding 仍是残余风险。
+-   `browser-session` 引擎当前只提供登录/验证能力，`supportsSync=false`；
+    同步必须由 `blackboard`、`declarative` 等具备 Adapter 的引擎完成。
+-   声明式候选已具备校验、离线回放、持久化、授权启用和回滚；尚缺自动探测、
+    生成与审批的 DSH UI 闭环，也没有任意代码沙箱。
+-   会话抓取的 DNS 解析已在请求前校验，但尚未固定解析结果，DNS rebinding
+    仍是残余风险（M1 处理中）。
+-   Blackboard 已覆盖课程/作业只读同步；考试、测验、文件夹分页、附件与成绩未覆盖。
 
 本文件中的目标架构是渐进式演进方案，不代表以上目标已经在当前分支实现。
 

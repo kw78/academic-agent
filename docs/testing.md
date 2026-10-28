@@ -208,9 +208,9 @@ ACADEMIC_DB=.data/demo.db npm run demo
 
 ## 已知测试边界
 
-- DSH 已完成 bundle 加载、真实 ToolRegistry 工具注册与执行；Cordis HMR、真实 Session 生命周期、审批 UI 与带模型工具调用尚未验证。
+- DSH 已完成 bundle 加载、真实 ToolRegistry 工具注册与执行、带 DeepSeek 模型的工具调用；Cordis 文件级 HMR、真实 Session 生命周期与审批 UI 尚未验证。
 - 性能基线（Spec §20，例如 1000 事项 P95、10000 事件重建）尚未做正式基准。
-- 真实 LMS 尚未接入；安全凭据连接与通用浏览器会话已实现，但真实 Adapter、登录/验证码与限流未覆盖，当前只有 fixture 适配器。详见 [real-sources.md](real-sources.md)。
+- Blackboard 已有真实只读 Adapter 与真实会话同步记录（2 门课程/7 个作业），但考试、测验、文件夹分页、附件、成绩与限流未覆盖；其余平台只有 fixture 与声明式样本。详见 [real-sources.md](real-sources.md)。
 - 系统凭据库当前为 Windows DPAPI；Credential Manager 与其他 OS vault 作为后续 CredentialVault 实现。
 - `node:sqlite` 为实验性 API；若升级 Node 需要重新验证。
 - 备份恢复测试覆盖单文件 SQLite；未做跨版本迁移演练。
