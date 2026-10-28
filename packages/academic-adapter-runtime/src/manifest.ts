@@ -87,6 +87,14 @@ export type ManifestRequest = z.infer<typeof requestSchema>
 export type ManifestExtractor = z.infer<typeof extractorSchema>
 
 export function parseManifest(value: unknown): AdapterManifest {
+  if (value && typeof value === 'object' && 'schemaVersion' in value) {
+    const version = (value as { schemaVersion?: unknown }).schemaVersion
+    if (version !== 1) {
+      throw new Error(
+        `不支持的 Manifest schemaVersion：${String(version)}；当前只支持 1`,
+      )
+    }
+  }
   return adapterManifestSchema.parse(value)
 }
 

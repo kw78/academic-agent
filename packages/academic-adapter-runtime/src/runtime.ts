@@ -5,6 +5,7 @@ import {
   AdapterTransientError,
   dueSchema,
   type AcademicSourceAdapter,
+  type AdapterCandidateCheck,
   type AdapterCandidateReport,
   type AdapterFetchContext,
   type AdapterResult,
@@ -713,21 +714,29 @@ function pathAllowed(pathname: string, prefixes: string[]): boolean {
   })
 }
 
-function validateManifestStatic(manifest: AdapterManifest): string[] {
-  const errors: string[] = []
+interface ManifestIssue {
+  stage: 'contract' | 'permissions'
+  message: string
+}
+
+function validateManifestStatic(manifest: AdapterManifest): ManifestIssue[] {
+  const errors: ManifestIssue[] = []
+  const fail = (stage: ManifestIssue['stage'], message: string): void => {
+    errors.push({ stage, message })
+  }
   const allowHttp = manifest.allowHttp === true
   let basePort = 443
   try {
     const base = new URL(manifest.baseUrl)
     if (!allowHttp && base.protocol !== 'https:') {
-      errors.push('baseUrl 必须使用 HTTPS，HTTP 需要显式 allowHttp')
+      fail('permissions', 'baseUrl 必须使用 HTTPS，HTTP 需要显式 allowHttp')
     }
     basePort = base.port ? Number(base.port) : base.protocol === 'https:' ? 443 : 80
     if (!hostAllowed(base.hostname, manifest.allowedOrigins)) {
-      errors.push(`baseUrl 主机不在 allowedOrigins：${base.hostname}`)
+      fail('permissions', `baseUrl 主机不在 allowedOrigins：${base.hostname}`)
     }
   } catch {
-    errors.push('baseUrl 无效')
+    fail('permissions', 'baseUrl 无效')
   }
 
   const requests: Array<{
@@ -745,17 +754,20 @@ function validateManifestStatic(manifest: AdapterManifest): string[] {
     for (const match of request.url.matchAll(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g)) {
       const root = match[1]?.split('.')[0]
       if (!root || !vars.includes(root)) {
-        errors.push(`${name} URL 使用了不允许的模板变量：${match[1]}`)
+        fail('contract', `${name} URL 使用了不允许的模板变量：${match[1]}`)
       }
     }
     try {
       const resolved = new URL(request.url, manifest.baseUrl)
       if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
-        errors.push(`${name} URL 只允许 http(s)`)
+        fail('permissions', `${name} URL 只允许 http(s)`)
       } else if (!allowHttp && resolved.protocol !== 'https:') {
-        errors.push(`${name} URL 必须使用 HTTPS`)
+        fail('permissions', `${name} URL 必须使用 HTTPS`)
       } else if (!allowHostInManifest(resolved.hostname, manifest)) {
-        errors.push(`${name} URL 主机不在 allowedOrigins：${resolved.hostname}`)
+        fail(
+          'permissions',
+          `${name} URL 主机不在 allowedOrigins：${resolved.hostname}`,
+        )
       } else {
         const port = resolved.port
           ? Number(resolved.port)
@@ -763,29 +775,30 @@ function validateManifestStatic(manifest: AdapterManifest): string[] {
             ? 443
             : 80
         if (port !== basePort) {
-          errors.push(`${name} URL 端口必须与 baseUrl 一致：${port}`)
+          fail('permissions', `${name} URL 端口必须与 baseUrl 一致：${port}`)
         }
         if (!pathAllowed(resolved.pathname, manifest.allowedPathPrefixes)) {
-          errors.push(
+          fail(
+            'permissions',
             `${name} URL 路径不在 allowedPathPrefixes：${resolved.pathname}`,
           )
         }
       }
     } catch {
-      errors.push(`${name} URL 无效`)
+      fail('contract', `${name} URL 无效`)
     }
     for (const [field, extractor] of Object.entries(request.fields)) {
       const derived =
         extractor.constant !== undefined || extractor.template !== undefined
       if (request.responseType === 'html' && !derived && !extractor.selector) {
-        errors.push(`${name}.${field} 需要 selector`)
+        fail('contract', `${name}.${field} 需要 selector`)
       }
       if (request.responseType === 'json' && !derived && !extractor.path) {
-        errors.push(`${name}.${field} 需要 path`)
+        fail('contract', `${name}.${field} 需要 path`)
       }
       if (extractor.regex) {
         const regexError = regexSafetyError(extractor.regex)
-        if (regexError) errors.push(`${name}.${field} 正则不安全：${regexError}`)
+        if (regexError) fail('contract', `${name}.${field} 正则不安全：${regexError}`)
       }
       if (extractor.template) {
         for (const match of extractor.template.matchAll(
@@ -793,9 +806,9 @@ function validateManifestStatic(manifest: AdapterManifest): string[] {
         )) {
           const reference = match[1]
           if (!reference || !request.fields[reference]) {
-            errors.push(`${name}.${field} 模板引用了未知字段：${reference ?? ''}`)
+            fail('contract', `${name}.${field} 模板引用了未知字段：${reference ?? ''}`)
           } else if (request.fields[reference]?.template) {
-            errors.push(`${name}.${field} 模板不能引用另一个模板字段`)
+            fail('contract', `${name}.${field} 模板不能引用另一个模板字段`)
           }
         }
       }
@@ -831,23 +844,40 @@ export async function replayManifest(
   options: { now?: () => string; maxCourses?: number; maxAssignments?: number } = {},
 ): Promise<AdapterCandidateReport> {
   const testedAt = options.now?.() ?? new Date().toISOString()
+  const checks: AdapterCandidateCheck[] = []
   let manifest: AdapterManifest
   try {
     manifest = parseManifest(input)
+    checks.push({ stage: 'schema', ok: true })
   } catch (error) {
+    const message = formatCandidateError(error)
     return {
       ok: false,
-      errors: [formatCandidateError(error)],
+      errors: [message],
       warnings: [],
+      checks: [{ stage: 'schema', ok: false, detail: message }],
       courses: [],
       items: [],
       testedAt,
     }
   }
 
-  const errors = validateManifestStatic(manifest)
+  const issues = validateManifestStatic(manifest)
+  const contractIssues = issues.filter((issue) => issue.stage === 'contract')
+  const permissionIssues = issues.filter((issue) => issue.stage === 'permissions')
+  checks.push({
+    stage: 'contract',
+    ok: contractIssues.length === 0,
+    ...(contractIssues[0] ? { detail: contractIssues[0].message } : {}),
+  })
+  checks.push({
+    stage: 'permissions',
+    ok: permissionIssues.length === 0,
+    ...(permissionIssues[0] ? { detail: permissionIssues[0].message } : {}),
+  })
+  const errors = issues.map((issue) => issue.message)
   if (errors.length > 0) {
-    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt }
+    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt, checks }
   }
 
   const sampleMap = new Map<string, AdapterSample>()
@@ -859,7 +889,8 @@ export async function replayManifest(
     }
   }
   if (errors.length > 0) {
-    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt }
+    checks.push({ stage: 'sample-replay', ok: false, detail: errors[0] })
+    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt, checks }
   }
 
   const fetchImpl: typeof fetch = async (request) => {
@@ -904,8 +935,14 @@ export async function replayManifest(
     if (result.completeness !== 'full') {
       errors.push('样本回放未完整覆盖所有请求；请补充样本')
     }
+    const replayOk = errors.length === 0
+    checks.push({
+      stage: 'sample-replay',
+      ok: replayOk,
+      ...(replayOk ? {} : { detail: errors[0] }),
+    })
     return {
-      ok: errors.length === 0,
+      ok: replayOk,
       errors,
       warnings: result.warnings,
       courses,
@@ -917,9 +954,19 @@ export async function replayManifest(
         ...(item.sourceUrl ? { sourceUrl: item.sourceUrl } : {}),
       })),
       testedAt,
+      checks,
     }
   } catch (error) {
     errors.push(`样本回放失败：${formatCandidateError(error)}`)
-    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt }
+    checks.push({ stage: 'sample-replay', ok: false, detail: errors[0] })
+    return {
+      ok: false,
+      errors,
+      warnings: [],
+      courses: [],
+      items: [],
+      testedAt,
+      checks,
+    }
   }
 }

@@ -134,6 +134,63 @@ describe('adapter candidate replay and registry', () => {
     expect(report.warnings.join(' ')).toMatch(/页面结构可能已变化/)
   })
 
+  it('rejects unsupported schema versions and reports validation stages', async () => {
+    const unsupported = await replayManifest(
+      { ...manifest, schemaVersion: 2 },
+      samples(),
+    )
+    expect(unsupported.ok).toBe(false)
+    expect(unsupported.errors.join(' ')).toMatch(/schemaVersion/)
+    expect(unsupported.checks).toEqual([
+      {
+        stage: 'schema',
+        ok: false,
+        detail: expect.stringMatching(/schemaVersion/),
+      },
+    ])
+
+    const report = await replayManifest(manifest, samples())
+    expect(
+      report.checks?.map((check) => [check.stage, check.ok]),
+    ).toEqual([
+      ['schema', true],
+      ['contract', true],
+      ['permissions', true],
+      ['sample-replay', true],
+    ])
+
+    const outsidePath = await replayManifest(
+      {
+        ...manifest,
+        assignments: { ...manifest.assignments, url: '/admin/assignments' },
+      },
+      samples(),
+    )
+    expect(
+      outsidePath.checks?.find((check) => check.stage === 'permissions')?.ok,
+    ).toBe(false)
+    expect(
+      outsidePath.checks?.find((check) => check.stage === 'sample-replay'),
+    ).toBeUndefined()
+
+    const unsafeRegex = await replayManifest(
+      {
+        ...manifest,
+        courses: {
+          ...manifest.courses,
+          fields: {
+            ...manifest.courses.fields,
+            title: { path: 'title', regex: '(a+)+' },
+          },
+        },
+      },
+      samples(),
+    )
+    expect(
+      unsafeRegex.checks?.find((check) => check.stage === 'contract')?.ok,
+    ).toBe(false)
+  })
+
   it('follows page and offset pagination and reports truncation', async () => {
     const pageManifest = {
       ...manifest,

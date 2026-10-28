@@ -6,10 +6,23 @@ export interface AdapterSample {
   contentType?: string
 }
 
+export type AdapterCandidateCheckStage =
+  | 'schema'
+  | 'contract'
+  | 'permissions'
+  | 'sample-replay'
+
+export interface AdapterCandidateCheck {
+  stage: AdapterCandidateCheckStage
+  ok: boolean
+  detail?: string
+}
+
 export interface AdapterCandidateReport {
   ok: boolean
   errors: string[]
   warnings: string[]
+  checks?: AdapterCandidateCheck[]
   courses: Array<{
     externalCourseId: string
     code: string

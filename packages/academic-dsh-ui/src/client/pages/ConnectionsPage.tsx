@@ -1,5 +1,11 @@
 import { useCallback, useState } from 'react'
-import type { ConnectionView, CourseView, SyncPreview, SyncRunSummary } from '@academic/contracts'
+import type {
+  AdapterCandidateCheckStage,
+  ConnectionView,
+  CourseView,
+  SyncPreview,
+  SyncRunSummary,
+} from '@academic/contracts'
 import { callApi } from '../api.js'
 import {
   Badge,
@@ -849,6 +855,13 @@ function SourceForm({
   )
 }
 
+const CANDIDATE_STAGE_LABELS: Record<AdapterCandidateCheckStage, string> = {
+  schema: 'Schema',
+  contract: '字段与请求契约',
+  permissions: '访问范围',
+  'sample-replay': '样本回放',
+}
+
 function CandidatePanel({
   ctx,
   active,
@@ -1064,6 +1077,13 @@ function CandidatePanel({
             验证{report.ok ? '通过' : '失败'}：课程 {report.courses.length} · 事项{' '}
             {report.items.length}
           </p>
+          {report.checks?.map((check) => (
+            <p key={check.stage} className={check.ok ? 'ac-muted' : 'ac-text-bad'}>
+              {CANDIDATE_STAGE_LABELS[check.stage]}：
+              {check.ok ? '通过' : '失败'}
+              {!check.ok && check.detail ? ` — ${check.detail}` : ''}
+            </p>
+          ))}
           {report.errors.map((error) => (
             <p key={error} className="ac-text-bad">
               {error}
