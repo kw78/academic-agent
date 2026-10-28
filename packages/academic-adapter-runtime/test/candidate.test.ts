@@ -107,6 +107,27 @@ describe('adapter candidate replay and registry', () => {
     expect(incomplete.errors.join(' ')).toMatch(/未完整|失败/)
   })
 
+  it('rejects unsafe regex and HTTP manifests before any replay', async () => {
+    const unsafeRegex = {
+      ...manifest,
+      courses: {
+        ...manifest.courses,
+        fields: {
+          ...manifest.courses.fields,
+          title: { path: 'title', regex: '(a+)+' },
+        },
+      },
+    }
+    const regexReport = await replayManifest(unsafeRegex, samples())
+    expect(regexReport.ok).toBe(false)
+    expect(regexReport.errors.join(' ')).toMatch(/正则不安全/)
+
+    const insecure = { ...manifest, baseUrl: 'http://lms.example.edu/' }
+    const httpReport = await replayManifest(insecure, samples())
+    expect(httpReport.ok).toBe(false)
+    expect(httpReport.errors.join(' ')).toMatch(/HTTPS/)
+  })
+
   it('stores candidates, activates validated versions and rolls back', async () => {
     const clock = fixedClock()
     const store = createTestStore({ clock })

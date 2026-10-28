@@ -3,9 +3,12 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   ManifestRegistry,
+  MAX_ROWS_PER_PAGE,
   extractPage,
   parseManifest,
   readJsonPath,
+  regexSafetyError,
+  renderManifestUrl,
   type AdapterManifest,
 } from '../src/index.js'
 
@@ -113,5 +116,53 @@ describe('declarative manifest', () => {
     expect(page.rows).toHaveLength(2)
     expect(page.rows[1]).toMatchObject({ externalCourseId: 'C2', title: 'Calculus' })
     expect(readJsonPath({ data: { items: [{ id: 'x' }] } }, 'data.items[0].id')).toBe('x')
+  })
+
+  it('rejects unsafe regex, encodes template values and caps extracted rows', () => {
+    expect(regexSafetyError('(a+)+')).toBeTruthy()
+    expect(regexSafetyError('(.*)*')).toBeTruthy()
+    expect(regexSafetyError('(\\w+){2,}')).toBeTruthy()
+    expect(regexSafetyError('\\1')).toBeTruthy()
+    expect(regexSafetyError('(?:x|y)+')).toBeUndefined()
+
+    const unsafe = parseManifest({
+      ...htmlManifest,
+      courses: {
+        ...htmlManifest.courses,
+        fields: {
+          title: { selector: '.title', regex: '(a+)+' },
+        },
+      },
+    })
+    expect(() => extractPage(fixture('portal.html'), unsafe.courses)).toThrow(
+      /Unsafe regex/,
+    )
+
+    expect(
+      renderManifestUrl(
+        '/course/{{course.externalCourseId}}.html',
+        { course: { externalCourseId: '../admin?x=1' } },
+        'https://lms.example.edu/',
+      ),
+    ).toBe('https://lms.example.edu/course/..%2Fadmin%3Fx%3D1.html')
+
+    const payload = JSON.stringify({
+      data: Array.from({ length: MAX_ROWS_PER_PAGE + 5 }, (_, index) => ({
+        id: `C${index}`,
+      })),
+    })
+    const manifest = parseManifest({
+      ...htmlManifest,
+      adapterId: 'rows-cap',
+      courses: {
+        url: '/api/courses',
+        responseType: 'json',
+        items: 'data',
+        fields: { externalCourseId: { path: 'id' } },
+      },
+    })
+    const page = extractPage(payload, manifest.courses)
+    expect(page.rows).toHaveLength(MAX_ROWS_PER_PAGE)
+    expect(page.truncated).toBe(true)
   })
 })

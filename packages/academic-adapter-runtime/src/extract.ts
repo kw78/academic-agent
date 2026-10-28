@@ -4,6 +4,26 @@ import type { ManifestExtractor, ManifestRequest } from './manifest.js'
 export interface ExtractedPage {
   rows: Array<Record<string, unknown>>
   next?: string
+  truncated?: boolean
+}
+
+export const MAX_REGEX_INPUT = 10_000
+export const MAX_ROWS_PER_PAGE = 1_000
+
+/** Reject patterns that are prone to catastrophic backtracking. */
+export function regexSafetyError(pattern: string): string | undefined {
+  if (pattern.length > 300) return '正则表达式过长'
+  if (/\\[1-9]/.test(pattern)) return '不允许正则反向引用'
+  if (/\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)\s*(?:[+*]|\{\d+,?\d*\})/.test(pattern)) {
+    return '不允许嵌套量词'
+  }
+  return undefined
+}
+
+function safeRegex(pattern: string): RegExp {
+  const error = regexSafetyError(pattern)
+  if (error) throw new Error(`Unsafe regex: ${error}`)
+  return new RegExp(pattern)
 }
 
 type HtmlRow = {
@@ -49,7 +69,7 @@ function applyRegex(
   extractor: ManifestExtractor,
 ): string | undefined {
   if (!extractor.regex) return value
-  const match = new RegExp(extractor.regex).exec(value)
+  const match = safeRegex(extractor.regex).exec(value.slice(0, MAX_REGEX_INPUT))
   if (!match) return undefined
   return match[extractor.group ?? 1] ?? ''
 }
@@ -93,11 +113,12 @@ export function extractPage(
       throw new Error('Response is not valid JSON')
     }
     const rawRows = readJsonPath(parsed, request.items)
-    const rows = Array.isArray(rawRows)
+    const allRows = Array.isArray(rawRows)
       ? rawRows
       : rawRows !== undefined && rawRows !== null
         ? [rawRows]
         : []
+    const rows = allRows.slice(0, MAX_ROWS_PER_PAGE)
     const result: ExtractedPage = {
       rows: rows.map((row) => {
         const record: Record<string, unknown> = {}
@@ -107,6 +128,7 @@ export function extractPage(
         }
         return record
       }),
+      ...(allRows.length > rows.length ? { truncated: true } : {}),
     }
     if (request.next) {
       const next = readJsonPath(parsed, request.next)
@@ -116,11 +138,12 @@ export function extractPage(
   }
 
   const { document } = parseHTML(payload)
-  const rawRows = Array.from(
+  const allRows = Array.from(
     document.querySelectorAll(request.items),
   ) as unknown as HtmlRow[]
+  const rows = allRows.slice(0, MAX_ROWS_PER_PAGE)
   const result: ExtractedPage = {
-    rows: rawRows.map((row) => {
+    rows: rows.map((row) => {
       const record: Record<string, unknown> = {}
       for (const [name, extractor] of Object.entries(request.fields)) {
         const value = extractHtmlField(row, extractor)
@@ -128,6 +151,7 @@ export function extractPage(
       }
       return record
     }),
+    ...(allRows.length > rows.length ? { truncated: true } : {}),
   }
   if (request.next) {
     const next = document.querySelector(request.next) as HtmlRow | null

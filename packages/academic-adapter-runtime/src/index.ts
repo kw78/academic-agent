@@ -9,12 +9,16 @@ export {
 export {
   extractPage,
   readJsonPath,
+  regexSafetyError,
+  MAX_ROWS_PER_PAGE,
+  MAX_REGEX_INPUT,
   type ExtractedPage,
 } from './extract.js'
 export {
   createDeclarativeEngine,
   declarativeConfigSchema,
   replayManifest,
+  renderManifestUrl,
   type DeclarativeConfig,
   type DeclarativeEngineOptions,
 } from './runtime.js'

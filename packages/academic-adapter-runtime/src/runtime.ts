@@ -31,13 +31,15 @@ import {
   type ResolveHost,
   type WebCookie,
 } from '@academic/web-sessions'
-import { extractPage, readJsonPath } from './extract.js'
+import { extractPage, readJsonPath, regexSafetyError } from './extract.js'
 import {
   ManifestRegistry,
   parseManifest,
   type AdapterManifest,
   type ManifestRequest,
 } from './manifest.js'
+
+const MAX_TOTAL_ROWS = 5_000
 
 export const declarativeConfigSchema = browserConfigSchema.extend({
   manifestId: z.string().min(1).max(200),
@@ -48,6 +50,8 @@ export const declarativeConfigSchema = browserConfigSchema.extend({
   maxCourses: z.number().int().min(1).max(200).optional(),
   maxAssignments: z.number().int().min(1).max(500).optional(),
   delayMs: z.number().int().min(0).max(5_000).optional(),
+  maxRequests: z.number().int().min(1).max(500).optional(),
+  maxDurationMs: z.number().int().min(1_000).max(10 * 60_000).optional(),
 })
 
 export type DeclarativeConfig = z.infer<typeof declarativeConfigSchema>
@@ -81,12 +85,20 @@ function renderTemplate(template: string, vars: Row): string {
     if (value === undefined || value === null || value === '') {
       throw new Error(`Template variable is missing: ${path}`)
     }
-    return String(value)
+    return encodeURIComponent(String(value))
   })
 }
 
 function absoluteUrl(value: string, baseUrl: string): string {
   return new URL(value, baseUrl).toString()
+}
+
+export function renderManifestUrl(
+  template: string,
+  vars: Row,
+  baseUrl: string,
+): string {
+  return absoluteUrl(renderTemplate(template, vars), baseUrl)
 }
 
 function parseDue(
@@ -153,6 +165,8 @@ class ManifestClient {
   readonly #options: RuntimeOptions
   readonly #protocols: AllowedProtocol[]
   readonly #ports: number[]
+  readonly #startedAt = Date.now()
+  #requests = 0
 
   constructor(
     manifest: AdapterManifest,
@@ -180,6 +194,13 @@ class ManifestClient {
   }
 
   async get(url: string): Promise<string> {
+    if (this.#requests >= (this.#config.maxRequests ?? 100)) {
+      throw new AdapterTransientError('声明式抓取请求次数超过上限')
+    }
+    if (Date.now() - this.#startedAt > (this.#config.maxDurationMs ?? 120_000)) {
+      throw new AdapterTransientError('声明式抓取超过执行时间上限')
+    }
+    this.#requests += 1
     let lastError: unknown
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
@@ -254,11 +275,17 @@ class ManifestClient {
   ): Promise<{ rows: Row[]; complete: boolean }> {
     const maxPages = request.maxPages ?? 1
     const rows: Row[] = []
-    let currentUrl = absoluteUrl(renderTemplate(request.url, vars), this.#baseUrl)
+    let currentUrl = renderManifestUrl(request.url, vars, this.#baseUrl)
     for (let page = 0; page < maxPages; page += 1) {
       const body = await this.get(currentUrl)
       const extracted = extractPage(body, request)
+      const remaining = MAX_TOTAL_ROWS - rows.length
+      if (extracted.rows.length > remaining) {
+        rows.push(...extracted.rows.slice(0, Math.max(0, remaining)))
+        return { rows, complete: false }
+      }
       rows.push(...extracted.rows)
+      if (extracted.truncated) return { rows, complete: false }
       if (!extracted.next) return { rows, complete: true }
       if (page + 1 >= maxPages) return { rows, complete: false }
       currentUrl = absoluteUrl(extracted.next, currentUrl)
@@ -548,10 +575,16 @@ function hostAllowed(host: string, origins: string[]): boolean {
 
 function validateManifestStatic(manifest: AdapterManifest): string[] {
   const errors: string[] = []
+  const allowHttp = manifest.allowHttp === true
+  let basePort = 443
   try {
-    const host = new URL(manifest.baseUrl).hostname
-    if (!hostAllowed(host, manifest.allowedOrigins)) {
-      errors.push(`baseUrl 主机不在 allowedOrigins：${host}`)
+    const base = new URL(manifest.baseUrl)
+    if (!allowHttp && base.protocol !== 'https:') {
+      errors.push('baseUrl 必须使用 HTTPS，HTTP 需要显式 allowHttp')
+    }
+    basePort = base.port ? Number(base.port) : base.protocol === 'https:' ? 443 : 80
+    if (!hostAllowed(base.hostname, manifest.allowedOrigins)) {
+      errors.push(`baseUrl 主机不在 allowedOrigins：${base.hostname}`)
     }
   } catch {
     errors.push('baseUrl 无效')
@@ -579,8 +612,19 @@ function validateManifestStatic(manifest: AdapterManifest): string[] {
       const resolved = new URL(request.url, manifest.baseUrl)
       if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
         errors.push(`${name} URL 只允许 http(s)`)
+      } else if (!allowHttp && resolved.protocol !== 'https:') {
+        errors.push(`${name} URL 必须使用 HTTPS`)
       } else if (!allowHostInManifest(resolved.hostname, manifest)) {
         errors.push(`${name} URL 主机不在 allowedOrigins：${resolved.hostname}`)
+      } else {
+        const port = resolved.port
+          ? Number(resolved.port)
+          : resolved.protocol === 'https:'
+            ? 443
+            : 80
+        if (port !== basePort) {
+          errors.push(`${name} URL 端口必须与 baseUrl 一致：${port}`)
+        }
       }
     } catch {
       errors.push(`${name} URL 无效`)
@@ -591,6 +635,10 @@ function validateManifestStatic(manifest: AdapterManifest): string[] {
       }
       if (request.responseType === 'json' && !extractor.path) {
         errors.push(`${name}.${field} 需要 path`)
+      }
+      if (extractor.regex) {
+        const regexError = regexSafetyError(extractor.regex)
+        if (regexError) errors.push(`${name}.${field} 正则不安全：${regexError}`)
       }
     }
   }
