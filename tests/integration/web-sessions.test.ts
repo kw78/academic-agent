@@ -278,6 +278,14 @@ describe('safe session fetch', () => {
     expect(limited.body).toBe('0123')
     expect(limited.truncated).toBe(true)
 
+    await expect(
+      safeFetch('https://public.example.com/', {
+        allowedHosts: ['example.com'],
+        fetchImpl: async () => new Response('', { status: 429 }),
+        resolveHost: publicResolver,
+      }),
+    ).rejects.toMatchObject({ code: 'RATE_LIMITED' })
+
     const hanging: typeof fetch = (_input, init) =>
       new Promise((_, reject) => {
         if (init?.signal?.aborted) {

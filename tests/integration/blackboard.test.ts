@@ -45,7 +45,7 @@ interface Router {
   fetchImpl: typeof fetch
   calls: string[]
   portal: 'ok' | 'login'
-  assignments: 'ok' | 'failed'
+  assignments: 'ok' | 'failed' | 'fail-once'
 }
 
 function router(): Router {
@@ -65,6 +65,10 @@ function router(): Router {
       if (url.includes('listContent.jsp')) {
         if (state.assignments === 'failed') {
           return new Response('server error', { status: 500 })
+        }
+        if (state.assignments === 'fail-once') {
+          state.assignments = 'ok'
+          return new Response('temporarily unavailable', { status: 503 })
         }
         return new Response(fixture('assignments-1001.html'))
       }
@@ -208,6 +212,11 @@ describe('Blackboard read-only engine', () => {
     expect(second.status).toBe('success')
     expect(second.created).toBe(0)
     expect(second.updated).toBe(0)
+
+    state.assignments = 'fail-once'
+    const retried = await app.syncSource('bb', connection.connectionId)
+    expect(retried.status).toBe('success')
+    expect(state.assignments).toBe('ok')
 
     state.portal = 'login'
     await expect(app.syncSource('bb', connection.connectionId)).rejects.toBeInstanceOf(

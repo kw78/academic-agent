@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 import {
   AdapterAuthError,
+  AdapterTransientError,
   COMMAND,
   parseCommand,
   type AcademicSourceAdapter,
@@ -43,6 +44,8 @@ export interface SyncOptions {
   archiveMissing?: boolean
   /** When present, the adapter only runs with a source-checked credential lease. */
   connection?: ConnectionSyncBinding
+  /** Bounded retries for transient adapter failures. */
+  maxAttempts?: number
 }
 
 type ItemOutcome =
@@ -193,10 +196,23 @@ export class ConnectorService {
       }
     }
 
-    let adapterResult: AdapterResult
-    try {
-      adapterResult = await adapter.fetch(credentials ? { credentials } : undefined)
-    } catch (error) {
+    let adapterResult: AdapterResult | undefined
+    let lastError: unknown
+    const maxAttempts = Math.max(1, options.maxAttempts ?? 2)
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        adapterResult = await adapter.fetch(credentials ? { credentials } : undefined)
+        break
+      } catch (error) {
+        lastError = error
+        if (!(error instanceof AdapterTransientError) || attempt >= maxAttempts) {
+          break
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200 * attempt))
+      }
+    }
+    if (!adapterResult) {
+      const error = lastError
       const authFailure = error instanceof AdapterAuthError
       if (authFailure && options.connection) {
         await options.connection.credentials.markAuthRequired(

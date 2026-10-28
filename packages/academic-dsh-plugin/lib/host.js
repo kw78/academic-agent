@@ -26238,6 +26238,10 @@ async function safeFetch(input2, options) {
           )}`
         );
       }
+      if (response.status === 429) {
+        await response.body?.cancel().catch(() => void 0);
+        throw new SafeFetchError("RATE_LIMITED", "\u8BF7\u6C42\u88AB\u9650\u6D41\uFF08429\uFF09");
+      }
       if (isRedirect(response.status)) {
         if (hop >= maxRedirects) {
           throw new SafeFetchError("REDIRECT_LIMIT", "\u91CD\u5B9A\u5411\u6B21\u6570\u8D85\u8FC7\u4E0A\u9650");
@@ -27060,6 +27064,21 @@ var BlackboardClient = class {
     this.#resolveHost = options.resolveHost;
   }
   async get(url2) {
+    let lastError;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        return await this.#getOnce(url2);
+      } catch (error62) {
+        lastError = error62;
+        if (!(error62 instanceof AdapterTransientError) || attempt >= 2) {
+          throw error62;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+      }
+    }
+    throw lastError;
+  }
+  async #getOnce(url2) {
     try {
       const result = await safeFetch(url2, {
         cookies: this.#cookies,
@@ -38123,6 +38142,21 @@ var ManifestClient = class {
     return this.#baseUrl;
   }
   async get(url2) {
+    let lastError;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        return await this.#getOnce(url2);
+      } catch (error62) {
+        lastError = error62;
+        if (!(error62 instanceof AdapterTransientError) || attempt >= 2) {
+          throw error62;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+      }
+    }
+    throw lastError;
+  }
+  async #getOnce(url2) {
     try {
       const result = await safeFetch(url2, {
         cookies: this.#cookies,
@@ -39300,9 +39334,22 @@ var ConnectorService = class {
       }
     }
     let adapterResult;
-    try {
-      adapterResult = await adapter2.fetch(credentials ? { credentials } : void 0);
-    } catch (error62) {
+    let lastError;
+    const maxAttempts = Math.max(1, options.maxAttempts ?? 2);
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        adapterResult = await adapter2.fetch(credentials ? { credentials } : void 0);
+        break;
+      } catch (error62) {
+        lastError = error62;
+        if (!(error62 instanceof AdapterTransientError) || attempt >= maxAttempts) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+      }
+    }
+    if (!adapterResult) {
+      const error62 = lastError;
       const authFailure = error62 instanceof AdapterAuthError;
       if (authFailure && options.connection) {
         await options.connection.credentials.markAuthRequired(
@@ -42804,6 +42851,21 @@ var ModelUsageMeter = class {
     return this.#calls;
   }
 };
+async function retryTransient(operation, attempts = 2) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error62) {
+      lastError = error62;
+      if (!(error62 instanceof AdapterTransientError) || attempt >= attempts) {
+        throw error62;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+    }
+  }
+  throw lastError;
+}
 function blocksOverlap(left, right) {
   return Date.parse(left.start) < Date.parse(right.end) && Date.parse(right.start) < Date.parse(left.end);
 }
@@ -43131,6 +43193,7 @@ async function createAcademicApp(options) {
   }
   let started = false;
   let closed = false;
+  const syncInFlight = /* @__PURE__ */ new Set();
   const app = {
     store,
     clock,
@@ -43201,47 +43264,57 @@ async function createAcademicApp(options) {
       }
     },
     async syncSource(sourceId, connectionId) {
-      const source = sources.get(sourceId);
-      if (!source || !source.enabled || source.archived) {
-        throw new CapabilityUnavailableError(`source.${sourceId}`);
+      if (syncInFlight.has(sourceId)) {
+        throw new SourceConflictError(`Sync already running: ${sourceId}`);
       }
-      const engine = sourceEngines.get(source.engine);
-      if (!engine?.createAdapter) {
-        throw new CapabilityUnavailableError(`source.engine.${source.engine}`);
-      }
-      const context2 = { sourceId, config: source.config };
-      let credentials;
-      let connection;
-      if (connectionId) {
-        const record2 = connections.get(connectionId);
-        if (!record2) throw new Error(`Connection not found: ${connectionId}`);
-        if (record2.sourceId !== sourceId) {
-          throw new Error("Connection does not belong to the requested source");
+      syncInFlight.add(sourceId);
+      try {
+        const source = sources.get(sourceId);
+        if (!source || !source.enabled || source.archived) {
+          throw new CapabilityUnavailableError(`source.${sourceId}`);
         }
-        credentials = await connections.openCredential(connectionId, sourceId);
-        connection = { connectionId, credentials: connections };
-      } else if (source.authKind !== "none") {
-        throw new CapabilityUnavailableError(`source.credentials.${sourceId}`);
-      }
-      if (engine.listCourses) {
-        try {
-          const courses = await engine.listCourses(context2, credentials);
-          for (const course2 of courses) {
-            await connectors.registerCourse({ ...course2, sourceId });
-          }
-        } catch (error62) {
-          if (connectionId && error62 instanceof AdapterAuthError) {
-            await connections.markAuthRequired(connectionId, error62.message);
-          }
-          throw error62;
+        const engine = sourceEngines.get(source.engine);
+        if (!engine?.createAdapter) {
+          throw new CapabilityUnavailableError(`source.engine.${source.engine}`);
         }
+        const context2 = { sourceId, config: source.config };
+        let credentials;
+        let connection;
+        if (connectionId) {
+          const record2 = connections.get(connectionId);
+          if (!record2) throw new Error(`Connection not found: ${connectionId}`);
+          if (record2.sourceId !== sourceId) {
+            throw new Error("Connection does not belong to the requested source");
+          }
+          credentials = await connections.openCredential(connectionId, sourceId);
+          connection = { connectionId, credentials: connections };
+        } else if (source.authKind !== "none") {
+          throw new CapabilityUnavailableError(`source.credentials.${sourceId}`);
+        }
+        if (engine.listCourses) {
+          try {
+            const courses = await retryTransient(
+              () => engine.listCourses(context2, credentials)
+            );
+            for (const course2 of courses) {
+              await connectors.registerCourse({ ...course2, sourceId });
+            }
+          } catch (error62) {
+            if (connectionId && error62 instanceof AdapterAuthError) {
+              await connections.markAuthRequired(connectionId, error62.message);
+            }
+            throw error62;
+          }
+        }
+        const summary2 = await connectors.sync(
+          engine.createAdapter(context2),
+          connection ? { connection } : {}
+        );
+        await dispatcher.processOnce();
+        return summary2;
+      } finally {
+        syncInFlight.delete(sourceId);
       }
-      const summary2 = await connectors.sync(
-        engine.createAdapter(context2),
-        connection ? { connection } : {}
-      );
-      await dispatcher.processOnce();
-      return summary2;
     },
     async previewPlan(range, previewOptions = {}) {
       return planner.preview({ range, ...previewOptions });

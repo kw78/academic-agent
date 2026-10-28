@@ -167,6 +167,22 @@ class ManifestClient {
   }
 
   async get(url: string): Promise<string> {
+    let lastError: unknown
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        return await this.#getOnce(url)
+      } catch (error) {
+        lastError = error
+        if (!(error instanceof AdapterTransientError) || attempt >= 2) {
+          throw error
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200 * attempt))
+      }
+    }
+    throw lastError
+  }
+
+  async #getOnce(url: string): Promise<string> {
     try {
       const result = await safeFetch(url, {
         cookies: this.#cookies,

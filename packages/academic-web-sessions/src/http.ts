@@ -28,6 +28,7 @@ export type SafeFetchErrorCode =
   | 'TIMEOUT'
   | 'INVALID_COOKIE'
   | 'NETWORK'
+  | 'RATE_LIMITED'
 
 export class SafeFetchError extends Error {
   readonly code: SafeFetchErrorCode
@@ -427,6 +428,11 @@ export async function safeFetch(
             error instanceof Error ? error.message : String(error),
           )}`,
         )
+      }
+
+      if (response.status === 429) {
+        await response.body?.cancel().catch(() => undefined)
+        throw new SafeFetchError('RATE_LIMITED', '请求被限流（429）')
       }
 
       if (isRedirect(response.status)) {

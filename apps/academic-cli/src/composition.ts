@@ -3,10 +3,12 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import {
   AdapterAuthError,
+  AdapterTransientError,
   COMMAND,
   CapabilityRegistry,
   CapabilityUnavailableError,
   EVENT,
+  SourceConflictError,
   SourceEngineRegistry,
   parseCommand,
   systemClock,
@@ -94,6 +96,25 @@ export class ModelUsageMeter {
   count(): number {
     return this.#calls
   }
+}
+
+async function retryTransient<T>(
+  operation: () => Promise<T>,
+  attempts = 2,
+): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error
+      if (!(error instanceof AdapterTransientError) || attempt >= attempts) {
+        throw error
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200 * attempt))
+    }
+  }
+  throw lastError
 }
 
 export interface AcademicAppOptions {
@@ -591,6 +612,7 @@ export async function createAcademicApp(
 
   let started = false
   let closed = false
+  const syncInFlight = new Set<string>()
 
   const app: AcademicApp = {
     store,
@@ -667,6 +689,11 @@ export async function createAcademicApp(
     },
 
     async syncSource(sourceId, connectionId) {
+      if (syncInFlight.has(sourceId)) {
+        throw new SourceConflictError(`Sync already running: ${sourceId}`)
+      }
+      syncInFlight.add(sourceId)
+      try {
       const source = sources.get(sourceId)
       if (!source || !source.enabled || source.archived) {
         throw new CapabilityUnavailableError(`source.${sourceId}`)
@@ -691,7 +718,9 @@ export async function createAcademicApp(
       }
       if (engine.listCourses) {
         try {
-          const courses = await engine.listCourses(context, credentials)
+          const courses = await retryTransient(() =>
+            engine.listCourses!(context, credentials),
+          )
           for (const course of courses) {
             await connectors.registerCourse({ ...course, sourceId })
           }
@@ -708,6 +737,9 @@ export async function createAcademicApp(
       )
       await dispatcher.processOnce()
       return summary
+      } finally {
+        syncInFlight.delete(sourceId)
+      }
     },
 
     async previewPlan(range, previewOptions = {}) {
