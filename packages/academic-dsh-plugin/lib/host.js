@@ -26847,17 +26847,12 @@ var ProbeSampleStore = class {
 
 // packages/academic-sources/src/probe-rate-limit.ts
 var ProbeRateLimiter = class {
-  #windowMs;
-  #maxRequests;
   #minIntervalMs;
   #now;
   #sleep;
-  #events = /* @__PURE__ */ new Map();
   #last = /* @__PURE__ */ new Map();
   constructor(options = {}) {
-    this.#windowMs = options.windowMs ?? 10 * 6e4;
-    this.#maxRequests = options.maxRequests ?? 10;
-    this.#minIntervalMs = options.minIntervalMs ?? 1200;
+    this.#minIntervalMs = options.minIntervalMs ?? 6e4;
     this.#now = options.now ?? (() => Date.now());
     this.#sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   }
@@ -26865,24 +26860,14 @@ var ProbeRateLimiter = class {
     const last = this.#last.get(sourceId);
     if (last !== void 0) {
       const wait = this.#minIntervalMs - (this.#now() - last);
+      if (wait > 2e3) {
+        throw new Error(
+          `\u63A2\u6D4B\u8BF7\u6C42\u8FC7\u4E8E\u9891\u7E41\uFF1A\u8BF7\u7EA6 ${Math.ceil(wait / 1e3)} \u79D2\u540E\u518D\u8BD5\uFF0C\u907F\u514D\u89E6\u53D1\u5E73\u53F0\u98CE\u63A7`
+        );
+      }
       if (wait > 0) await this.#sleep(wait);
     }
-    const at = this.#now();
-    const recent = (this.#events.get(sourceId) ?? []).filter(
-      (timestamp) => at - timestamp < this.#windowMs
-    );
-    if (recent.length >= this.#maxRequests) {
-      const retryAfterSeconds = Math.max(
-        1,
-        Math.ceil((this.#windowMs - (at - recent[0])) / 1e3)
-      );
-      throw new Error(
-        `\u63A2\u6D4B\u8BF7\u6C42\u8FC7\u4E8E\u9891\u7E41\uFF1A\u8BF7\u7EA6 ${retryAfterSeconds} \u79D2\u540E\u518D\u8BD5\uFF0C\u907F\u514D\u89E6\u53D1\u5E73\u53F0\u98CE\u63A7`
-      );
-    }
-    recent.push(at);
-    this.#events.set(sourceId, recent);
-    this.#last.set(sourceId, at);
+    this.#last.set(sourceId, this.#now());
   }
 };
 

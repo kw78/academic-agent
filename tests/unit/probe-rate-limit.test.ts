@@ -2,21 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { ProbeRateLimiter, ProbeSampleStore } from '@academic/sources'
 
 describe('probe rate limiter and sample store', () => {
-  it('spaces requests and refuses to exceed the window budget', async () => {
+  it('allows at most one probe per minute and fails fast instead of sleeping', async () => {
     let now = 0
     const limiter = new ProbeRateLimiter({
-      windowMs: 10_000,
-      maxRequests: 2,
-      minIntervalMs: 1_000,
+      minIntervalMs: 60_000,
       now: () => now,
-      sleep: async (milliseconds) => {
-        now += milliseconds
-      },
     })
     await limiter.acquire('source-1')
-    await limiter.acquire('source-1')
-    await expect(limiter.acquire('source-1')).rejects.toThrow(/过于频繁/)
-    expect(now).toBeGreaterThanOrEqual(1_000)
+    await expect(limiter.acquire('source-1')).rejects.toThrow(/约 60 秒/)
+    now = 60_000
+    await expect(limiter.acquire('source-1')).resolves.toBeUndefined()
   })
 
   it('reuses the same sample for identical URL content and expires it', () => {
