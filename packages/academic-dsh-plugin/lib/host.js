@@ -26058,7 +26058,23 @@ async function readBody(response, finalUrl, maxBytes, signal) {
       redirects: []
     };
   }
-  const reader = response.body.getReader();
+  const encoding = response.headers.get("content-encoding")?.trim().toLowerCase();
+  let stream = response.body;
+  try {
+    if (encoding === "gzip" || encoding === "x-gzip") {
+      stream = stream.pipeThrough(new DecompressionStream("gzip"));
+    } else if (encoding === "deflate") {
+      stream = stream.pipeThrough(new DecompressionStream("deflate"));
+    }
+  } catch (error62) {
+    throw new SafeFetchError(
+      "NETWORK",
+      `\u54CD\u5E94\u89E3\u538B\u5931\u8D25\uFF1A${sanitizeErrorText(
+        error62 instanceof Error ? error62.message : String(error62)
+      )}`
+    );
+  }
+  const reader = stream.getReader();
   const decoder = new TextDecoder();
   let text2 = "";
   let bytes = 0;
@@ -26138,6 +26154,7 @@ async function safeFetch(input2, options) {
           {
             headers: {
               Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+              "Accept-Encoding": "identity",
               ...cookie ? { Cookie: cookie } : {}
             },
             signal: controller.signal
@@ -27846,13 +27863,20 @@ function createBlackboardEngine(options = {}) {
 var extractorSchema = external_exports.object({
   selector: external_exports.string().min(1).max(500).optional(),
   path: external_exports.string().min(1).max(500).optional(),
+  constant: external_exports.union([external_exports.string(), external_exports.number(), external_exports.boolean()]).optional(),
+  template: external_exports.string().min(1).max(1e3).optional(),
   attribute: external_exports.string().min(1).max(100).optional(),
   regex: external_exports.string().min(1).max(500).optional(),
   group: external_exports.number().int().min(0).max(20).optional(),
   trim: external_exports.boolean().optional()
-}).refine((value) => Boolean(value.selector) !== Boolean(value.path), {
-  message: "Each field needs exactly one of selector or path"
-});
+}).refine(
+  (value) => [value.selector, value.path, value.constant, value.template].filter(
+    (entry) => entry !== void 0
+  ).length === 1,
+  {
+    message: "Each field needs exactly one of selector, path, constant or template"
+  }
+);
 var requestSchema = external_exports.object({
   url: external_exports.string().min(1).max(2e3),
   responseType: external_exports.enum(["html", "json"]).default("html"),
@@ -38549,6 +38573,35 @@ function extractJsonField(row, extractor) {
   if (matched === void 0) return void 0;
   return extractor.trim === false ? matched : matched.trim();
 }
+function scalarText(value) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return void 0;
+}
+function renderFieldTemplate(template, record2) {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, path) => {
+    return scalarText(readJsonPath(record2, path)) ?? "";
+  });
+}
+function extractRecord(row, request, html) {
+  const record2 = {};
+  const entries2 = Object.entries(request.fields);
+  for (const [name, extractor] of entries2) {
+    if (extractor.constant !== void 0) record2[name] = extractor.constant;
+  }
+  for (const [name, extractor] of entries2) {
+    if (extractor.constant !== void 0 || extractor.template !== void 0) continue;
+    const value = html ? extractHtmlField(row, extractor) : extractJsonField(row, extractor);
+    if (value !== void 0) record2[name] = value;
+  }
+  for (const [name, extractor] of entries2) {
+    if (!extractor.template) continue;
+    const raw = renderFieldTemplate(extractor.template, record2);
+    const value = extractor.trim === false ? raw : raw.trim();
+    if (value) record2[name] = value;
+  }
+  return record2;
+}
 function extractPage(payload, request) {
   if (request.responseType === "json") {
     let parsed;
@@ -38561,14 +38614,7 @@ function extractPage(payload, request) {
     const allRows2 = Array.isArray(rawRows) ? rawRows : rawRows !== void 0 && rawRows !== null ? [rawRows] : [];
     const rows2 = allRows2.slice(0, MAX_ROWS_PER_PAGE);
     const result2 = {
-      rows: rows2.map((row) => {
-        const record2 = {};
-        for (const [name, extractor] of Object.entries(request.fields)) {
-          const value = extractJsonField(row, extractor);
-          if (value !== void 0) record2[name] = value;
-        }
-        return record2;
-      }),
+      rows: rows2.map((row) => extractRecord(row, request, false)),
       ...allRows2.length > rows2.length ? { truncated: true } : {}
     };
     if (request.next) {
@@ -38583,14 +38629,7 @@ function extractPage(payload, request) {
   );
   const rows = allRows.slice(0, MAX_ROWS_PER_PAGE);
   const result = {
-    rows: rows.map((row) => {
-      const record2 = {};
-      for (const [name, extractor] of Object.entries(request.fields)) {
-        const value = extractHtmlField(row, extractor);
-        if (value !== void 0) record2[name] = value;
-      }
-      return record2;
-    }),
+    rows: rows.map((row) => extractRecord(row, request, true)),
     ...allRows.length > rows.length ? { truncated: true } : {}
   };
   if (request.next) {
@@ -38844,6 +38883,7 @@ var ManifestAdapter = class {
     const terms = this.#config.termFilter?.map((term) => term.toUpperCase());
     const filters2 = this.#config.courseFilter?.map((value) => value.toLowerCase());
     const courses = [];
+    const seenCourses = /* @__PURE__ */ new Set();
     for (const row of loaded.rows) {
       const externalCourseId = requiredText(row, "externalCourseId");
       const code = requiredText(row, "code");
@@ -38857,6 +38897,8 @@ var ManifestAdapter = class {
       if (filters2?.length && !filters2.some((value) => `${code} ${title}`.toLowerCase().includes(value))) {
         continue;
       }
+      if (seenCourses.has(externalCourseId)) continue;
+      seenCourses.add(externalCourseId);
       courses.push({ ...row, externalCourseId, code, title, termId });
       if (courses.length >= (this.#config.maxCourses ?? 20)) break;
     }
@@ -39078,15 +39120,28 @@ function validateManifestStatic(manifest) {
       errors.push(`${name} URL \u65E0\u6548`);
     }
     for (const [field, extractor] of Object.entries(request.fields)) {
-      if (request.responseType === "html" && !extractor.selector) {
+      const derived2 = extractor.constant !== void 0 || extractor.template !== void 0;
+      if (request.responseType === "html" && !derived2 && !extractor.selector) {
         errors.push(`${name}.${field} \u9700\u8981 selector`);
       }
-      if (request.responseType === "json" && !extractor.path) {
+      if (request.responseType === "json" && !derived2 && !extractor.path) {
         errors.push(`${name}.${field} \u9700\u8981 path`);
       }
       if (extractor.regex) {
         const regexError = regexSafetyError(extractor.regex);
         if (regexError) errors.push(`${name}.${field} \u6B63\u5219\u4E0D\u5B89\u5168\uFF1A${regexError}`);
+      }
+      if (extractor.template) {
+        for (const match of extractor.template.matchAll(
+          /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g
+        )) {
+          const reference = match[1];
+          if (!reference || !request.fields[reference]) {
+            errors.push(`${name}.${field} \u6A21\u677F\u5F15\u7528\u4E86\u672A\u77E5\u5B57\u6BB5\uFF1A${reference ?? ""}`);
+          } else if (request.fields[reference]?.template) {
+            errors.push(`${name}.${field} \u6A21\u677F\u4E0D\u80FD\u5F15\u7528\u53E6\u4E00\u4E2A\u6A21\u677F\u5B57\u6BB5`);
+          }
+        }
       }
     }
   }
