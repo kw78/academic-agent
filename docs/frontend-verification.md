@@ -31,7 +31,7 @@
 - 总览：今日任务、近期截止、今日计划、未读提醒、最近变化、同步健康、数据源状态；
 - 任务：课程/类型/截止/状态筛选、任务完成/重开、预计时长、来源事项与本地任务分离、Agent 入口；
 - 计划：候选/确认计划区分、7/14/30 天预览、按日/按周/列表视图、确认/放弃、锁定/解锁、未安排原因、归档；
-- 连接：课程添加/归档、数据库 source 列表、engine 元数据、登录/同步/验证、断开/删除凭据；数据源来自 DB 中的 engine + config，UI 不认识具体网站；
+- 连接：课程添加/归档、数据库 source 列表、engine 元数据、配置/认证/同步健康/Adapter 分维度状态、登录/同步/验证、断开/删除凭据；数据源来自 DB 中的 engine + config，UI 不认识具体网站；
 - 自动化：同步/重算/提醒作业启停、运行记录、同步记录、通知已读、提醒阈值；
 - 设置：时区、每周可用时间、临时不可用、计划粒度、同步周期、界面偏好。
 
@@ -56,7 +56,7 @@
 | 暂停/恢复数据源同步 | 作业状态在“已暂停/运行中”之间切换 |
 | 通知全部已读 | 未读数归零 |
 | “咨询 Agent” | 打开 DSH 原生聊天并填入非敏感问题，不自动授予写入 |
-| 通用 source 表单 | 在“连接”页选择 browser-session engine 并创建 DB source；卡片显示 source 名称与登录入口，说明来自 engine + config，不是 vendor UI |
+| 通用 source 表单 | 在“连接”页选择 browser-session engine 并创建 DB source；认证方式/登录方式随 engine 能力收敛，高级 JSON 配置由 engine 校验；卡片显示 source 名称与登录入口，说明来自 engine + config，不是 vendor UI |
 | 网站登录面板 | 填写 URL + 标签，登录并保存；列表显示 domain/label，无 Cookie 泄露；登录窗口真实网站手工验收待做 |
 
 ## 生命周期验证
@@ -102,7 +102,7 @@ npm test
 - `tests/integration/ui-api.test.ts`：Query API 读取、Command API 任务变更、候选/确认分离、防篡改确认、凭据引用不泄露、未支持 Adapter 拒绝认证、输入校验、作业暂停/恢复、可用时间与提醒设置、通知已读、同步结果。
 - `tests/integration/web-sessions.test.ts`、`source-browser.test.ts`：Cookie 作用域、逐跳重定向、SSRF、超时与流式响应上限。
 
-当前基线：117 项测试通过（24 个测试文件）。
+当前基线：119 项测试通过（24 个测试文件）。
 
 ## 未完成/未验证
 

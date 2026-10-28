@@ -21,6 +21,8 @@ GitHub: <https://github.com/kw78/academic-agent>
 - 常规同步、去重、提醒、基础规划**不调用 LLM**；Agent 只通过受控工具读取事实或提交命令。
 - M1（事件溯源内核）与 M2（fixture 数据源 + 调度 + 规划）已完成；M3 的 Agent 工具已完成。
 - **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，12 个工具注册成功，并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
+- 前端 UI 已验证（`packages/academic-dsh-ui`）：见 [前端验证记录](docs/frontend-verification.md)。
+- 数据源状态已拆分为配置、认证、同步健康与 Adapter 就绪度；表单只允许 engine 声明的 `authKind` / `loginMode`。
 - 已用 DSH 中保存的 DeepSeek key 跑通真实自然语言工具调用：模型调用 `academic_list_courses` 并正确回答课程。
 - **DSH 客户端 UI 已落地**：`/dsh-ui` 在真实 DSH Web profile 中注册“学业”入口，提供总览、任务、计划、连接、自动化与设置；任务完成、候选计划确认、锁定、可用时间、作业启停和提醒已读均经 Host Remote API 生效。
 - 已通过 DSH Plugins 页面禁用/启用 UI：入口消失后后台同步/重算继续，重新启用后无重复 Host/作业/课程。文件级 HMR、真实 DSH Session 生命周期与审批 UI 仍待验证。
@@ -234,4 +236,4 @@ npm test
 npm run build:dsh
 ```
 
-共 117 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。
+共 119 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。

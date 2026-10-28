@@ -175,13 +175,13 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（117 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（119 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 
 P0 修复已验证：启动不覆盖调度配置；消费者重启续跑 checkpoint；Agent 写入需可信宿主授权；同步自动生成默认任务且不重复/不覆盖用户修改；Planner 遵守每周可用时间与临时不可用；72h/24h 截止提醒去重且重启补偿。
 
-数据源不再作为应用层 vendor 插件：每个网站只是 `academic_sources` 中的一条 `engine + config` 配置；通用 browser-session engine 拉起 Edge/Chrome，用户完成登录与验证码后读取会话 Cookie 写入 DPAPI。UI 只渲染 DB source，不认识具体网站。正式平台的作业/考试/课程解析仍待实现，不得声称真实平台同步完成。
+数据源不再作为应用层 vendor 插件：每个网站只是 `academic_sources` 中的一条 `engine + config` 配置；通用 browser-session engine 拉起 Edge/Chrome，用户完成登录与验证码后读取会话 Cookie 写入 DPAPI。UI 只渲染 DB source，不认识具体网站。正式平台的作业/考试/课程解析仍待实现，不得声称真实平台同步完成。数据源状态按配置、认证、同步健康和 Adapter 就绪度分开记录；表单只允许 engine 声明的 `authKind` / `loginMode`，服务端同样校验。
 
 凭据连接 MVP 已验证：连接元数据与秘密分离；Windows DPAPI 加密存储；fail-closed；验证/断开/删除凭据；认证失败停止同步并保留旧数据；source mismatch 拒绝；DB/事件/同步记录无明文；DPAPI 受保护凭据完成端到端同步。
 
