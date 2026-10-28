@@ -30,7 +30,9 @@ describe('academic UI client security constraints', () => {
     for (const source of clientSources()) {
       for (const match of source.text.matchAll(/localStorage\.(setItem|removeItem)\(([^)]*)/g)) {
         const argument = match[2] ?? ''
-        expect(argument, source.path).toMatch(/TAB_KEY|academic\.ui\.tab\.v1/)
+        expect(argument, source.path).toMatch(
+          /TAB_KEY|academic\.ui\.tab\.v1|GUIDE_KEY|academic\.ui\.guide\.v1/,
+        )
       }
     }
   })

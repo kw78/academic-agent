@@ -112,7 +112,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     name: ACADEMIC_TOOL_NAMES.ProbeSource,
     description:
-      'Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host\'s cookies. POST is allowed only as an explicit JSON body for read-only list/detail APIs; forms and custom headers are never sent. Read-only; never returns cookies or URL query strings.',
+      'Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host\'s cookies. POST is allowed only as an explicit JSON body for read-only list/detail APIs; forms and custom headers are never sent. Read-only; never returns cookies or URL query strings. If the page is an SPA shell or the data lives on another host, stop guessing URLs: ask the user to click “登录并录制” in the 连接 page, then read academic_list_capture_endpoints.',
     parameters: {
       sourceId: {
         type: 'string',
@@ -155,6 +155,15 @@ export const TOOL_SPECS: ToolSpec[] = [
       maxDepth: { type: 'integer', description: 'Link depth, 0-2; default 1' },
       pathPrefix: { type: 'string', description: 'Optional path prefix, e.g. /space/' },
       capture: { type: 'boolean', description: 'Keep raw page bodies in the host sample store' },
+    },
+    write: false,
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.ListCaptureEndpoints,
+    description:
+      'List endpoints observed in the user’s guided “登录并录制” session: method, masked URL, collections[] with exact JSON paths, field paths, pagination parameter, transport and sampleIds. Use the matching collection path as the Manifest items path; pass sampleIds to academic_validate_adapter_candidate. If transport is “form” or custom headers are required, stop and report. Read-only.',
+    parameters: {
+      sourceId: { type: 'string', required: true, description: 'Source id with a capture' },
     },
     write: false,
   },

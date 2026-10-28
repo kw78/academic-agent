@@ -5195,7 +5195,7 @@ import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { Service } from "@deepseek-ai/cordis";
 
 // apps/academic-cli/src/composition.ts
-import { createHash as createHash11, randomUUID as randomUUID4 } from "node:crypto";
+import { createHash as createHash12, randomUUID as randomUUID4 } from "node:crypto";
 import { mkdirSync as mkdirSync4, rmSync as rmSync4 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname as dirname2, join as join4 } from "node:path";
@@ -20513,28 +20513,28 @@ function _tuple(Class2, items, _paramsOrRest, _params) {
   });
 }
 // @__NO_SIDE_EFFECTS__
-function _record(Class2, keyType, valueType, params) {
+function _record(Class2, keyType, valueType2, params) {
   return new Class2({
     type: "record",
     keyType,
-    valueType,
+    valueType: valueType2,
     ...normalizeParams(params)
   });
 }
 // @__NO_SIDE_EFFECTS__
-function _map(Class2, keyType, valueType, params) {
+function _map(Class2, keyType, valueType2, params) {
   return new Class2({
     type: "map",
     keyType,
-    valueType,
+    valueType: valueType2,
     ...normalizeParams(params)
   });
 }
 // @__NO_SIDE_EFFECTS__
-function _set(Class2, valueType, params) {
+function _set(Class2, valueType2, params) {
   return new Class2({
     type: "set",
-    valueType,
+    valueType: valueType2,
     ...normalizeParams(params)
   });
 }
@@ -23424,36 +23424,36 @@ var ZodRecord = /* @__PURE__ */ $constructor("ZodRecord", (inst, def) => {
   inst.keyType = def.keyType;
   inst.valueType = def.valueType;
 });
-function record(keyType, valueType, params) {
-  if (!valueType || !valueType._zod) {
+function record(keyType, valueType2, params) {
+  if (!valueType2 || !valueType2._zod) {
     return new ZodRecord({
       type: "record",
       keyType: string2(),
       valueType: keyType,
-      ...util_exports.normalizeParams(valueType)
+      ...util_exports.normalizeParams(valueType2)
     });
   }
   return new ZodRecord({
     type: "record",
     keyType,
-    valueType,
+    valueType: valueType2,
     ...util_exports.normalizeParams(params)
   });
 }
-function partialRecord(keyType, valueType, params) {
+function partialRecord(keyType, valueType2, params) {
   return new ZodRecord({
     type: "record",
     keyType,
-    valueType,
+    valueType: valueType2,
     ...util_exports.normalizeParams(params),
     partial: true
   });
 }
-function looseRecord(keyType, valueType, params) {
+function looseRecord(keyType, valueType2, params) {
   return new ZodRecord({
     type: "record",
     keyType,
-    valueType,
+    valueType: valueType2,
     mode: "loose",
     ...util_exports.normalizeParams(params)
   });
@@ -23470,11 +23470,11 @@ var ZodMap = /* @__PURE__ */ $constructor("ZodMap", (inst, def) => {
   inst.max = (...args) => inst.check(_maxSize(...args));
   inst.size = (...args) => inst.check(_size(...args));
 });
-function map(keyType, valueType, params) {
+function map(keyType, valueType2, params) {
   return new ZodMap({
     type: "map",
     keyType,
-    valueType,
+    valueType: valueType2,
     ...util_exports.normalizeParams(params)
   });
 }
@@ -23488,10 +23488,10 @@ var ZodSet = /* @__PURE__ */ $constructor("ZodSet", (inst, def) => {
   inst.max = (...args) => inst.check(_maxSize(...args));
   inst.size = (...args) => inst.check(_size(...args));
 });
-function set(valueType, params) {
+function set(valueType2, params) {
   return new ZodSet({
     type: "set",
-    valueType,
+    valueType: valueType2,
     ...util_exports.normalizeParams(params)
   });
 }
@@ -25344,6 +25344,13 @@ var AdapterTransientError = class extends Error {
     this.name = "AdapterTransientError";
   }
 };
+var AdapterEgressError = class extends Error {
+  code = "EGRESS_BLOCKED";
+  constructor(message, options) {
+    super(message, options);
+    this.name = "AdapterEgressError";
+  }
+};
 
 // packages/academic-contracts/src/connections.ts
 var CONNECTION_AUTH_KINDS = ["password", "token", "oauth", "none"];
@@ -25885,6 +25892,8 @@ BLOCKED_NETWORKS.addSubnet("2001:db8::", 32, "ipv6");
 BLOCKED_NETWORKS.addSubnet("64:ff9b::", 96, "ipv6");
 BLOCKED_NETWORKS.addSubnet("2002::", 16, "ipv6");
 BLOCKED_NETWORKS.addSubnet("2001::", 32, "ipv6");
+var PROXY_FAKE_IP_NETWORK = new BlockList();
+PROXY_FAKE_IP_NETWORK.addSubnet("198.18.0.0", 15, "ipv4");
 var BLOCKED_HOSTNAMES = /* @__PURE__ */ new Set([
   "metadata",
   "metadata.google.internal",
@@ -25946,6 +25955,15 @@ function isBlockedAddress(address) {
     return BLOCKED_NETWORKS.check(address, family === 4 ? "ipv4" : "ipv6");
   } catch {
     return true;
+  }
+}
+function isProxyFakeIp(address) {
+  const family = isIP(address);
+  if (family !== 4) return false;
+  try {
+    return PROXY_FAKE_IP_NETWORK.check(address, "ipv4");
+  } catch {
+    return false;
   }
 }
 async function defaultResolveHost(hostname3) {
@@ -26028,8 +26046,10 @@ async function assertSafeTarget(url2, allowedHosts, resolveHost, signal, allowed
   if (addresses.length === 0) {
     throw new SafeFetchError("DNS_FAILED", `\u65E0\u6CD5\u89E3\u6790\u76EE\u6807\u4E3B\u673A\uFF1A${host}`);
   }
-  for (const entry of addresses) {
-    if (isBlockedAddress(entry.address)) {
+  const blocked = addresses.filter((entry) => isBlockedAddress(entry.address));
+  if (blocked.length > 0) {
+    const allProxyFakeIp = blocked.every((entry) => isProxyFakeIp(entry.address)) && addresses.every((entry) => isProxyFakeIp(entry.address));
+    if (!allProxyFakeIp) {
       throw new SafeFetchError("UNSAFE_HOST", `\u76EE\u6807\u4E3B\u673A\u89E3\u6790\u5230\u53D7\u9650\u5730\u5740\uFF1A${host}`);
     }
   }
@@ -26343,6 +26363,51 @@ async function safeFetch(input2, options) {
   return { ...result, body: new TextDecoder().decode(result.body) };
 }
 
+// packages/academic-web-sessions/src/login-page.ts
+var LOGIN_PATH = /\/login|\/signin|\/cas\/login/i;
+var LOGIN_TITLE = /登录|sign in|log in/i;
+var LOGIN_FORM = /name=["']login["']|id=["']loginForm["']/i;
+function decodeEntities(value) {
+  return value.replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/\s+/g, " ").trim();
+}
+function isJsonBody(body, contentType) {
+  const type = contentType?.toLowerCase() ?? "";
+  if (type.includes("json")) return true;
+  const head = body.trimStart().slice(0, 64);
+  return head.startsWith("{") || head.startsWith("[");
+}
+function isHtmlResponse(body, contentType) {
+  const type = contentType?.toLowerCase() ?? "";
+  if (type.includes("html")) return true;
+  if (type.includes("json") || type.includes("javascript") || type.includes("ecmascript")) {
+    return false;
+  }
+  return /^\s*<(!doctype|html|head|body|meta|title|form|div)\b/i.test(
+    body.slice(0, 512)
+  );
+}
+function loginPageSignals(input2) {
+  if (isJsonBody(input2.body, input2.contentType)) return false;
+  if (!isHtmlResponse(input2.body, input2.contentType)) return false;
+  if (LOGIN_PATH.test(input2.finalUrl)) return true;
+  const title = decodeEntities(
+    /<title[^>]*>([\s\S]*?)<\/title>/i.exec(input2.body)?.[1] ?? ""
+  );
+  if (LOGIN_TITLE.test(title)) return true;
+  if (LOGIN_FORM.test(input2.body.slice(0, 2e4))) return true;
+  if (!Array.isArray(input2.patterns)) return false;
+  const haystack = `${input2.finalUrl}
+${title}`;
+  return input2.patterns.some((pattern) => {
+    if (typeof pattern !== "string") return false;
+    try {
+      return new RegExp(pattern).test(haystack);
+    } catch {
+      return false;
+    }
+  });
+}
+
 // packages/academic-web-sessions/src/index.ts
 var DEFAULT_LOGIN_TIMEOUT_MS = 5 * 6e4;
 function vaultRef(sessionId) {
@@ -26561,24 +26626,6 @@ function cookiesFromSecret(secret) {
   }
   return parsed.cookies;
 }
-function loginLikePage(finalUrl, body, patterns, contentType) {
-  if (/\/login|\/signin|\/cas\/login/i.test(finalUrl)) return true;
-  const isHtml = contentType === void 0 || contentType.toLowerCase().includes("html");
-  if (!isHtml) return false;
-  const title = plainText(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(body)?.[1] ?? "");
-  if (/登录|sign in|log in/i.test(title)) return true;
-  if (!Array.isArray(patterns)) return false;
-  const haystack = `${finalUrl}
-${title}`;
-  return patterns.some((pattern) => {
-    if (typeof pattern !== "string") return false;
-    try {
-      return new RegExp(pattern).test(haystack);
-    } catch {
-      return false;
-    }
-  });
-}
 function jsonShape(value, depth = 0) {
   if (Array.isArray(value)) {
     const first = value[0];
@@ -26787,12 +26834,12 @@ ${match[2] ?? ""}`;
     formCount: (result.body.match(/<form\b/gi) ?? []).length,
     tableCount: (result.body.match(/<table\b/gi) ?? []).length,
     ...contentType?.includes("json") && jsonShapeText ? { jsonShape: jsonShapeText } : {},
-    loginLike: loginLikePage(
-      result.finalUrl,
-      result.body,
-      patterns,
-      result.contentType
-    ),
+    loginLike: loginPageSignals({
+      finalUrl: result.finalUrl,
+      body: result.body,
+      ...result.contentType ? { contentType: result.contentType } : {},
+      patterns
+    }),
     warnings: result.truncated ? ["\u54CD\u5E94\u8D85\u8FC7\u5927\u5C0F\u4E0A\u9650\uFF0C\u4EC5\u5206\u6790\u524D 512KB"] : [],
     probedAt,
     digest: createHash3("sha256").update(result.body).digest("hex")
@@ -26822,7 +26869,7 @@ async function probeSourcePage(input2) {
       `\u63A2\u6D4B URL \u4E3B\u673A\u672A\u6388\u6743\uFF1A${host}\u3002\u5F53\u524D\u5141\u8BB8\u4E3B\u673A\uFF1A${effectiveHosts.join(", ")}\uFF1B\u8BE5\u6765\u6E90\u8BBE\u7F6E\u4E86 probeAllowAnyPublicHost=false\uFF0C\u53EF\u6539\u4E3A true \u6216\u628A\u4E3B\u673A\u52A0\u5165 probeAllowedHosts\uFF08\u8DE8\u4E3B\u673A\u4E0D\u4F1A\u81EA\u52A8\u643A\u5E26\u8BE5\u57DF\u540D\u7684 Cookie\uFF09`
     );
   }
-  const pathPrefixes = Array.isArray(input2.config.probePathPrefixes) ? input2.config.probePathPrefixes.filter(
+  const pathPrefixes2 = Array.isArray(input2.config.probePathPrefixes) ? input2.config.probePathPrefixes.filter(
     (entry) => typeof entry === "string" && entry.startsWith("/")
   ) : [];
   const method = input2.method ?? "GET";
@@ -26852,7 +26899,7 @@ async function probeSourcePage(input2) {
     cookies,
     allowedHosts: allowAnyPublicHost ? [host] : effectiveHosts,
     allowedProtocols: input2.config.allowHttp === true ? ["http:", "https:"] : ["https:"],
-    ...pathPrefixes.length > 0 ? { allowedPathPrefixes: pathPrefixes } : {},
+    ...pathPrefixes2.length > 0 ? { allowedPathPrefixes: pathPrefixes2 } : {},
     method,
     ...requestBody !== void 0 ? { body: requestBody } : {},
     timeoutMs: input2.timeoutMs ?? 15e3,
@@ -27056,24 +27103,24 @@ async function crawlSourcePages(input2) {
     throw new Error("\u53EA\u5141\u8BB8 http(s) \u6293\u53D6");
   }
   const options = input2.options ?? {};
-  const { allowedHosts, pathPrefixes, allowAnyPublicHost } = crawlScope(
+  const { allowedHosts, pathPrefixes: pathPrefixes2, allowAnyPublicHost } = crawlScope(
     input2.config,
     start
   );
   const requestedPrefix = options.pathPrefix ? options.pathPrefix.startsWith("/") ? options.pathPrefix : `/${options.pathPrefix}` : void 0;
   if (requestedPrefix) {
     const normalized2 = requestedPrefix.replace(/\/+$/, "") || "/";
-    const within = pathPrefixes.some((prefix) => {
+    const within = pathPrefixes2.some((prefix) => {
       const base = prefix.replace(/\/+$/, "") || "/";
       return normalized2 === base || normalized2.startsWith(base === "/" ? "/" : `${base}/`);
     });
     if (!within) {
       throw new Error(
-        `\u6293\u53D6\u8DEF\u5F84\u524D\u7F00\u4E0D\u5728\u6765\u6E90\u6388\u6743\u8303\u56F4\u5185\uFF1A${requestedPrefix}\uFF08\u5DF2\u6388\u6743\uFF1A${pathPrefixes.join(", ")}\uFF09`
+        `\u6293\u53D6\u8DEF\u5F84\u524D\u7F00\u4E0D\u5728\u6765\u6E90\u6388\u6743\u8303\u56F4\u5185\uFF1A${requestedPrefix}\uFF08\u5DF2\u6388\u6743\uFF1A${pathPrefixes2.join(", ")}\uFF09`
       );
     }
   }
-  const prefixes = requestedPrefix ? [requestedPrefix] : pathPrefixes;
+  const prefixes = requestedPrefix ? [requestedPrefix] : pathPrefixes2;
   const maxPages = Math.min(Math.max(options.maxPages ?? 5, 1), 10);
   const maxDepth = Math.min(Math.max(options.maxDepth ?? 1, 0), 2);
   const totalTimeoutMs = Math.min(
@@ -27214,6 +27261,422 @@ async function crawlSourcePages(input2) {
     skipped,
     ...stopReason ? { stopReason } : {},
     crawledAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+
+// packages/academic-sources/src/capture.ts
+var SENSITIVE_PARAM = /token|sign|signature|auth|key|secret|session|ticket|password|passwd/i;
+var COURSE_KEY = /course|class|subject|课程|班级|教学班/i;
+var ASSIGNMENT_KEY = /homework|assignment|exam|quiz|task|paper|作业|考试|测验|ddl|due|deadline|endtime/i;
+var LIST_PATH = /list|query|search|feed|index|course|assign|home/i;
+var NOISE_PATH = /login|logout|signout|notice|message|unread|avatar|userinfo|config|dict|favicon/i;
+var FILTER_PATH = /filter|nav|menu|option|dict|tag|banner|carousel|breadcrumb/i;
+var PAGINATION_PARAM = /^(?:page|p|pn|pageNo|pageNum|pageIndex|pageSize|offset|start|startIndex|limit|size)$/i;
+var MAX_FIELDS = 40;
+var MAX_COLLECTIONS = 8;
+var COLLECTION_SCAN_DEPTH = 5;
+var MAX_EXAMPLE = 60;
+var MAX_ENDPOINTS = 40;
+function truncate(value, max) {
+  return value.length > max ? `${value.slice(0, max)}\u2026` : value;
+}
+function maskedUrl(raw) {
+  try {
+    const url2 = new URL(raw);
+    const entries2 = [...url2.searchParams.entries()];
+    if (entries2.length === 0) return truncate(url2.toString(), 500);
+    const search = new URLSearchParams();
+    for (const [key2, value] of entries2) {
+      search.append(key2, SENSITIVE_PARAM.test(key2) ? "***" : value);
+    }
+    url2.search = search.toString();
+    return truncate(url2.toString(), 500);
+  } catch {
+    return truncate(raw, 500);
+  }
+}
+function hasMaskedParam(raw) {
+  try {
+    const url2 = new URL(raw);
+    return [...url2.searchParams.keys()].some((key2) => SENSITIVE_PARAM.test(key2));
+  } catch {
+    return false;
+  }
+}
+function valueType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return `array(${value.length})`;
+  if (typeof value === "object") return "object";
+  return typeof value;
+}
+function exampleOf(value) {
+  if (value === null || value === void 0) return void 0;
+  if (typeof value === "string") return value ? truncate(value, MAX_EXAMPLE) : void 0;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return void 0;
+}
+function fieldsOf(item, prefix = "", depth = 0, out = []) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return out;
+  for (const [key2, value] of Object.entries(item)) {
+    if (out.length >= MAX_FIELDS) break;
+    const path = prefix ? `${prefix}.${key2}` : key2;
+    const example = exampleOf(value);
+    out.push({
+      key: key2,
+      path,
+      type: valueType(value),
+      ...example ? { example } : {}
+    });
+    if (value && typeof value === "object" && !Array.isArray(value) && depth < 1) {
+      fieldsOf(value, path, depth + 1, out);
+    }
+  }
+  return out;
+}
+function collectArrayNodes(value, path = "", depth = 0, out = []) {
+  if (depth > COLLECTION_SCAN_DEPTH || out.length >= 24) return out;
+  if (Array.isArray(value)) {
+    out.push({ path, items: value });
+    return out;
+  }
+  if (!value || typeof value !== "object") return out;
+  for (const [key2, entry] of Object.entries(value)) {
+    if (out.length >= 24) break;
+    collectArrayNodes(entry, path ? `${path}.${key2}` : key2, depth + 1, out);
+  }
+  return out;
+}
+function collectionScore(path, items, fields) {
+  let score = 0;
+  if (items.length >= 1) score += 5;
+  if (items.length >= 3) score += 10;
+  if (items.length >= 8) score += 5;
+  if (items.length >= 20) score += 5;
+  if (fields.some((field) => COURSE_KEY.test(field.path ?? field.key))) score += 20;
+  if (fields.some((field) => ASSIGNMENT_KEY.test(field.path ?? field.key))) {
+    score += 20;
+  }
+  if (LIST_PATH.test(path)) score += 10;
+  if (NOISE_PATH.test(path)) score -= 15;
+  if (FILTER_PATH.test(path)) score -= 20;
+  return Math.max(0, Math.min(100, score));
+}
+function collectCollections(value) {
+  return collectArrayNodes(value).filter(
+    (node2) => node2.items.length > 0 && node2.items.some(
+      (entry) => entry !== null && typeof entry === "object" && !Array.isArray(entry)
+    )
+  ).map((node2) => {
+    const fields = fieldsOf(node2.items[0]);
+    return {
+      path: node2.path || "$",
+      itemCount: node2.items.length,
+      score: collectionScore(node2.path, node2.items, fields),
+      fields
+    };
+  }).sort((left, right) => right.score - left.score || right.itemCount - left.itemCount).slice(0, MAX_COLLECTIONS);
+}
+function htmlFields(body) {
+  const fields = [];
+  for (const match of body.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)) {
+    const text2 = (match[1] ?? "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
+    if (!text2 || fields.some((field) => field.key === text2)) continue;
+    fields.push({ key: text2, type: "string" });
+    if (fields.length >= 12) break;
+  }
+  return fields;
+}
+function jsonShape2(body) {
+  let parsed;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return { root: "other", fields: [], collections: [] };
+  }
+  if (Array.isArray(parsed)) {
+    const collections = collectCollections(parsed);
+    return {
+      root: "array",
+      itemCount: parsed.length,
+      collectionPath: "$",
+      fields: collections[0]?.fields ?? fieldsOf(parsed[0]),
+      collections
+    };
+  }
+  if (parsed && typeof parsed === "object") {
+    const collections = collectCollections(parsed);
+    const best = collections[0];
+    return {
+      root: "object",
+      fields: best?.fields ?? fieldsOf(parsed),
+      ...best ? { itemCount: best.itemCount, collectionPath: best.path } : {},
+      collections
+    };
+  }
+  return { root: "other", fields: [], collections: [] };
+}
+function kindOf(path, isHtml, shape) {
+  if (isHtml) return "document";
+  const best = shape.collections[0];
+  if (!best) {
+    if (shape.root !== "object") return "other";
+    return NOISE_PATH.test(path) ? "other" : "detail";
+  }
+  const hasListKeys = best.fields.some(
+    (field) => COURSE_KEY.test(field.path ?? field.key) || ASSIGNMENT_KEY.test(field.path ?? field.key)
+  );
+  if (best.itemCount >= 2 || hasListKeys) return "list";
+  if (NOISE_PATH.test(path)) return "other";
+  return "detail";
+}
+function scoreOf(kind, shape) {
+  if (kind === "document") return Math.min(shape.collections[0]?.score ?? 0, 20);
+  if (kind === "detail") return Math.max(10, shape.collections[0]?.score ?? 0);
+  if (kind === "other") return 0;
+  return shape.collections[0]?.score ?? 0;
+}
+function transportOf(method, requestContentType) {
+  if (method !== "POST") return void 0;
+  const type = requestContentType?.toLowerCase() ?? "";
+  if (type.includes("json")) return "json";
+  if (type.includes("x-www-form-urlencoded") || type.includes("multipart/form-data")) {
+    return "form";
+  }
+  return "other";
+}
+function bodyKeys(requestBody) {
+  if (!requestBody) return [];
+  try {
+    const parsed = JSON.parse(requestBody);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+    return Object.keys(parsed).slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+function bodyValue(requestBody, key2) {
+  if (!requestBody) return void 0;
+  try {
+    const parsed = JSON.parse(requestBody);
+    const value = parsed?.[key2];
+    return typeof value === "string" || typeof value === "number" ? String(value) : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function headerHints(names) {
+  const wanted = /^(?:accept|x-requested-with|referer|origin|content-type|x-[\w-]+)$/i;
+  return [...new Set(names.filter((name) => wanted.test(name)))].map((name) => name.toLowerCase()).slice(0, 6);
+}
+function paginationFor(raw) {
+  const byKey = /* @__PURE__ */ new Map();
+  for (const item of raw) {
+    let url2;
+    try {
+      url2 = new URL(item.sample.url);
+    } catch {
+      continue;
+    }
+    const key2 = `${item.sample.method ?? "GET"} ${url2.hostname}${url2.pathname}`;
+    const list = byKey.get(key2) ?? [];
+    list.push(item);
+    byKey.set(key2, list);
+  }
+  for (const [key2, group] of byKey) {
+    if (group.length < 2) continue;
+    let first;
+    try {
+      first = new URL(group[0].sample.url);
+    } catch {
+      continue;
+    }
+    for (const param of first.searchParams.keys()) {
+      const values = /* @__PURE__ */ new Set();
+      for (const item of group) {
+        values.add(new URL(item.sample.url).searchParams.get(param) ?? "");
+      }
+      if (values.size >= 2 && PAGINATION_PARAM.test(param)) {
+        return { key: key2, param, values: [...values].slice(0, 4) };
+      }
+    }
+    for (const key22 of bodyKeys(group[0].sample.requestBody)) {
+      const values = /* @__PURE__ */ new Set();
+      for (const item of group) {
+        const value = bodyValue(item.sample.requestBody, key22);
+        if (value !== void 0) values.add(value);
+      }
+      if (values.size >= 2 && PAGINATION_PARAM.test(key22)) {
+        return { key: key2, param: key22, values: [...values].slice(0, 4) };
+      }
+    }
+  }
+  return void 0;
+}
+function nextStepFor(endpoints, masked) {
+  const best = endpoints[0];
+  if (!best) {
+    return {
+      action: "recapture",
+      label: "\u91CD\u65B0\u5F55\u5236\uFF1A\u767B\u5F55\u540E\u6253\u5F00\u8BFE\u7A0B/\u4F5C\u4E1A\u5217\u8868\u5E76\u7FFB\u4E00\u9875",
+      reason: "\u6CA1\u6709\u6355\u83B7\u5230\u53EF\u7528\u63A5\u53E3"
+    };
+  }
+  if (best.transport === "form") {
+    return {
+      action: "unsupported-transport",
+      label: "\u5F53\u524D Manifest \u65E0\u6CD5\u56DE\u653E\u8868\u5355\u8BF7\u6C42\uFF0C\u8BF7\u505C\u6B62\u751F\u6210\u5019\u9009",
+      reason: `${best.method} ${best.path} \u4F7F\u7528\u8868\u5355\u7F16\u7801`
+    };
+  }
+  if (masked.includes(best.path)) {
+    return {
+      action: "needs-confirmation",
+      label: "\u63A5\u53E3\u542B\u9274\u6743\u53C2\u6570\uFF0C\u9700\u7528\u6237\u786E\u8BA4\u7ED1\u5B9A\u65B9\u5F0F",
+      reason: "\u79BB\u7EBF\u56DE\u653E\u53EF\u80FD\u65E0\u6CD5\u7CBE\u786E\u5339\u914D\u8131\u654F\u540E\u7684\u53C2\u6570"
+    };
+  }
+  if (best.kind === "document") {
+    return {
+      action: "validate",
+      label: "\u7528\u9875\u9762\u6837\u672C\u9A8C\u8BC1 HTML \u63D0\u53D6",
+      reason: "\u6CA1\u6709 JSON \u5217\u8868\uFF0C\u53EA\u80FD\u6309\u9875\u9762\u7ED3\u6784\u63D0\u53D6"
+    };
+  }
+  if (!best.response.collectionPath) {
+    return {
+      action: "needs-confirmation",
+      label: "\u672A\u8BC6\u522B\u51FA\u5217\u8868\u96C6\u5408\uFF0C\u8BF7\u786E\u8BA4\u76EE\u6807\u63A5\u53E3",
+      reason: "\u54CD\u5E94\u91CC\u6CA1\u6709\u53EF\u7528\u7684\u5BF9\u8C61\u6570\u7EC4"
+    };
+  }
+  return {
+    action: "validate",
+    label: "\u7528 sampleIds \u79BB\u7EBF\u9A8C\u8BC1 Manifest",
+    reason: `\u9996\u9009\u63A5\u53E3 items \u8DEF\u5F84\uFF1A${best.response.collectionPath}`
+  };
+}
+function pathPrefixes(endpoints) {
+  const prefixes = [];
+  for (const endpoint of endpoints) {
+    if (endpoint.kind !== "list" && endpoint.kind !== "detail") continue;
+    const segments2 = endpoint.path.split("/").filter(Boolean);
+    if (segments2.length === 0) continue;
+    const prefix = `/${segments2[0]}`;
+    if (!prefixes.includes(prefix)) prefixes.push(prefix);
+    if (prefixes.length >= 5) break;
+  }
+  return prefixes.length > 0 ? prefixes : ["/"];
+}
+function buildCaptureSummary(input2) {
+  const warnings = [...input2.warnings ?? []];
+  const endpoints = [];
+  const masked = [];
+  for (const item of input2.samples) {
+    const rawUrl = item.sample.url;
+    let parsed;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      continue;
+    }
+    if (NOISE_PATH.test(parsed.pathname) && !/course|assign|home/i.test(parsed.pathname)) {
+      continue;
+    }
+    const contentType = item.sample.contentType?.toLowerCase() ?? "";
+    const isHtml = contentType.includes("html");
+    const shape = isHtml ? {
+      root: "other",
+      fields: htmlFields(item.sample.body),
+      collections: []
+    } : jsonShape2(item.sample.body);
+    const kind = kindOf(parsed.pathname, isHtml, shape);
+    const method = item.sample.method ?? "GET";
+    const endpoint = {
+      sampleId: item.sampleId,
+      host: parsed.hostname,
+      path: parsed.pathname,
+      url: maskedUrl(rawUrl),
+      method,
+      status: item.status,
+      ...item.sample.contentType ? { contentType: item.sample.contentType } : {},
+      bytes: Buffer.byteLength(item.sample.body, "utf8"),
+      kind,
+      score: scoreOf(kind, shape),
+      ...transportOf(method, item.requestContentType) ? { transport: transportOf(method, item.requestContentType) } : {},
+      request: {
+        queryKeys: [...new Set(parsed.searchParams.keys())].slice(0, 20),
+        bodyKeys: bodyKeys(item.sample.requestBody),
+        headerHints: headerHints(item.headerNames)
+      },
+      response: {
+        root: shape.root,
+        ...shape.itemCount !== void 0 ? { itemCount: shape.itemCount } : {},
+        ...shape.collectionPath ? { collectionPath: shape.collectionPath } : {},
+        fields: shape.fields
+      },
+      ...shape.collections.length > 0 ? { collections: shape.collections } : {}
+    };
+    if (hasMaskedParam(rawUrl)) masked.push(endpoint.path);
+    endpoints.push(endpoint);
+  }
+  endpoints.sort(
+    (left, right) => right.score - left.score || left.path.localeCompare(right.path)
+  );
+  const kept = endpoints.slice(0, MAX_ENDPOINTS);
+  if (endpoints.length > kept.length) {
+    warnings.push(`\u63A5\u53E3\u8F83\u591A\uFF0C\u4EC5\u4FDD\u7559\u8BC4\u5206\u6700\u9AD8\u7684 ${MAX_ENDPOINTS} \u4E2A`);
+  }
+  const unsupported = kept.filter((endpoint) => endpoint.transport === "form").map((endpoint) => endpoint.path);
+  if (unsupported.length > 0) {
+    warnings.push(
+      `\u8868\u5355\u7F16\u7801\u8BF7\u6C42\uFF1A${[...new Set(unsupported)].join(", ")}\uFF1B\u5F53\u524D Manifest \u53EA\u80FD\u53D1\u9001 JSON\uFF0C\u65E0\u6CD5\u7CBE\u786E\u56DE\u653E`
+    );
+  }
+  if (input2.skipped) {
+    const parts = [];
+    if (input2.skipped.noise > 0) parts.push(`\u9759\u6001/\u767B\u51FA ${input2.skipped.noise}`);
+    if (input2.skipped.nonText > 0) parts.push(`\u975E JSON/HTML ${input2.skipped.nonText}`);
+    if (input2.skipped.tooLarge > 0) parts.push(`\u8D85\u8FC7\u5927\u5C0F\u4E0A\u9650 ${input2.skipped.tooLarge}`);
+    if (input2.skipped.limit > 0) parts.push(`\u8FBE\u5230\u6570\u91CF\u4E0A\u9650 ${input2.skipped.limit}`);
+    if (input2.skipped.failed > 0) parts.push(`\u8BFB\u53D6\u5931\u8D25 ${input2.skipped.failed}`);
+    if (parts.length > 0) {
+      warnings.push(`\u5F55\u5236\u65F6\u8FC7\u6EE4\u4E86\u90E8\u5206\u54CD\u5E94\uFF08${parts.join("\u3001")}\uFF09\uFF0C\u5FC5\u8981\u65F6\u91CD\u65B0\u6253\u5F00\u76EE\u6807\u5217\u8868\u8865\u5F55`);
+    }
+  }
+  const pagination = paginationFor(input2.samples);
+  if (pagination) {
+    const target = kept.find(
+      (endpoint) => `${endpoint.method} ${endpoint.host}${endpoint.path}` === pagination.key
+    );
+    if (target) {
+      target.pagination = { param: pagination.param, values: pagination.values };
+    }
+  }
+  if (masked.length > 0) {
+    warnings.push(
+      `\u90E8\u5206\u63A5\u53E3\u542B\u7591\u4F3C\u9274\u6743\u53C2\u6570\uFF08\u5DF2\u5C4F\u853D\uFF09\uFF1A${[...new Set(masked)].join(", ")}\uFF1B\u79BB\u7EBF\u56DE\u653E\u53EF\u80FD\u65E0\u6CD5\u7CBE\u786E\u5339\u914D\uFF0C\u9700\u6A21\u677F\u5316\u6216\u91CD\u65B0\u63A2\u6D4B`
+    );
+  }
+  if (kept.length === 0) {
+    warnings.push("\u6CA1\u6709\u6355\u83B7\u5230\u53EF\u7528\u7684\u6570\u636E\u63A5\u53E3\uFF1B\u8BF7\u767B\u5F55\u540E\u6253\u5F00\u8BFE\u7A0B/\u4F5C\u4E1A\u5217\u8868\u5E76\u7FFB\u4E00\u9875\u518D\u7ED3\u675F\u5F55\u5236");
+  }
+  const hosts = [
+    .../* @__PURE__ */ new Set([...input2.hosts, ...kept.map((endpoint) => endpoint.host)])
+  ];
+  return {
+    captureId: input2.captureId,
+    sourceId: input2.sourceId,
+    startedAt: input2.startedAt,
+    finishedAt: input2.finishedAt,
+    hosts,
+    visited: input2.visited,
+    endpoints: kept,
+    nextStep: nextStepFor(kept, masked),
+    suggested: {
+      cookieDomains: hosts,
+      pathPrefixes: pathPrefixes(kept)
+    },
+    warnings
   };
 }
 
@@ -27496,7 +27959,10 @@ var SourceConfigStore = class {
 };
 
 // packages/academic-source-browser/src/index.ts
-import { chromium as chromium2 } from "playwright-core";
+import { createHash as createHash5 } from "node:crypto";
+import {
+  chromium as chromium2
+} from "playwright-core";
 var browserConfigSchema = external_exports.object({
   loginUrl: external_exports.string().url(),
   authenticatedUrlPatterns: external_exports.array(external_exports.string().min(1)).min(1),
@@ -27605,6 +28071,203 @@ async function updateLoginStatus(context2, text2) {
       const element = document.getElementById("academic-login-status");
       if (element) element.textContent = message;
     }, text2).catch(() => void 0);
+  }
+}
+var CAPTURE_HELPER_SCRIPT = `(() => {
+  const install = () => {
+    if (document.getElementById('academic-capture-done')) return
+    const panel = document.createElement('div')
+    panel.id = 'academic-capture-panel'
+    panel.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483647;background:#111827;color:#fff;padding:10px 12px;border-radius:8px;font:13px/1.5 system-ui,-apple-system,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.35);max-width:340px'
+    const status = document.createElement('div')
+    status.id = 'academic-capture-status'
+    status.textContent = '\u6B63\u5728\u5F55\u5236\uFF1A\u8BF7\u767B\u5F55\uFF0C\u7136\u540E\u6253\u5F00\u8BFE\u7A0B\u5217\u8868\u548C\u4F5C\u4E1A\u5217\u8868\uFF08\u6700\u597D\u7FFB\u4E00\u9875\uFF09\u3002'
+    const count = document.createElement('div')
+    count.id = 'academic-capture-count'
+    count.style.cssText = 'opacity:.75;margin:4px 0 8px'
+    count.textContent = '\u5DF2\u5F55\u5236 0 \u4E2A\u63A5\u53E3'
+    const button = document.createElement('button')
+    button.id = 'academic-capture-done'
+    button.type = 'button'
+    button.textContent = '\u5B8C\u6210\u5F55\u5236\u5E76\u4FDD\u5B58\u4F1A\u8BDD'
+    button.style.cssText = 'background:#2563eb;color:#fff;border:0;border-radius:6px;padding:8px 10px;cursor:pointer;font:inherit'
+    button.addEventListener('click', () => {
+      count.textContent = '\u6B63\u5728\u4FDD\u5B58\u2026'
+      if (typeof window.__academicCaptureDone === 'function') {
+        window.__academicCaptureDone()
+      } else {
+        count.textContent = '\u65E0\u6CD5\u8FDE\u63A5\u5BBF\u4E3B\uFF0C\u8BF7\u5173\u95ED\u7A97\u53E3\u540E\u91CD\u8BD5'
+      }
+    })
+    panel.appendChild(status)
+    panel.appendChild(count)
+    panel.appendChild(button)
+    document.documentElement.appendChild(panel)
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install, { once: true })
+  } else {
+    install()
+  }
+})()`;
+var CAPTURE_SKIP_URL = /\/(?:logout|signout|sign-out|favicon\.ico|robots\.txt)(?:[/?#]|$)/i;
+var CAPTURE_MAX_BODY = 512 * 1024;
+var CAPTURE_MAX_TOTAL = 8 * 1024 * 1024;
+var CAPTURE_MAX_SAMPLES = 40;
+var CAPTURE_MAX_REQUEST_BODY = 16 * 1024;
+var CAPTURE_TIMEOUT_MS = 8 * 6e4;
+async function updateCaptureCount(context2, captured) {
+  for (const page of context2.pages()) {
+    await page.evaluate((value) => {
+      const element = document.getElementById("academic-capture-count");
+      if (element) element.textContent = `\u5DF2\u5F55\u5236 ${value} \u4E2A\u63A5\u53E3`;
+    }, captured).catch(() => void 0);
+  }
+}
+async function captureBrowserSession(config2, options = {}) {
+  const browser = await launch(config2.channel);
+  const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const captured = [];
+  const seen = /* @__PURE__ */ new Set();
+  const hosts = new Set(config2.cookieDomains);
+  const pending = /* @__PURE__ */ new Set();
+  const maxSamples = Math.min(
+    Math.max(options.maxSamples ?? CAPTURE_MAX_SAMPLES, 1),
+    80
+  );
+  const maxTotal = Math.min(
+    Math.max(options.maxBytes ?? CAPTURE_MAX_TOTAL, 64 * 1024),
+    32 * 1024 * 1024
+  );
+  let totalBytes = 0;
+  let visited = 0;
+  let confirmed = false;
+  let warning;
+  const skipped = { noise: 0, nonText: 0, tooLarge: 0, limit: 0, failed: 0 };
+  try {
+    const context2 = await browser.newContext({
+      locale: "zh-CN",
+      viewport: { width: 1280, height: 900 }
+    });
+    try {
+      await context2.exposeBinding("__academicCaptureDone", () => {
+        confirmed = true;
+      });
+      await context2.addInitScript({ content: CAPTURE_HELPER_SCRIPT });
+      const record2 = async (response) => {
+        try {
+          const request = response.request();
+          const resourceType = request.resourceType();
+          if (resourceType !== "xhr" && resourceType !== "fetch" && resourceType !== "document") {
+            return;
+          }
+          const status = response.status();
+          if (status < 200 || status >= 300) {
+            skipped.failed += 1;
+            return;
+          }
+          const url2 = response.url();
+          if (!/^https?:/i.test(url2)) return;
+          if (CAPTURE_SKIP_URL.test(new URL(url2).pathname)) {
+            skipped.noise += 1;
+            return;
+          }
+          const responseHeaders = await response.allHeaders();
+          const contentType = responseHeaders["content-type"] ?? "";
+          if (!/(?:json|html)/i.test(contentType)) {
+            skipped.nonText += 1;
+            return;
+          }
+          const declared = Number(responseHeaders["content-length"] ?? "0");
+          if (declared > CAPTURE_MAX_BODY) {
+            skipped.tooLarge += 1;
+            return;
+          }
+          const buffer = await response.body();
+          if (buffer.length === 0) return;
+          if (buffer.length > CAPTURE_MAX_BODY) {
+            skipped.tooLarge += 1;
+            return;
+          }
+          if (captured.length >= maxSamples || totalBytes + buffer.length > maxTotal) {
+            warning ??= "\u5F55\u5236\u5DF2\u8FBE\u4E0A\u9650\uFF0C\u540E\u7EED\u8BF7\u6C42\u88AB\u4E22\u5F03";
+            skipped.limit += 1;
+            return;
+          }
+          const body = buffer.toString("utf8");
+          const method = request.method().toUpperCase() === "POST" ? "POST" : "GET";
+          const postData = method === "POST" ? request.postData() : null;
+          const key2 = `${method} ${url2} ${createHash5("sha256").update(body).digest("hex")}`;
+          if (seen.has(key2)) return;
+          seen.add(key2);
+          const requestHeaders = await request.allHeaders().catch(() => ({}));
+          const requestContentType = requestHeaders["content-type"];
+          captured.push({
+            url: url2,
+            method,
+            status,
+            body,
+            contentType,
+            ...requestContentType ? { requestContentType } : {},
+            ...postData && postData.length <= CAPTURE_MAX_REQUEST_BODY ? { requestBody: postData } : {},
+            headerNames: Object.keys(requestHeaders)
+          });
+          totalBytes += buffer.length;
+          hosts.add(new URL(url2).hostname);
+          await updateCaptureCount(context2, captured.length);
+        } catch {
+          skipped.failed += 1;
+        }
+      };
+      const attach = (page2) => {
+        page2.on("request", () => {
+          visited += 1;
+        });
+        page2.on("response", (response) => {
+          const task = record2(response);
+          pending.add(task);
+          void task.finally(() => pending.delete(task));
+        });
+      };
+      context2.on("page", attach);
+      const page = await context2.newPage();
+      attach(page);
+      await page.goto(config2.loginUrl, {
+        waitUntil: "domcontentloaded",
+        timeout: 6e4
+      });
+      const deadline = Date.now() + Math.max(options.timeoutMs ?? CAPTURE_TIMEOUT_MS, 6e4);
+      while (Date.now() < deadline && !confirmed) {
+        if (!browser.isConnected()) throw new Error("\u5F55\u5236\u7A97\u53E3\u5DF2\u5173\u95ED\uFF0C\u672A\u4FDD\u5B58");
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      if (!confirmed && captured.length === 0) {
+        throw new Error("\u5F55\u5236\u8D85\u65F6\uFF1A\u8BF7\u5728\u6D4F\u89C8\u5668\u4E2D\u767B\u5F55\u5E76\u6253\u5F00\u5217\u8868\u9875\u9762\u540E\u70B9\u51FB\u201C\u5B8C\u6210\u5F55\u5236\u201D");
+      }
+      if (!confirmed) warning ??= "\u5F55\u5236\u8D85\u65F6\uFF0C\u5DF2\u4FDD\u7559\u5F53\u524D\u6355\u83B7\u7684\u5185\u5BB9";
+      await Promise.allSettled([...pending]);
+      const observedHosts = [...hosts].filter(Boolean);
+      const cookies = (await context2.cookies()).filter(
+        (cookie) => cookieDomainAllowed(cookie.domain, observedHosts)
+      );
+      if (cookies.length === 0) {
+        throw new Error("\u672A\u8BFB\u53D6\u5230\u4F1A\u8BDD Cookie\uFF0C\u8BF7\u786E\u8BA4\u5DF2\u5B8C\u6210\u767B\u5F55");
+      }
+      return {
+        secret: JSON.stringify({ cookies }),
+        captures: captured,
+        hosts: observedHosts,
+        visited,
+        startedAt,
+        finishedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        warnings: warning ? [warning] : [],
+        skipped
+      };
+    } finally {
+      await context2.close().catch(() => void 0);
+    }
+  } finally {
+    await browser.close().catch(() => void 0);
   }
 }
 async function browserLogin(config2) {
@@ -27721,11 +28384,12 @@ async function verifySession(config2, secret, fetchImpl, requestImpl, resolveHos
       ...resolveHost ? { resolveHost } : {},
       ...timeoutMs ? { timeoutMs } : {}
     });
-    const title = (/<title[^>]*>([\s\S]*?)<\/title>/i.exec(result.body)?.[1] ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    const loginForm = /name=["']login["']|id=["']loginForm["']/i.test(
-      result.body.slice(0, 2e4)
-    );
-    const loggedOut = /\/login|\/signin|\/cas\/login/i.test(result.finalUrl) || /登录|sign in|log in/i.test(title) || matchesAny(config2.loggedOutPatterns ?? [], result.finalUrl) || matchesAny(config2.loggedOutPatterns ?? [], title) || loginForm;
+    const loggedOut = loginPageSignals({
+      finalUrl: result.finalUrl,
+      body: result.body,
+      ...result.contentType ? { contentType: result.contentType } : {},
+      patterns: config2.loggedOutPatterns
+    });
     return loggedOut ? { ok: false, message: "\u4F1A\u8BDD\u5DF2\u5931\u6548\u6216\u88AB\u91CD\u5B9A\u5411\u5230\u767B\u5F55\u9875" } : { ok: true };
   } catch (error62) {
     return {
@@ -27744,6 +28408,7 @@ function createBrowserSessionEngine(options = {}) {
       supportsSync: false,
       supportsLogin: true,
       supportsVerify: true,
+      supportsCapture: true,
       authKinds: ["token"],
       loginModes: ["browser", "manual"],
       validateConfig(config2) {
@@ -27755,6 +28420,10 @@ function createBrowserSessionEngine(options = {}) {
     async login(context2) {
       const config2 = browserConfigSchema.parse(context2.config);
       return options.loginImpl ? options.loginImpl(config2) : browserLogin(config2);
+    },
+    async capture(context2, captureOptions) {
+      const config2 = browserConfigSchema.parse(context2.config);
+      return options.captureImpl ? options.captureImpl(config2, captureOptions ?? {}) : captureBrowserSession(config2, captureOptions ?? {});
     },
     async verify(context2, secret) {
       const config2 = browserConfigSchema.parse(context2.config);
@@ -27771,7 +28440,7 @@ function createBrowserSessionEngine(options = {}) {
 }
 
 // adapters/fixture-lms/src/index.ts
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 import { readFileSync as readFileSync2 } from "node:fs";
 import { fileURLToPath } from "node:url";
 var fixtureCourseSchema = external_exports.object({
@@ -27836,7 +28505,7 @@ function contentHashForItem(sourceId, item) {
     sourceUrl: item.sourceUrl ?? null,
     sourceUpdatedAt: item.sourceUpdatedAt ?? null
   });
-  return createHash5("sha256").update(JSON.stringify(content)).digest("hex");
+  return createHash6("sha256").update(JSON.stringify(content)).digest("hex");
 }
 function normalizeFixtureSnapshot(snapshot) {
   const items = snapshot.items.map((item) => ({
@@ -27916,7 +28585,7 @@ function createFixtureSourceEngine() {
 import { chromium as chromium3 } from "playwright-core";
 
 // adapters/ustc-blackboard/src/parse.ts
-import { createHash as createHash6 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 var NAMED_ENTITIES = {
   amp: "&",
   lt: "<",
@@ -27932,7 +28601,7 @@ var NAMED_ENTITIES = {
   rdquo: "\u201D",
   ldquo: "\u201C"
 };
-function decodeEntities(value) {
+function decodeEntities2(value) {
   return value.replace(
     /&#x([0-9a-f]+);/gi,
     (_, hex3) => String.fromCodePoint(Number.parseInt(hex3, 16))
@@ -27944,7 +28613,7 @@ function decodeEntities(value) {
   });
 }
 function stripHtml(value) {
-  return decodeEntities(
+  return decodeEntities2(
     value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ")
   ).replace(/\s+/g, " ").trim();
 }
@@ -27964,11 +28633,11 @@ function anchors(html, baseUrl) {
     const url2 = absoluteUrl(href, baseUrl);
     if (!url2) continue;
     const title = /title\s*=\s*["']([^"']*)["']/i.exec(attributes)?.[1];
-    const text2 = stripHtml(match[2] ?? "") || (title ? decodeEntities(title) : "");
+    const text2 = stripHtml(match[2] ?? "") || (title ? decodeEntities2(title) : "");
     result.push({
       href: url2,
       text: text2.slice(0, 300),
-      ...title ? { title: decodeEntities(title).slice(0, 300) } : {}
+      ...title ? { title: decodeEntities2(title).slice(0, 300) } : {}
     });
   }
   return result;
@@ -28283,7 +28952,7 @@ function dueCandidatesFromText(pageText) {
 function parseAssignmentDetail(html, url2, courseExternalId, fallbackTitle, options) {
   const contentId = searchParam(url2, ["content_id"]);
   if (!contentId) throw new Error("Assignment URL has no content_id");
-  const pageTitle = decodeEntities(
+  const pageTitle = decodeEntities2(
     /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? ""
   );
   const titleMatch = /^(?:上载作业|复查提交历史记录|Upload Assignment|Review Submission History)\s*[:：]\s*(.+?)(?:\s+[–-]\s+.*)?$/i.exec(
@@ -28305,7 +28974,7 @@ function parseAssignmentDetail(html, url2, courseExternalId, fallbackTitle, opti
   const instructions = /<li[^>]*id=["']instructions["'][^>]*>([\s\S]*?)<\/li>/i.exec(html)?.[1] ?? "";
   const description = stripHtml(instructions).slice(0, 4e3);
   const kind = /考试|exam/i.test(title) ? "exam" : /测验|quiz|test/i.test(title) ? "quiz" : "assignment";
-  const contentHash = createHash6("sha256").update(
+  const contentHash = createHash7("sha256").update(
     JSON.stringify({
       title,
       description,
@@ -28327,7 +28996,7 @@ function parseAssignmentDetail(html, url2, courseExternalId, fallbackTitle, opti
 function parseAssessmentDetail(html, url2, courseExternalId, fallbackTitle, fallbackKind, options) {
   const contentId = searchParam(url2, ["content_id"]);
   if (!contentId) throw new Error("Assessment URL has no content_id");
-  const pageTitle = decodeEntities(
+  const pageTitle = decodeEntities2(
     /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? ""
   );
   const titleMatch = /^(?:考试|测验|测试|Exam|Test|Quiz)\s*[:：]\s*(.+?)(?:\s+[–-]\s+.*)?$/i.exec(
@@ -28345,7 +29014,7 @@ function parseAssessmentDetail(html, url2, courseExternalId, fallbackTitle, fall
   )?.[1] ?? "";
   const description = stripHtml(instructions).slice(0, 4e3);
   const kind = /考试|exam/i.test(`${title} ${fallbackKind}`) ? "exam" : "quiz";
-  const contentHash = createHash6("sha256").update(JSON.stringify({ title, description, due, courseExternalId, kind })).digest("hex");
+  const contentHash = createHash7("sha256").update(JSON.stringify({ title, description, due, courseExternalId, kind })).digest("hex");
   return {
     externalItemId: `bb:${courseExternalId}:assessment:${contentId}`,
     courseExternalId,
@@ -29523,7 +30192,7 @@ var Sequences = {
   // `</xmp`
 };
 var Tokenizer = class {
-  constructor({ xmlMode = false, decodeEntities: decodeEntities2 = true }, cbs) {
+  constructor({ xmlMode = false, decodeEntities: decodeEntities3 = true }, cbs) {
     this.cbs = cbs;
     this.state = State.Text;
     this.buffer = "";
@@ -29537,7 +30206,7 @@ var Tokenizer = class {
     this.currentSequence = void 0;
     this.sequenceIndex = 0;
     this.xmlMode = xmlMode;
-    this.decodeEntities = decodeEntities2;
+    this.decodeEntities = decodeEntities3;
     this.entityDecoder = new EntityDecoder(xmlMode ? xmlDecodeTree : htmlDecodeTree, (cp, consumed) => this.emitCodePoint(cp, consumed));
   }
   reset() {
@@ -39708,7 +40377,7 @@ function extractPage(payload, request) {
 }
 
 // packages/academic-adapter-runtime/src/runtime.ts
-import { createHash as createHash7 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 var MAX_TOTAL_ROWS = 5e3;
 var declarativeConfigSchema = browserConfigSchema.extend({
   manifestId: external_exports.string().min(1).max(200),
@@ -39794,7 +40463,7 @@ function setJsonPath(target, path, value) {
   cursor[parts[parts.length - 1]] = value;
 }
 function sampleKey(url2, method, requestBody) {
-  const bodyHash = requestBody === void 0 ? "" : createHash7("sha256").update(requestBody).digest("hex");
+  const bodyHash = requestBody === void 0 ? "" : createHash8("sha256").update(requestBody).digest("hex");
   return `${method} ${url2} ${bodyHash}`;
 }
 function renderManifestUrl(template, vars, baseUrl) {
@@ -39948,29 +40617,26 @@ var ManifestClient = class {
       if (result.status >= 500) {
         throw new AdapterTransientError(`\u5E73\u53F0\u8FD4\u56DE HTTP ${result.status}`);
       }
-      const loginLike2 = (this.#config.loggedOutPatterns ?? []).some((pattern) => {
-        try {
-          return new RegExp(pattern).test(`${result.finalUrl}
-${result.body.slice(0, 4e3)}`);
-        } catch {
-          return false;
-        }
-      });
-      if (loginLike2) {
+      if (loginPageSignals({
+        finalUrl: result.finalUrl,
+        body: result.body.slice(0, 2e4),
+        ...result.contentType ? { contentType: result.contentType } : {},
+        patterns: this.#config.loggedOutPatterns
+      })) {
         throw new AdapterAuthError("\u4F1A\u8BDD\u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
       }
       return result.body;
     } catch (error62) {
-      if (error62 instanceof AdapterAuthError || error62 instanceof AdapterTransientError) {
+      if (error62 instanceof AdapterAuthError || error62 instanceof AdapterTransientError || error62 instanceof AdapterEgressError) {
         throw error62;
       }
       if (error62 instanceof SafeFetchError) {
         if (error62.code === "TIMEOUT" || error62.code === "NETWORK") {
           throw new AdapterTransientError(error62.message);
         }
-        if (error62.code === "UNSAFE_HOST") {
-          throw new AdapterAuthError(
-            "\u8BF7\u6C42\u8DF3\u8F6C\u5230\u672A\u6388\u6743\u7AD9\u70B9\uFF0C\u53EF\u80FD\u662F\u4F1A\u8BDD\u5931\u6548\uFF1B\u8BF7\u91CD\u65B0\u767B\u5F55"
+        if (error62.code === "UNSAFE_HOST" || error62.code === "UNSAFE_PATH" || error62.code === "DNS_FAILED") {
+          throw new AdapterEgressError(
+            `\u8BF7\u6C42\u672A\u5230\u8FBE\u7AD9\u70B9\uFF08${error62.message}\uFF09\uFF1B\u8BF7\u68C0\u67E5\u4EE3\u7406/\u7F51\u7EDC\u6216 Manifest \u7684 allowedOrigins\u3001allowedPathPrefixes\uFF0C\u8FD9\u4E0D\u662F\u4F1A\u8BDD\u5931\u6548`
           );
         }
         throw new AdapterTransientError(error62.message);
@@ -40218,7 +40884,7 @@ var ManifestAdapter = class {
           ...description ? { description } : {},
           due,
           ...sourceUrl ? { sourceUrl } : {},
-          contentHash: createHash7("sha256").update(
+          contentHash: createHash8("sha256").update(
             JSON.stringify({
               title: requiredText(merged, "title") ?? title,
               description,
@@ -40794,7 +41460,7 @@ var AdapterCandidateService = class {
 };
 
 // packages/academic-materials/src/library.ts
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join2, relative, sep } from "node:path";
 
@@ -41979,7 +42645,7 @@ var MaterialLibrary = class {
         `\u6587\u4EF6\u8D85\u8FC7\u4E0A\u9650\uFF08${Math.round(this.#maxFileBytes / 1024 / 1024)} MB\uFF09`
       );
     }
-    const sha256 = createHash8("sha256").update(bytes).digest("hex");
+    const sha256 = createHash9("sha256").update(bytes).digest("hex");
     const existing = this.#byCourseHash(input2.courseId, sha256);
     if (existing) {
       return { material: this.#toView(existing), duplicate: true, chunks: existing.chunk_count };
@@ -42581,6 +43247,7 @@ var ACADEMIC_TOOL_NAMES = {
   ListSourceEngines: "academic_list_source_engines",
   ProbeSource: "academic_probe_source",
   CrawlSource: "academic_crawl_source",
+  ListCaptureEndpoints: "academic_list_capture_endpoints",
   CreateSource: "academic_create_source",
   ListWebSessions: "academic_list_web_sessions",
   FetchWebSession: "academic_fetch_web_session",
@@ -42922,7 +43589,7 @@ function createAcademicTools(dependencies) {
       ...dependencies.probeSource ? [
         defineTool(
           ACADEMIC_TOOL_NAMES.ProbeSource,
-          "Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host's cookies. POST is allowed only as an explicit JSON body for read-only list/detail APIs; forms and custom headers are never sent. Read-only; never returns cookies or URL query strings.",
+          "Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host's cookies. POST is allowed only as an explicit JSON body for read-only list/detail APIs; forms and custom headers are never sent. Read-only; never returns cookies or URL query strings. If the page is an SPA shell (only a mount div, no tables/links) or the data lives on another host, stop guessing URLs: ask the user to click \u201C\u767B\u5F55\u5E76\u5F55\u5236\u201D on the source in the \u8FDE\u63A5 page, then read academic_list_capture_endpoints instead.",
           external_exports.object({
             sourceId: external_exports.string().min(1).max(200),
             url: external_exports.string().url().optional(),
@@ -42993,6 +43660,27 @@ function createAcademicTools(dependencies) {
               error62 instanceof Error ? error62.message : String(error62)
             );
           }
+        }
+      ),
+      defineTool(
+        ACADEMIC_TOOL_NAMES.ListCaptureEndpoints,
+        'List the real endpoints the user produced in the guided \u201C\u767B\u5F55\u5E76\u5F55\u5236\u201D browser session for one source: method, masked URL, collections[] with exact JSON paths (e.g. data.payload.result.records), field paths (e.g. details.due), pagination parameter, transport and opaque sampleIds. Use the collection path that matches courses/assignments as the Manifest items path instead of guessing. Prefer these observed endpoints; pass sampleIds to academic_validate_adapter_candidate. Read-only; never returns cookies or raw bodies. If transport is "form" or the site needs custom headers, report that as an unsupported transport and stop. If empty, ask the user to run \u767B\u5F55\u5E76\u5F55\u5236 on the \u8FDE\u63A5 page.',
+        external_exports.object({ sourceId: external_exports.string().min(1).max(200) }),
+        async (input2) => {
+          if (!dependencies.captureSummary) {
+            return failure2(
+              "CAPABILITY_UNAVAILABLE",
+              "Guided capture is not available in this host"
+            );
+          }
+          const capture = dependencies.captureSummary(input2.sourceId);
+          if (!capture) {
+            return failure2(
+              "NOT_FOUND",
+              "No capture yet. Ask the user to click \u201C\u767B\u5F55\u5E76\u5F55\u5236\u201D for this source and open the course/assignment list once."
+            );
+          }
+          return success2({ capture });
         }
       ),
       defineTool(
@@ -44313,7 +45001,7 @@ async function registerNotificationReaction(options) {
 }
 
 // packages/academic-notifications/src/deadline-reminders.ts
-import { createHash as createHash9 } from "node:crypto";
+import { createHash as createHash10 } from "node:crypto";
 var DEADLINE_REMINDER_CONSUMER_ID = "academic.notifications.deadline.v1";
 function zoneOffsetMs(zone, instant) {
   const truncated = new Date(Math.floor(instant.getTime() / 1e3) * 1e3);
@@ -44374,7 +45062,7 @@ function describeDue2(due) {
   }
 }
 function hash2(value) {
-  return createHash9("sha256").update(value).digest("hex").slice(0, 32);
+  return createHash10("sha256").update(value).digest("hex").slice(0, 32);
 }
 async function scanDeadlineReminders(dependencies) {
   const consumerId = dependencies.consumerId ?? DEADLINE_REMINDER_CONSUMER_ID;
@@ -44971,7 +45659,7 @@ function buildPlan(input2) {
 }
 
 // packages/academic-planner-basic/src/replan-store.ts
-import { createHash as createHash10, randomUUID as randomUUID2 } from "node:crypto";
+import { createHash as createHash11, randomUUID as randomUUID2 } from "node:crypto";
 function parseJson(value) {
   return JSON.parse(String(value));
 }
@@ -44998,7 +45686,7 @@ var ReplanStore = class {
            ORDER BY created_at DESC, rowid DESC LIMIT 1`
       ).get(input2.reason, rangeJson);
       if (pending) return this.#toRequest(pending);
-      const replanRequestId = input2.replanRequestId ?? `replan-${createHash10("sha256").update(input2.sourceKey ?? randomUUID2()).digest("hex").slice(0, 32)}`;
+      const replanRequestId = input2.replanRequestId ?? `replan-${createHash11("sha256").update(input2.sourceKey ?? randomUUID2()).digest("hex").slice(0, 32)}`;
       const now = this.#clock.now();
       this.#db.prepare(
         `INSERT OR IGNORE INTO replan_requests (
@@ -47530,7 +48218,11 @@ async function createAcademicApp(options) {
   }
   if (!configuredIds.has("browser-session")) {
     sourceEngineRegistrations.push(
-      sourceEngines.register(createBrowserSessionEngine())
+      sourceEngines.register(
+        createBrowserSessionEngine({
+          ...options.browserCaptureImpl ? { captureImpl: options.browserCaptureImpl } : {}
+        })
+      )
     );
   }
   const hasExistingBlackboardSource = store.database.prepare(
@@ -47692,7 +48384,7 @@ async function createAcademicApp(options) {
       return Boolean(item && item.courseId === courseId && !item.archived);
     }
   });
-  const probeSamples = new ProbeSampleStore();
+  const probeSamples = new ProbeSampleStore({ maxSamples: 80 });
   const probeLimiter = new ProbeRateLimiter({
     ...options.probeMinIntervalMs !== void 0 ? { minIntervalMs: options.probeMinIntervalMs } : {}
   });
@@ -47755,6 +48447,92 @@ async function createAcademicApp(options) {
       ...options.probeResolveHost ? { resolveHost: options.probeResolveHost } : {}
     });
   };
+  const captures = /* @__PURE__ */ new Map();
+  const captureSourceById = async (sourceId, captureOptions = {}) => {
+    const source = sources.get(sourceId);
+    if (!source || source.archived) {
+      throw new CapabilityUnavailableError(`source.${sourceId}`);
+    }
+    if (source.authKind === "none") {
+      throw new CapabilityUnavailableError(`source.session.${sourceId}`);
+    }
+    const engine = sourceEngines.get(source.engine);
+    if (!engine?.capture) {
+      throw new CapabilityUnavailableError(`source.capture.${sourceId}`);
+    }
+    const session = await engine.capture(
+      { sourceId, config: source.config },
+      captureOptions
+    );
+    let connection = connections.list().find((entry) => entry.sourceId === sourceId);
+    if (!connection) {
+      connection = connections.create({
+        sourceId,
+        displayName: source.displayName,
+        authKind: source.authKind,
+        scopes: source.capabilities
+      });
+    }
+    await connections.setSecret(connection.connectionId, session.secret);
+    const warnings = [...session.warnings];
+    const verify = engine.verify;
+    if (verify) {
+      const verification = await connections.verify(
+        connection.connectionId,
+        async (secret) => verify({ sourceId, config: source.config }, secret)
+      );
+      if (verification.status === "auth-required") {
+        warnings.push(
+          `\u4F1A\u8BDD\u6821\u9A8C\u672A\u901A\u8FC7\uFF1A${verification.lastError ?? "\u8BF7\u786E\u8BA4\u5DF2\u5B8C\u6210\u767B\u5F55"}`
+        );
+      }
+    }
+    const configuredDomains = Array.isArray(source.config.cookieDomains) ? source.config.cookieDomains.filter(
+      (entry) => typeof entry === "string"
+    ) : [];
+    const mergedDomains = [.../* @__PURE__ */ new Set([...configuredDomains, ...session.hosts])];
+    if (mergedDomains.length !== configuredDomains.length) {
+      sources.update(sourceId, {
+        config: { ...source.config, cookieDomains: mergedDomains }
+      });
+    }
+    const stored = session.captures.map((capture) => {
+      const sample = {
+        url: capture.url,
+        method: capture.method,
+        body: capture.body,
+        ...capture.contentType ? { contentType: capture.contentType } : {},
+        ...capture.requestBody ? { requestBody: capture.requestBody } : {}
+      };
+      return { capture, sample, stored: probeSamples.put(sample) };
+    });
+    const summary2 = buildCaptureSummary({
+      sourceId,
+      captureId: ids.next(),
+      startedAt: session.startedAt,
+      finishedAt: session.finishedAt,
+      hosts: session.hosts,
+      visited: session.visited,
+      samples: stored.map(({ capture, sample, stored: entry }) => ({
+        sampleId: entry.sampleId,
+        sample,
+        status: capture.status,
+        headerNames: capture.headerNames,
+        ...capture.requestContentType ? { requestContentType: capture.requestContentType } : {}
+      })),
+      ...session.skipped ? { skipped: session.skipped } : {},
+      warnings
+    });
+    const available = summary2.endpoints.filter(
+      (endpoint) => probeSamples.get(endpoint.sampleId) !== void 0
+    );
+    if (available.length !== summary2.endpoints.length) {
+      summary2.endpoints = available;
+      summary2.warnings.push("\u90E8\u5206\u6837\u672C\u5DF2\u8FC7\u671F\uFF0C\u5DF2\u4ECE\u6E05\u5355\u79FB\u9664\uFF1B\u8BF7\u91CD\u65B0\u5F55\u5236");
+    }
+    captures.set(sourceId, summary2);
+    return summary2;
+  };
   const ensureCandidateSource = async (candidate) => {
     const manifest = manifestRegistry.get(candidate.adapterId, candidate.version);
     if (!manifest) return { warning: "Manifest \u672A\u6CE8\u518C\uFF0C\u65E0\u6CD5\u521B\u5EFA\u540C\u6B65\u6570\u636E\u6E90" };
@@ -47771,8 +48549,7 @@ async function createAcademicApp(options) {
       loginUrl: base.toString(),
       authenticatedUrlPatterns: [`^${escapePattern(base.origin)}/`],
       cookieDomains: [host2],
-      verifyUrl: base.toString(),
-      loggedOutPatterns: ["/login"]
+      verifyUrl: base.toString()
     };
     let sourceId = candidateSourceId(candidate.adapterId);
     let existing = sources.get(sourceId);
@@ -47883,6 +48660,7 @@ async function createAcademicApp(options) {
     syncAdapterSource,
     probeSource: probeSourceById,
     crawlSource: crawlSourceById,
+    captureSummary: (sourceId) => captures.get(sourceId),
     getProbeSample: (sampleId) => probeSamples.get(sampleId),
     allowWrites: options.agentWrites ?? false,
     ...options.authorizeAgentWrite ? { authorizeWrite: options.authorizeAgentWrite } : {}
@@ -47943,7 +48721,7 @@ async function createAcademicApp(options) {
       async handler(event) {
         if (event.type !== EVENT.AcademicItemDiscovered) return;
         const itemId = event.streamId.slice(event.streamId.indexOf("/") + 1);
-        const taskId = `task-default-${createHash11("sha256").update(itemId).digest("hex").slice(0, 32)}`;
+        const taskId = `task-default-${createHash12("sha256").update(itemId).digest("hex").slice(0, 32)}`;
         const result = await store.commands.execute(
           parseCommand({
             commandId: `default-task:${event.eventId}`,
@@ -48108,6 +48886,8 @@ async function createAcademicApp(options) {
     },
     probeSource: probeSourceById,
     crawlSource: crawlSourceById,
+    captureSource: captureSourceById,
+    latestCapture: (sourceId) => captures.get(sourceId),
     async previewSourceSync(sourceId, connectionId) {
       const source = sources.get(sourceId);
       if (!source || !source.enabled || source.archived) {

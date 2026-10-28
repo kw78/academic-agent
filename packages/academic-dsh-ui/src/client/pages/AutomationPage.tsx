@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { SyncRunSummary } from '@academic/contracts'
 import { callApi } from '../api.js'
 import {
@@ -25,7 +25,7 @@ import type {
 } from '../../protocol.js'
 import type { PageProps } from './types.js'
 
-export function AutomationPage({ ctx, active }: PageProps) {
+export function AutomationPage({ ctx, active, nav }: PageProps) {
   const load = useCallback(
     (signal: AbortSignal) => callApi<AutomationView>(ctx, 'automation', {}, signal),
     [ctx],
@@ -36,6 +36,16 @@ export function AutomationPage({ ctx, active }: PageProps) {
   const view = viewState(state)
   const timeZone = data?.timeZone ?? 'UTC'
   const [thresholds, setThresholds] = useState('')
+
+  useEffect(() => {
+    if (!data || nav?.focus !== 'notifications') return
+    requestAnimationFrame(() => {
+      document.getElementById('ac-notifications')?.scrollIntoView({
+        block: 'start',
+        behavior: 'smooth',
+      })
+    })
+  }, [data, nav?.focus, nav?.nonce])
 
   const toggleJob = async (job: AutomationJob): Promise<UiResult<AutomationJob>> =>
     callApi<AutomationJob>(ctx, 'setJobEnabled', {
@@ -102,7 +112,7 @@ export function AutomationPage({ ctx, active }: PageProps) {
           <div className="ac-inline-bar">
             <div>
               <Badge tone={data.projection.consistent ? 'ok' : 'warn'}>
-                {data.projection.consistent ? '核心投影一致' : '投影落后'}
+                {data.projection.consistent ? '数据已更新' : '数据更新有延迟'}
               </Badge>
               <span className="ac-muted">
                 事件位置 {data.projection.eventPosition} · 投影位置{' '}
@@ -158,7 +168,7 @@ export function AutomationPage({ ctx, active }: PageProps) {
             </ul>
           </Section>
 
-          <Section title="提醒设置" subtitle="只发送当前最紧急的一档；扫描在启动时补偿">
+          <Section title="提醒设置" subtitle="同一事项只提醒当前最紧急的一档；重启时会补查临近截止的事项">
             <div className="ac-form-card">
               <div className="ac-inline-bar">
                 <div>
@@ -214,7 +224,7 @@ export function AutomationPage({ ctx, active }: PageProps) {
             </div>
           </Section>
 
-          <Section title="通知" subtitle={`未读 ${data.unread} 条`}
+          <Section id="ac-notifications" title="通知" subtitle={`未读 ${data.unread} 条`}
             actions={
               <button
                 type="button"
@@ -233,7 +243,7 @@ export function AutomationPage({ ctx, active }: PageProps) {
             }
           >
             {data.notifications.length === 0 ? (
-              <EmptyState title="还没有提醒">截止提醒由持久化扫描作业生成。</EmptyState>
+              <EmptyState title="还没有提醒">系统会定期检查截止时间，有需要提醒的事项时会显示在这里。</EmptyState>
             ) : (
               <ul className="ac-list">
                 {data.notifications.map((notification) => (
@@ -273,7 +283,7 @@ export function AutomationPage({ ctx, active }: PageProps) {
             )}
           </Section>
 
-          <Section title="自动化运行记录" subtitle="最近 5 次作业运行">
+          <Section title="自动化运行记录" subtitle="最近 5 次后台任务的执行结果">
             {data.jobRuns.length === 0 ? (
               <EmptyState title="还没有运行记录" />
             ) : (

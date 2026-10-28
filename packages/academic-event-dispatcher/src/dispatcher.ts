@@ -153,6 +153,12 @@ export class EventDispatcher {
     this.#consumers.clear()
   }
 
+  /** Resolves once queued and in-flight dispatch work has settled. */
+  async waitForIdle(): Promise<void> {
+    await this.#queued
+    if (this.#processing) await this.#processing
+  }
+
   wake(): void {
     if (!this.#running) return
     this.#queued = this.#queued.then(() => this.processOnce()).catch(() => undefined)
@@ -207,6 +213,9 @@ export class EventDispatcher {
       entry.status.lastRunAt = now
       const events = await this.#events.readAll(checkpoint.lastPosition, this.#batchSize)
       for (const event of events) {
+        // A plugin can be unloaded while its handler is awaiting; stop before
+        // handing the next event to a consumer that no longer exists.
+        if (entry.disposed) break
         summary.scanned += 1
         if (!this.#matches(entry.config.eventTypes, event.type)) {
           await this.#advance(entry, event.globalPosition)

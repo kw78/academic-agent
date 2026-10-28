@@ -88,6 +88,8 @@ export interface SourceEngineDescriptor {
   supportsSync: boolean
   supportsLogin: boolean
   supportsVerify: boolean
+  /** Whether the engine can record traffic in the guided login browser. */
+  supportsCapture?: boolean
   /** Auth kinds this engine can actually use; omitted means unrestricted. */
   authKinds?: ConnectionAuthKind[]
   /** Login modes this engine can actually use; omitted means unrestricted. */
@@ -99,6 +101,49 @@ export interface SourceEngineDescriptor {
 export interface SourceEngineContext {
   sourceId: string
   config: Record<string, unknown>
+}
+
+/** One real exchange observed while the user browses an authenticated site. */
+export interface CapturedResponse {
+  url: string
+  method: 'GET' | 'POST'
+  status: number
+  body: string
+  contentType?: string
+  requestBody?: string
+  requestContentType?: string
+  /** Request header names only; values may carry site-specific tokens. */
+  headerNames: string[]
+}
+
+/** Why interesting responses did not become samples. */
+export interface CaptureSkipCounts {
+  noise: number
+  nonText: number
+  tooLarge: number
+  limit: number
+  failed: number
+}
+
+export interface SourceCaptureOptions {
+  maxSamples?: number
+  maxBytes?: number
+  timeoutMs?: number
+}
+
+/**
+ * Result of a guided capture: a fresh session plus the traffic the user
+ * produced. Raw bodies are handled by the host, never returned to a model.
+ */
+export interface SourceCaptureSession {
+  secret: string
+  captures: CapturedResponse[]
+  hosts: string[]
+  visited: number
+  startedAt: string
+  finishedAt: string
+  warnings: string[]
+  skipped?: CaptureSkipCounts
 }
 
 export interface SourceLoginResult {
@@ -121,6 +166,14 @@ export interface SourceVerification {
 export interface SourceEngine {
   descriptor: SourceEngineDescriptor
   login?(context: SourceEngineContext): Promise<SourceLoginResult>
+  /**
+   * Opens the login browser and records read-only traffic while the user
+   * navigates. Used to discover real endpoints instead of guessing URLs.
+   */
+  capture?(
+    context: SourceEngineContext,
+    options?: SourceCaptureOptions,
+  ): Promise<SourceCaptureSession>
   verify?(
     context: SourceEngineContext,
     secret: string,

@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline/promises'
 import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   newId,
   type AdapterSample,
@@ -13,7 +14,7 @@ import {
 import type { WeeklySlot } from '@academic/planner-basic'
 import { loginWebSession, safeUrlForDisplay } from '@academic/web-sessions'
 import { createAcademicApp, type AcademicApp } from './composition.js'
-import { restoreDatabase } from './backup.js'
+import { restoreApplication, restoreDatabase } from './backup.js'
 
 const DATABASE_PATH = process.env.ACADEMIC_DB ?? '.data/academic.db'
 
@@ -1194,6 +1195,8 @@ function printHelp(): void {
   notifications [--read ID | --read-all]
   backup [target.db]        生成一致性数据库备份
   restore <backup.db> <target.db>  恢复到新数据库并校验完整性、投影
+  backup-app [targetDir]    备份数据库 + 资料原文件 + SHA-256 清单
+  restore-app <backupDir> <targetDir>  校验清单后恢复到新目录并检查数据库
   help                      显示帮助
 
 环境变量：
@@ -1372,7 +1375,48 @@ async function main(): Promise<void> {
             throw new Error('恢复后投影与事件位置不一致')
           }
         } finally {
-          restored.close()
+          await restored.close()
+        }
+        break
+      }
+
+      case 'backup-app': {
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+        const target = rest[0] ?? `.data/backups/academic-app-${stamp}`
+        const manifest = app.backupApplication(target)
+        console.log(
+          `应用备份完成：${target} · 数据库 ${manifest.database.bytes} B · 资料 ${manifest.materials.length} 个`,
+        )
+        break
+      }
+
+      case 'restore-app': {
+        const [backupDir, targetDir] = rest
+        if (!backupDir || !targetDir) {
+          throw new Error('用法：restore-app <backupDir> <targetDir>')
+        }
+        const manifest = restoreApplication({ backupDir, targetDir })
+        const restored = await createAcademicApp({
+          databasePath: join(targetDir, 'academic.db'),
+          materialsDir: join(targetDir, 'materials'),
+        })
+        try {
+          const integrity = restored.store.database
+            .prepare('PRAGMA integrity_check')
+            .get() as { integrity_check?: string } | undefined
+          const health = restored.store.health()
+          const integrityResult = integrity?.integrity_check ?? 'unknown'
+          console.log(
+            `应用恢复完成：${targetDir} · integrity=${integrityResult} · events=${health.eventPosition} · projection=${health.projectionPosition} · 资料 ${manifest.materials.length} 个`,
+          )
+          if (integrityResult !== 'ok') {
+            throw new Error(`恢复数据库完整性检查失败：${integrityResult}`)
+          }
+          if (!health.consistent) {
+            throw new Error('恢复后投影与事件位置不一致')
+          }
+        } finally {
+          await restored.close()
         }
         break
       }
@@ -1397,7 +1441,7 @@ async function main(): Promise<void> {
         process.exitCode = 1
     }
   } finally {
-    app.close()
+    await app.close()
   }
 }
 

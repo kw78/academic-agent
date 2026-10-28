@@ -21,6 +21,8 @@ export {
   safeUrlForDisplay,
   validateCookies,
 } from './http.js'
+export { loginPageSignals } from './login-page.js'
+export type { LoginPageInput } from './login-page.js'
 export type {
   AllowedProtocol,
   PinnedRequest,

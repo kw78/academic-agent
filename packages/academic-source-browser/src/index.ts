@@ -1,6 +1,14 @@
-import { chromium, type Browser, type BrowserContext } from 'playwright-core'
+import { createHash } from 'node:crypto'
+import {
+  chromium,
+  type Browser,
+  type BrowserContext,
+  type Page,
+  type Response as PlaywrightResponse,
+} from 'playwright-core'
 import { z } from 'zod'
 import {
+  loginPageSignals,
   safeFetch,
   type AllowedProtocol,
   type PinnedRequest,
@@ -8,6 +16,9 @@ import {
   type WebCookie,
 } from '@academic/web-sessions'
 import type {
+  CapturedResponse,
+  SourceCaptureOptions,
+  SourceCaptureSession,
   SourceEngine,
   SourceEngineContext,
   SourceLoginResult,
@@ -47,6 +58,11 @@ export type BrowserSessionConfig = z.infer<typeof browserConfigSchema>
 export interface BrowserSessionEngineOptions {
   /** Test seam: bypass the real browser while keeping the cookie result shape. */
   loginImpl?: (config: BrowserSessionConfig) => Promise<SourceLoginResult>
+  /** Test seam for the guided capture browser. */
+  captureImpl?: (
+    config: BrowserSessionConfig,
+    options: SourceCaptureOptions,
+  ) => Promise<SourceCaptureSession>
   fetchImpl?: typeof fetch
   requestImpl?: PinnedRequest
   resolveHost?: ResolveHost
@@ -184,6 +200,231 @@ async function updateLoginStatus(
   }
 }
 
+const CAPTURE_HELPER_SCRIPT = `(() => {
+  const install = () => {
+    if (document.getElementById('academic-capture-done')) return
+    const panel = document.createElement('div')
+    panel.id = 'academic-capture-panel'
+    panel.style.cssText = 'position:fixed;top:12px;right:12px;z-index:2147483647;background:#111827;color:#fff;padding:10px 12px;border-radius:8px;font:13px/1.5 system-ui,-apple-system,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.35);max-width:340px'
+    const status = document.createElement('div')
+    status.id = 'academic-capture-status'
+    status.textContent = '正在录制：请登录，然后打开课程列表和作业列表（最好翻一页）。'
+    const count = document.createElement('div')
+    count.id = 'academic-capture-count'
+    count.style.cssText = 'opacity:.75;margin:4px 0 8px'
+    count.textContent = '已录制 0 个接口'
+    const button = document.createElement('button')
+    button.id = 'academic-capture-done'
+    button.type = 'button'
+    button.textContent = '完成录制并保存会话'
+    button.style.cssText = 'background:#2563eb;color:#fff;border:0;border-radius:6px;padding:8px 10px;cursor:pointer;font:inherit'
+    button.addEventListener('click', () => {
+      count.textContent = '正在保存…'
+      if (typeof window.__academicCaptureDone === 'function') {
+        window.__academicCaptureDone()
+      } else {
+        count.textContent = '无法连接宿主，请关闭窗口后重试'
+      }
+    })
+    panel.appendChild(status)
+    panel.appendChild(count)
+    panel.appendChild(button)
+    document.documentElement.appendChild(panel)
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', install, { once: true })
+  } else {
+    install()
+  }
+})()`
+
+const CAPTURE_SKIP_URL =
+  /\/(?:logout|signout|sign-out|favicon\.ico|robots\.txt)(?:[/?#]|$)/i
+const CAPTURE_MAX_BODY = 512 * 1024
+const CAPTURE_MAX_TOTAL = 8 * 1024 * 1024
+const CAPTURE_MAX_SAMPLES = 40
+const CAPTURE_MAX_REQUEST_BODY = 16 * 1024
+const CAPTURE_TIMEOUT_MS = 8 * 60_000
+
+async function updateCaptureCount(
+  context: BrowserContext,
+  captured: number,
+): Promise<void> {
+  for (const page of context.pages()) {
+    await page
+      .evaluate((value) => {
+        const element = document.getElementById('academic-capture-count')
+        if (element) element.textContent = `已录制 ${value} 个接口`
+      }, captured)
+      .catch(() => undefined)
+  }
+}
+
+/**
+ * Records read-only JSON/HTML traffic while the user logs in and opens the
+ * pages they care about. The agent then plans a manifest from observed
+ * requests instead of guessing URLs. Forms are never submitted by us; the
+ * bodies recorded here are the site's own read requests.
+ */
+export async function captureBrowserSession(
+  config: BrowserSessionConfig,
+  options: SourceCaptureOptions = {},
+): Promise<SourceCaptureSession> {
+  const browser = await launch(config.channel)
+  const startedAt = new Date().toISOString()
+  const captured: CapturedResponse[] = []
+  const seen = new Set<string>()
+  const hosts = new Set<string>(config.cookieDomains)
+  const pending = new Set<Promise<void>>()
+  const maxSamples = Math.min(
+    Math.max(options.maxSamples ?? CAPTURE_MAX_SAMPLES, 1),
+    80,
+  )
+  const maxTotal = Math.min(
+    Math.max(options.maxBytes ?? CAPTURE_MAX_TOTAL, 64 * 1024),
+    32 * 1024 * 1024,
+  )
+  let totalBytes = 0
+  let visited = 0
+  let confirmed = false
+  let warning: string | undefined
+  const skipped = { noise: 0, nonText: 0, tooLarge: 0, limit: 0, failed: 0 }
+
+  try {
+    const context = await browser.newContext({
+      locale: 'zh-CN',
+      viewport: { width: 1280, height: 900 },
+    })
+    try {
+      await context.exposeBinding('__academicCaptureDone', () => {
+        confirmed = true
+      })
+      await context.addInitScript({ content: CAPTURE_HELPER_SCRIPT })
+
+      const record = async (response: PlaywrightResponse): Promise<void> => {
+        try {
+          const request = response.request()
+          const resourceType = request.resourceType()
+          if (resourceType !== 'xhr' && resourceType !== 'fetch' && resourceType !== 'document') {
+            return
+          }
+          const status = response.status()
+          if (status < 200 || status >= 300) {
+            skipped.failed += 1
+            return
+          }
+          const url = response.url()
+          if (!/^https?:/i.test(url)) return
+          if (CAPTURE_SKIP_URL.test(new URL(url).pathname)) {
+            skipped.noise += 1
+            return
+          }
+          const responseHeaders = await response.allHeaders()
+          const contentType = responseHeaders['content-type'] ?? ''
+          if (!/(?:json|html)/i.test(contentType)) {
+            skipped.nonText += 1
+            return
+          }
+          const declared = Number(responseHeaders['content-length'] ?? '0')
+          if (declared > CAPTURE_MAX_BODY) {
+            skipped.tooLarge += 1
+            return
+          }
+          const buffer = await response.body()
+          if (buffer.length === 0) return
+          if (buffer.length > CAPTURE_MAX_BODY) {
+            skipped.tooLarge += 1
+            return
+          }
+          if (captured.length >= maxSamples || totalBytes + buffer.length > maxTotal) {
+            warning ??= '录制已达上限，后续请求被丢弃'
+            skipped.limit += 1
+            return
+          }
+          const body = buffer.toString('utf8')
+          const method = request.method().toUpperCase() === 'POST' ? 'POST' : 'GET'
+          const postData = method === 'POST' ? request.postData() : null
+          const key = `${method} ${url} ${createHash('sha256').update(body).digest('hex')}`
+          if (seen.has(key)) return
+          seen.add(key)
+          const requestHeaders: Record<string, string> = await request
+            .allHeaders()
+            .catch(() => ({}) as Record<string, string>)
+          const requestContentType = requestHeaders['content-type']
+          captured.push({
+            url,
+            method,
+            status,
+            body,
+            contentType,
+            ...(requestContentType ? { requestContentType } : {}),
+            ...(postData && postData.length <= CAPTURE_MAX_REQUEST_BODY
+              ? { requestBody: postData }
+              : {}),
+            headerNames: Object.keys(requestHeaders),
+          })
+          totalBytes += buffer.length
+          hosts.add(new URL(url).hostname)
+          await updateCaptureCount(context, captured.length)
+        } catch {
+          // Body unavailable (navigation/aborted). Skipping is the safe default.
+          skipped.failed += 1
+        }
+      }
+
+      const attach = (page: Page): void => {
+        page.on('request', () => {
+          visited += 1
+        })
+        page.on('response', (response) => {
+          const task = record(response)
+          pending.add(task)
+          void task.finally(() => pending.delete(task))
+        })
+      }
+      context.on('page', attach)
+      const page = await context.newPage()
+      attach(page)
+      await page.goto(config.loginUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60_000,
+      })
+      const deadline =
+        Date.now() + Math.max(options.timeoutMs ?? CAPTURE_TIMEOUT_MS, 60_000)
+      while (Date.now() < deadline && !confirmed) {
+        if (!browser.isConnected()) throw new Error('录制窗口已关闭，未保存')
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+      if (!confirmed && captured.length === 0) {
+        throw new Error('录制超时：请在浏览器中登录并打开列表页面后点击“完成录制”')
+      }
+      if (!confirmed) warning ??= '录制超时，已保留当前捕获的内容'
+      await Promise.allSettled([...pending])
+      const observedHosts = [...hosts].filter(Boolean)
+      const cookies = (await context.cookies()).filter((cookie) =>
+        cookieDomainAllowed(cookie.domain, observedHosts),
+      )
+      if (cookies.length === 0) {
+        throw new Error('未读取到会话 Cookie，请确认已完成登录')
+      }
+      return {
+        secret: JSON.stringify({ cookies }),
+        captures: captured,
+        hosts: observedHosts,
+        visited,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        warnings: warning ? [warning] : [],
+        skipped,
+      }
+    } finally {
+      await context.close().catch(() => undefined)
+    }
+  } finally {
+    await browser.close().catch(() => undefined)
+  }
+}
+
 async function browserLogin(
   config: BrowserSessionConfig,
 ): Promise<SourceLoginResult> {
@@ -317,21 +558,12 @@ async function verifySession(
       ...(resolveHost ? { resolveHost } : {}),
       ...(timeoutMs ? { timeoutMs } : {}),
     })
-    const title = (
-      /<title[^>]*>([\s\S]*?)<\/title>/i.exec(result.body)?.[1] ?? ''
-    )
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-    const loginForm = /name=["']login["']|id=["']loginForm["']/i.test(
-      result.body.slice(0, 20_000),
-    )
-    const loggedOut =
-      /\/login|\/signin|\/cas\/login/i.test(result.finalUrl) ||
-      /登录|sign in|log in/i.test(title) ||
-      matchesAny(config.loggedOutPatterns ?? [], result.finalUrl) ||
-      matchesAny(config.loggedOutPatterns ?? [], title) ||
-      loginForm
+    const loggedOut = loginPageSignals({
+      finalUrl: result.finalUrl,
+      body: result.body,
+      ...(result.contentType ? { contentType: result.contentType } : {}),
+      patterns: config.loggedOutPatterns,
+    })
     return loggedOut
       ? { ok: false, message: '会话已失效或被重定向到登录页' }
       : { ok: true }
@@ -356,6 +588,7 @@ export function createBrowserSessionEngine(
       supportsSync: false,
       supportsLogin: true,
       supportsVerify: true,
+      supportsCapture: true,
       authKinds: ['token'],
       loginModes: ['browser', 'manual'],
       validateConfig(config) {
@@ -371,6 +604,12 @@ export function createBrowserSessionEngine(
       return options.loginImpl
         ? options.loginImpl(config)
         : browserLogin(config)
+    },
+    async capture(context: SourceEngineContext, captureOptions?: SourceCaptureOptions) {
+      const config = browserConfigSchema.parse(context.config)
+      return options.captureImpl
+        ? options.captureImpl(config, captureOptions ?? {})
+        : captureBrowserSession(config, captureOptions ?? {})
     },
     async verify(context: SourceEngineContext, secret: string) {
       const config = browserConfigSchema.parse(context.config)

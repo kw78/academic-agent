@@ -4,7 +4,7 @@ These are project-owned notes summarizing the pedagogy used by the optional thir
 
 ## Diagnose before teaching
 
-- Ask one question that reveals the learner's current model.
+- Ask a diagnostic question only when the answer would change the explanation; use any attempt already provided.
 - Do not start with a full lecture if a short diagnostic changes the explanation.
 - If the learner gives no signal, start concrete and offer a depth choice.
 
@@ -28,7 +28,7 @@ Move from a small, concrete question to a more general one:
 
 - Start at the learner's demonstrated level, not the maximum.
 - Full worked example → partial example → coached attempt → independent attempt.
-- Remove one scaffold at a time; keep the check question.
+- Remove one scaffold at a time; use a check question when it helps, without requiring one after every answer.
 
 ## Validate understanding
 

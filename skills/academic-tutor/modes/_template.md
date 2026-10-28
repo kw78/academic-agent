@@ -1,26 +1,23 @@
-# Mode template
+# 模式名称
 
-Copy this file to `modes/<mode>.md` and fill every section. A mode is documentation, not a new tool.
+复制为 modes/<mode>.md 后填写适用范围。模式用于描述教学方法，不增加工具或权限。
 
-## When
+## 适用请求
 
-One sentence describing the user request that selects this mode.
+说明什么样的提问会使用这个模式，以及何时应选择其他模式。
 
-## Inputs
+## 需要的信息
 
-- Required context (question text, course/item id, user attempt, saved tasks, etc.).
-- What to do when the input is missing.
+列出确实影响回答的输入；缺少时说明哪些可以先回答、哪些需要追问。
 
-## Procedure
+## 处理方式
 
-1. First step.
-2. Second step.
-3. Verification step.
+说明这个模式特有的教学方法和检查要点。只有顺序影响正确性时才规定固定步骤。
 
-## Output
+## 回答要求
 
-The required answer shape, including what must be labelled as fact vs inference.
+描述用户应获得什么帮助，以及怎样交代来源、推断或缺失信息。按问题选择回答长度，不强制给用户展示固定栏目、英文标签或结尾提问。
 
-## Boundaries
+## 边界
 
-What this mode must never claim or do.
+补充这个模式特有的限制；共同的数据、授权和资料引用规则见 SKILL.md。

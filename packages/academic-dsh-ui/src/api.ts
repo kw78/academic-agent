@@ -73,6 +73,7 @@ import type {
   PreferencesView,
   PreviewPlanRequest,
   SettingsView,
+  SourceCaptureView,
   SourceIdRequest,
   SourceDiagnosis,
   SourceProbeEvidence,
@@ -85,6 +86,8 @@ import type {
   TaskCard,
   TasksRequest,
   TasksView,
+  TaskScope,
+  TaskViewCounts,
   UiErrorCode,
   UiFailure,
   UiResult,
@@ -101,8 +104,10 @@ import type {
   WebSessionView,
 } from './protocol.js'
 
-const MAX_TASKS = 500
 const MAX_ITEMS = 200
+const MAX_ITEM_SCAN_PAGES = 25
+const DEFAULT_TASK_PAGE = 200
+const MAX_TASK_PAGE = 500
 const PREVIEW_TTL_MS = 10 * 60_000
 const PREVIEW_LIMIT = 20
 const FIXTURE_SYNC_JOB_ID = 'fixture-lms-sync'
@@ -119,6 +124,14 @@ const itemsSchema = z.object({
 const tasksSchema = z.object({
   status: z.enum(['active', 'completed', 'all']).optional(),
   includeArchived: z.boolean().optional(),
+  courseId: z.string().min(1).max(200).optional(),
+  kind: z.enum(['all', 'assignment', 'exam', 'quiz']).optional(),
+  due: z
+    .enum(['all', 'today', 'week', 'overdue', 'unknown', 'unscheduled'])
+    .optional(),
+  search: z.string().max(200).optional(),
+  limit: z.number().int().min(1).max(MAX_TASK_PAGE).optional(),
+  offset: z.number().int().min(0).max(1_000_000).optional(),
 })
 const previewSchema = z.object({
   start: z.string().min(1),
@@ -492,10 +505,6 @@ function dueSoon(due: Due | undefined, now: string, zone: string, days: number):
   }
 }
 
-function addMinutes(iso: string, minutes: number): string {
-  return new Date(Date.parse(iso) + minutes * 60_000).toISOString()
-}
-
 function mapAvailability(settings: {
   timeZone: string
   weeklySlots: Array<{ weekday: number; start: string; end: string }>
@@ -859,6 +868,10 @@ function buildSources(
       syncAvailable: adapterReady,
       canLogin: available && Boolean(engine?.login),
       canVerify: available && Boolean(engine?.verify),
+      canCapture:
+        available &&
+        Boolean(engine?.capture) &&
+        engine?.descriptor.supportsCapture === true,
       ...(config.loginMode ? { loginMode: config.loginMode } : {}),
       capabilities: config.capabilities,
       config: config.config,
@@ -892,6 +905,7 @@ function buildSources(
         syncAvailable: false,
         canLogin: false,
         canVerify: false,
+        canCapture: false,
         capabilities: [],
         config: {},
         enabled: false,
@@ -917,6 +931,12 @@ function buildSources(
   for (const source of catalog.values()) {
     const run = syncRuns.find((candidate) => candidate.sourceId === source.sourceId)
     if (run) source.lastSync = run
+    const successful = syncRuns.find(
+      (candidate) =>
+        candidate.sourceId === source.sourceId &&
+        (candidate.status === 'success' || candidate.status === 'partial'),
+    )
+    if (successful) source.lastSuccessfulSync = successful
     source.authentication = authenticationState(source)
     source.syncHealth = syncHealthState(source.lastSync, now)
     source.state = sourceState(source)
@@ -950,27 +970,44 @@ function syncHealth(
   return 'ok'
 }
 
-interface LoadedTasks {
+interface LoadedItems {
+  items: AcademicItemView[]
+  complete: boolean
+}
+
+async function loadAllItems(app: AcademicApp): Promise<LoadedItems> {
+  const items: AcademicItemView[] = []
+  let cursor: string | undefined
+  for (let page = 0; page < MAX_ITEM_SCAN_PAGES; page += 1) {
+    const result = await app.store.queries.listAcademicItems({
+      status: 'all',
+      limit: MAX_ITEMS,
+      ...(cursor ? { cursor } : {}),
+    })
+    items.push(...result.items)
+    if (!result.nextCursor) return { items, complete: true }
+    cursor = result.nextCursor
+  }
+  return { items, complete: false }
+}
+
+interface Workspace {
   cards: TaskCard[]
   courses: CourseView[]
   items: ItemCard[]
-  truncated: boolean
+  itemsComplete: boolean
   plan?: StudyPlanView
 }
 
-async function loadTasks(
-  app: AcademicApp,
-  options: {
-    status?: 'active' | 'completed' | 'all'
-    includeArchived?: boolean
-  } = {},
-): Promise<LoadedTasks> {
+/**
+ * Loads the whole workspace once and derives counts from it. List pages then
+ * filter and paginate this snapshot in the host, so a client-side page can never
+ * silently under-count or hide records that never left the host.
+ */
+async function loadWorkspace(app: AcademicApp): Promise<Workspace> {
   const [taskPage, itemPage, coursePage, plan] = await Promise.all([
-    app.store.queries.listStudyTasks({
-      ...(options.status ? { status: options.status } : {}),
-      ...(options.includeArchived ? { includeArchived: true } : {}),
-    }),
-    app.store.queries.listAcademicItems({ status: 'all', limit: MAX_ITEMS }),
+    app.store.queries.listStudyTasks({ status: 'all', includeArchived: true }),
+    loadAllItems(app),
     app.store.queries.listCourses(),
     app.getLatestPlan(),
   ])
@@ -981,16 +1018,18 @@ async function loadTasks(
     ...(courseById.get(item.courseId) ? { course: courseById.get(item.courseId)! } : {}),
   }))
   const itemById = new Map(itemPage.items.map((item) => [item.itemId, item]))
-  const planned = new Set(
-    plan?.status === 'active' ? plan.blocks.map((block) => block.taskId) : [],
-  )
+  const planBlocks = plan?.status === 'active' ? plan.blocks : []
+  const planned = new Set(planBlocks.map((block) => block.taskId))
   const timeZone = app.availability.get().timeZone
-  const truncated = taskPage.items.length > MAX_TASKS
-  const cards = taskPage.items.slice(0, MAX_TASKS).map((task): TaskCard => {
+  const todayRange = dayRange(timeZone, app.clock.now())
+  const plannedToday = new Set(
+    planBlocks
+      .filter((block) => overlapsRange(block, todayRange))
+      .map((block) => block.taskId),
+  )
+  const cards = taskPage.items.map((task): TaskCard => {
     const item = task.itemId ? itemById.get(task.itemId) : undefined
-    const due = task.dueAt
-      ? instantDue(task.dueAt, timeZone)
-      : item?.due
+    const due = task.dueAt ? instantDue(task.dueAt, timeZone) : item?.due
     const course = item ? courseById.get(item.courseId) : undefined
     return {
       task,
@@ -999,14 +1038,111 @@ async function loadTasks(
       ...(due ? { effectiveDue: due } : {}),
       dueSource: task.dueAt ? 'task' : item ? 'item' : 'none',
       planned: planned.has(task.taskId),
+      plannedToday: plannedToday.has(task.taskId),
     }
   })
   return {
     cards,
     courses,
     items,
-    truncated,
+    itemsComplete: itemPage.complete,
     ...(plan ? { plan } : {}),
+  }
+}
+
+function isArchivedTask(card: TaskCard): boolean {
+  return card.task.archived
+}
+
+function sortTaskCards(cards: TaskCard[]): TaskCard[] {
+  return [...cards].sort((left, right) => {
+    const leftKey = left.effectiveDue ? dueSortKey(left.effectiveDue) : ''
+    const rightKey = right.effectiveDue ? dueSortKey(right.effectiveDue) : ''
+    if (leftKey !== rightKey) return leftKey.localeCompare(rightKey)
+    return left.task.title.localeCompare(right.task.title, 'zh-CN')
+  })
+}
+
+function cardMatchesScope(
+  card: TaskCard,
+  scope: TaskScope,
+  timeZone: string,
+  now: string,
+): boolean {
+  if (scope === 'all') return true
+  if (scope === 'unscheduled') return !card.planned
+  if (!card.effectiveDue) return scope === 'unknown'
+  const due = card.effectiveDue
+  if (scope === 'unknown') return due.kind === 'unknown'
+  if (scope === 'overdue') return dueBeforeNow(due, now, timeZone)
+  if (scope === 'today') {
+    return (
+      Boolean(card.plannedToday) ||
+      dueWithin(due, dayRange(timeZone, now), timeZone)
+    )
+  }
+  // week: today, overdue and the next seven days; unknown stays separate.
+  return dueSoon(due, now, timeZone, 7)
+}
+
+interface TaskFilterInput {
+  status?: 'active' | 'completed' | 'all'
+  includeArchived?: boolean
+  courseId?: string
+  kind?: 'all' | 'assignment' | 'exam' | 'quiz'
+  due?: TaskScope
+  search?: string
+}
+
+function filterWorkspaceCards(
+  cards: TaskCard[],
+  filters: TaskFilterInput,
+  timeZone: string,
+  now: string,
+): TaskCard[] {
+  const status = filters.status ?? 'all'
+  const includeArchived = filters.includeArchived ?? false
+  const dueScope = filters.due ?? 'all'
+  const search = filters.search?.trim().toLocaleLowerCase('zh-CN')
+  return sortTaskCards(
+    cards.filter((card) => {
+      if (!includeArchived && isArchivedTask(card)) return false
+      if (status !== 'all' && card.task.status !== status) return false
+      if (filters.courseId && filters.courseId !== 'all') {
+        if (card.item?.courseId !== filters.courseId) return false
+      }
+      if (filters.kind && filters.kind !== 'all') {
+        if (card.item?.kind !== filters.kind) return false
+      }
+      if (search) {
+        const haystack = `${card.task.title}\n${card.item?.title ?? ''}`.toLocaleLowerCase(
+          'zh-CN',
+        )
+        if (!haystack.includes(search)) return false
+      }
+      return cardMatchesScope(card, dueScope, timeZone, now)
+    }),
+  )
+}
+
+function taskViewCounts(
+  workspace: Workspace,
+  timeZone: string,
+  now: string,
+): TaskViewCounts {
+  const visible = workspace.cards.filter((card) => !isArchivedTask(card))
+  const active = visible.filter((card) => card.task.status === 'active')
+  return {
+    active: active.length,
+    completed: visible.filter((card) => card.task.status === 'completed').length,
+    archived: workspace.cards.length - visible.length,
+    overdue: active.filter((card) => dueBeforeNow(card.effectiveDue, now, timeZone)).length,
+    today: active.filter(
+      (card) =>
+        Boolean(card.plannedToday) ||
+        dueWithin(card.effectiveDue, dayRange(timeZone, now), timeZone),
+    ).length,
+    unscheduled: active.filter((card) => !card.planned).length,
   }
 }
 
@@ -1031,6 +1167,7 @@ export interface AcademicUiApi {
   restoreSource(request: unknown): Promise<UiResult<SourceStatus>>
   deleteSource(request: unknown): Promise<UiResult<{ deleted: boolean }>>
   sourceLogin(request: unknown): Promise<UiResult<ConnectionView>>
+  sourceCapture(request: unknown): Promise<UiResult<SourceCaptureView>>
   probeSource(request: unknown): Promise<UiResult<SourceProbeEvidence>>
   adapterCandidates(request: unknown): Promise<UiResult<AdapterCandidatesView>>
   validateAdapterCandidate(
@@ -1063,6 +1200,7 @@ export interface AcademicUiApi {
   markNotificationRead(request: unknown): Promise<UiResult<{ changed: boolean }>>
   markAllNotificationsRead(request: unknown): Promise<UiResult<{ changed: number }>>
   settings(request: unknown): Promise<UiResult<SettingsView>>
+  preferences(request: unknown): Promise<UiResult<PreferencesView>>
   updatePreferences(request: unknown): Promise<UiResult<PreferencesView>>
   updateReminderSettings(
     request: unknown,
@@ -1136,6 +1274,7 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
         generatedAt: app.clock.now(),
         plannerAvailable: app.registry.get('academic.planner.basic') !== undefined,
         notificationAvailable: app.registry.list('notification').length > 0,
+        unreadNotifications: app.notifications.unreadCount(),
       })
     },
 
@@ -1143,26 +1282,46 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       const now = app.clock.now()
       const availability = app.availability.get()
       const range = dayRange(availability.timeZone, now)
-      const loaded = await loadTasks(app, { status: 'active' })
-      const plan = loaded.plan?.status === 'active' ? loaded.plan : undefined
-      const todayBlocks = (plan?.blocks ?? [])
-        .filter((block) => overlapsRange(block, range))
+      const workspace = await loadWorkspace(app)
+      const plan = workspace.plan?.status === 'active' ? workspace.plan : undefined
+      const blocksToday = (plan?.blocks ?? []).filter((block) =>
+        overlapsRange(block, range),
+      )
+      const plannedToday = new Set(blocksToday.map((block) => block.taskId))
+      const todayBlocks = [...blocksToday]
+        .sort((left, right) => left.start.localeCompare(right.start))
         .map((block) => {
-          const task = loaded.cards.find((card) => card.task.taskId === block.taskId)?.task
+          const task = workspace.cards.find(
+            (card) => card.task.taskId === block.taskId,
+          )?.task
           return { block, ...(task ? { task } : {}) }
         })
-      const todayTasks = loaded.cards.filter(
-        (card) =>
-          dueWithin(card.effectiveDue, range, availability.timeZone) ||
-          (plan?.blocks ?? []).some(
-            (block) => block.taskId === card.task.taskId && overlapsRange(block, range),
-          ),
+      const activeCards = workspace.cards.filter(
+        (card) => !isArchivedTask(card) && card.task.status === 'active',
       )
-      const upcoming = loaded.items
-        .filter((card) => dueSoon(card.item.due, now, availability.timeZone, 7))
-        .sort((left, right) => dueSortKey(left.item.due).localeCompare(dueSortKey(right.item.due)))
-        .slice(0, 20)
-      const recentChanges = [...loaded.items]
+      const todayTasks = sortTaskCards(
+        activeCards.filter(
+          (card) =>
+            dueWithin(card.effectiveDue, range, availability.timeZone) ||
+            plannedToday.has(card.task.taskId),
+        ),
+      )
+      const overdueTasks = sortTaskCards(
+        activeCards.filter((card) =>
+          dueBeforeNow(card.effectiveDue, now, availability.timeZone),
+        ),
+      )
+      const dueSoonItems = workspace.items
+        .filter(
+          (card) =>
+            !card.item.archived &&
+            dueSoon(card.item.due, now, availability.timeZone, 7),
+        )
+        .sort((left, right) =>
+          dueSortKey(left.item.due).localeCompare(dueSortKey(right.item.due)),
+        )
+      const upcoming = dueSoonItems.slice(0, 20)
+      const recentChanges = [...workspace.items]
         .sort((left, right) => right.item.updatedAt.localeCompare(left.item.updatedAt))
         .slice(0, 5)
       const connections = app.connections.list()
@@ -1178,22 +1337,33 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
         range,
         timeZone: availability.timeZone,
         counts: {
-          activeTasks: loaded.cards.length,
-          overdueTasks: loaded.cards.filter((card) =>
-            dueBeforeNow(card.effectiveDue, now, availability.timeZone),
+          activeTasks: activeCards.length,
+          completedTasks: workspace.cards.filter(
+            (card) => !isArchivedTask(card) && card.task.status === 'completed',
           ).length,
+          overdueTasks: overdueTasks.length,
+          todayTasks: todayTasks.length,
           unreadNotifications: app.notifications.unreadCount(),
-          unscheduledTasks: loaded.cards.filter((card) => !card.planned).length,
-          itemsDueSoon: upcoming.length,
+          unscheduledTasks: activeCards.filter((card) => !card.planned).length,
+          itemsDueSoon: dueSoonItems.length,
+          complete: workspace.itemsComplete,
+          generatedAt: now,
         },
-        todayTasks,
+        todayTasks: todayTasks.slice(0, 20),
+        todayTasksTotal: todayTasks.length,
+        overdueTasks: overdueTasks.slice(0, 10),
         upcoming,
+        upcomingTotal: dueSoonItems.length,
         recentChanges,
         todayBlocks,
         ...(plan ? { plan } : {}),
         unread,
         connections,
         sources: buildSources(app, connections, syncRuns),
+        coursesCount: workspace.courses.filter(
+          (course) => !course.archived && !course.deleted,
+        ).length,
+        availabilityConfigured: availability.weeklySlots.length > 0,
         ...(lastSync ? { lastSync } : {}),
         ...(lastSuccessfulSync ? { lastSuccessfulSync } : {}),
         syncHealth: syncHealth(
@@ -1207,13 +1377,55 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
     },
 
     async courses() {
-      const [courses, items] = await Promise.all([
+      const [courses, workspace, syncRuns] = await Promise.all([
         app.store.queries.listCourses(),
-        loadTasks(app, { status: 'all' }),
+        loadWorkspace(app),
+        app.store.queries.listSyncRuns(undefined, 30),
       ])
+      const connections = app.connections.list()
+      const sources = buildSources(app, connections, syncRuns.items)
+      const materialCounts = new Map<string, number>()
+      for (const material of app.materials.list()) {
+        materialCounts.set(
+          material.courseId,
+          (materialCounts.get(material.courseId) ?? 0) + 1,
+        )
+      }
+      const summaries = courses.items.map((course) => {
+        const tasks = workspace.cards.filter(
+          (card) =>
+            !isArchivedTask(card) &&
+            card.item?.courseId === course.courseId,
+        )
+        const active = tasks.filter((card) => card.task.status === 'active')
+        const sourceIds = new Set<string>()
+        if (course.source) sourceIds.add(course.source.sourceId)
+        for (const card of workspace.items) {
+          if (card.item.courseId === course.courseId) {
+            sourceIds.add(card.item.source.sourceId)
+          }
+        }
+        return {
+          courseId: course.courseId,
+          activeTasks: active.length,
+          completedTasks: tasks.filter(
+            (card) => card.task.status === 'completed',
+          ).length,
+          activeItems: workspace.items.filter(
+            (card) =>
+              !card.item.archived && card.item.courseId === course.courseId,
+          ).length,
+          plannedTasks: active.filter((card) => card.planned).length,
+          materialCount: materialCounts.get(course.courseId) ?? 0,
+          sourceIds: [...sourceIds],
+        }
+      })
       return ok({
         courses: courses.items,
-        items: items.items,
+        items: workspace.items,
+        summaries,
+        sources,
+        generatedAt: app.clock.now(),
         projection: courses.meta,
       })
     },
@@ -1244,28 +1456,44 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
     async tasks(request) {
       const parsed = parse(tasksSchema, request)
       if (!parsed.ok) return parsed
-      const loaded = await loadTasks(app, parsed.value)
+      const body: TasksRequest = parsed.value
+      const now = app.clock.now()
+      const timeZone = app.availability.get().timeZone
+      const workspace = await loadWorkspace(app)
+      const matched = filterWorkspaceCards(workspace.cards, body, timeZone, now)
+      const offset = body.offset ?? 0
+      const limit = body.limit ?? DEFAULT_TASK_PAGE
+      const page = matched.slice(offset, offset + limit)
       return ok({
-        cards: loaded.cards,
-        courses: loaded.courses,
-        items: loaded.items,
-        planBlocks: loaded.plan?.blocks ?? [],
-        truncated: loaded.truncated,
-        timeZone: app.availability.get().timeZone,
-        generatedAt: app.clock.now(),
+        cards: page,
+        total: matched.length,
+        offset,
+        hasMore: offset + page.length < matched.length,
+        counts: taskViewCounts(workspace, timeZone, now),
+        courses: workspace.courses,
+        items: workspace.items,
+        planBlocks: workspace.plan?.status === 'active' ? workspace.plan.blocks : [],
+        truncated: offset + page.length < matched.length,
+        itemsComplete: workspace.itemsComplete,
+        timeZone,
+        generatedAt: now,
       })
     },
 
     async plan() {
-      const [plan, loaded] = await Promise.all([
+      const [plan, workspace] = await Promise.all([
         app.getLatestPlan(),
-        loadTasks(app, { status: 'active' }),
+        loadWorkspace(app),
       ])
       return ok({
         ...(plan ? { plan } : {}),
         plannerAvailable: app.registry.get('academic.planner.basic') !== undefined,
         availability: mapAvailability(app.availability.get()),
-        tasks: loaded.cards,
+        tasks: sortTaskCards(
+          workspace.cards.filter(
+            (card) => !isArchivedTask(card) && card.task.status === 'active',
+          ),
+        ),
         generatedAt: app.clock.now(),
       })
     },
@@ -1380,7 +1608,8 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       const result = await app.archivePlan()
       const receipt = commandReceipt(result)
       if (!receipt.ok) return receipt
-      previews.clear()
+      // Keep the preview alive: confirming a candidate after archiving the old
+      // plan is an explicit two-step flow, and a failed accept must be retryable.
       return ok({ receipt: receipt.value })
     },
 
@@ -1413,6 +1642,7 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
         engines: app.sourceEngines.list().map((engine) => engine.descriptor),
         courses: courses.items,
         syncRuns: syncRuns.items,
+        agentAdapterAutomation: app.preferences.get().agentAdapterAutomation,
         generatedAt: app.clock.now(),
       })
     },
@@ -1594,6 +1824,24 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
           return failure('AUTH_REQUIRED', verified.lastError ?? '登录会话验证失败')
         }
         return ok(verified)
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async sourceCapture(request) {
+      const parsed = parse(sourceIdSchema, request)
+      if (!parsed.ok) return parsed
+      const body: SourceIdRequest = parsed.value
+      const source = app.sources.get(body.sourceId)
+      if (!source || source.archived) return failure('NOT_FOUND', '数据源不存在')
+      const engine = app.sourceEngines.get(source.engine)
+      if (!engine?.capture || engine.descriptor.supportsCapture !== true) {
+        return failure('CAPABILITY_UNAVAILABLE', '该数据源不支持“登录并录制”')
+      }
+      try {
+        const capture = await app.captureSource(source.sourceId)
+        return ok({ capture } satisfies SourceCaptureView)
       } catch (error) {
         return fromError(error)
       }
@@ -1891,19 +2139,9 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       const parsed = parse(syncScheduleSchema, request)
       if (!parsed.ok) return parsed
       const body: UpdateSyncScheduleRequest = parsed.value
-      const job = app.scheduler.getJob(FIXTURE_SYNC_JOB_ID)
-      if (!job) return failure('NOT_FOUND', '同步任务尚未初始化')
-      const updated = app.scheduler.schedule({
-        jobId: job.jobId,
-        kind: job.kind,
-        payload: job.payload,
-        enabled: job.enabled,
-        nextRunAt: addMinutes(app.clock.now(), body.intervalMinutes),
-        policy: {
-          ...job.policy,
-          intervalMs: body.intervalMinutes * 60_000,
-        },
-      })
+      // One interval governs the fixture and every real source sync job.
+      const updated = app.applySyncInterval(body.intervalMinutes)
+      if (!updated) return failure('NOT_FOUND', '同步任务尚未初始化')
       return ok(mapJob(updated))
     },
 
@@ -2005,6 +2243,10 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
         plannerAvailable: app.registry.get('academic.planner.basic') !== undefined,
         generatedAt: app.clock.now(),
       })
+    },
+
+    async preferences() {
+      return ok(await buildPreferencesView(app))
     },
 
     async updatePreferences(request) {

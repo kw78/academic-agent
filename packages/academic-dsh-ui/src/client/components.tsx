@@ -14,18 +14,20 @@ export function Badge({
 }
 
 export function Section({
+  id,
   title,
   subtitle,
   actions,
   children,
 }: {
+  id?: string
   title: string
   subtitle?: string
   actions?: ReactNode
   children: ReactNode
 }) {
   return (
-    <section className="ac-section">
+    <section id={id} className="ac-section">
       <div className="ac-section-title">
         <div>
           <h2>{title}</h2>
@@ -110,21 +112,21 @@ export function StateBanner({
 }) {
   if (state === 'ready' || state === 'empty' || state === 'loading') return null
   const stamp = updatedAt
-    ? `最近有效数据：${new Date(updatedAt).toLocaleString('zh-CN')}`
+    ? `上次更新：${new Date(updatedAt).toLocaleString('zh-CN')}`
     : undefined
   const map: Record<
     Exclude<ViewState, 'ready' | 'empty' | 'loading' | 'stale' | 'degraded'>,
     { title: string; action?: string }
   > = {
-    'auth-required': { title: '需要重新认证', action: '前往连接' },
+    'auth-required': { title: '请重新登录', action: '前往连接' },
     conflict: { title: '状态已变化', action: '刷新' },
-    unavailable: { title: 'Host 服务不可用', action: '重试' },
+    unavailable: { title: '暂时连不上学业服务', action: '重试' },
     error: { title: '请求失败', action: '重试' },
   }
   const stale = state === 'stale' || state === 'degraded'
   const entry = stale
     ? {
-        title: state === 'stale' ? '显示的是最后一次有效数据' : '部分能力或数据源不可用',
+        title: state === 'stale' ? '显示的是最后一次有效数据' : '部分功能或平台暂时不可用',
         action: '刷新',
       }
     : map[state]

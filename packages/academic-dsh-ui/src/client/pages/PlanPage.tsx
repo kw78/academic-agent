@@ -49,6 +49,74 @@ function unscheduledReasonLabel(reason: string): string {
   return UNSCHEDULED_REASON_LABELS[reason] ?? reason
 }
 
+type PlanDiffKind = 'added' | 'moved' | 'unchanged' | 'removed'
+
+function blockKey(block: PlanBlock): string {
+  return `${block.taskId}|${block.start}|${block.end}`
+}
+
+function overlaps(left: { start: string; end: string }, right: { start: string; end: string }): boolean {
+  return Date.parse(left.start) < Date.parse(right.end) &&
+    Date.parse(right.start) < Date.parse(left.end)
+}
+
+interface PlanDiff {
+  candidate: Array<{ block: PlanBlock; kind: PlanDiffKind }>
+  removed: PlanBlock[]
+  counts: Record<PlanDiffKind, number>
+}
+
+function buildPlanDiff(current: PlanBlock[], candidate: PlanBlock[]): PlanDiff {
+  const currentKeys = new Set(current.map(blockKey))
+  const currentTasks = new Set(current.map((block) => block.taskId))
+  const candidateKeys = new Set(candidate.map(blockKey))
+  const candidateTasks = new Set(candidate.map((block) => block.taskId))
+  const entries = candidate.map((block) => ({
+    block,
+    kind: currentKeys.has(blockKey(block))
+      ? ('unchanged' as const)
+      : currentTasks.has(block.taskId)
+        ? ('moved' as const)
+        : ('added' as const),
+  }))
+  const removed = current.filter(
+    (block) => !candidateKeys.has(blockKey(block)) && !candidateTasks.has(block.taskId),
+  )
+  const counts: Record<PlanDiffKind, number> = {
+    added: entries.filter((entry) => entry.kind === 'added').length,
+    moved: entries.filter((entry) => entry.kind === 'moved').length,
+    unchanged: entries.filter((entry) => entry.kind === 'unchanged').length,
+    removed: removed.length,
+  }
+  return { candidate: entries, removed, counts }
+}
+
+function diffTone(kind: PlanDiffKind): 'ok' | 'warn' | 'neutral' | 'bad' | 'info' {
+  switch (kind) {
+    case 'added':
+      return 'ok'
+    case 'moved':
+      return 'warn'
+    case 'removed':
+      return 'bad'
+    default:
+      return 'neutral'
+  }
+}
+
+function diffLabel(kind: PlanDiffKind): string {
+  switch (kind) {
+    case 'added':
+      return '新增'
+    case 'moved':
+      return '移时'
+    case 'removed':
+      return '移除'
+    default:
+      return '未变化'
+  }
+}
+
 type PlanMode = 'day' | 'week' | 'list'
 
 interface DisplayGroup {
@@ -92,6 +160,9 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
   const { state, refresh } = useLoad(load, active)
   const action = useAction(refresh)
   const [candidate, setCandidate] = useState<PlanCandidate>()
+  const [stage, setStage] = useState<
+    'idle' | 'archiving' | 'archived' | 'accepting' | 'archived-not-accepted'
+  >('idle')
   const [rangeDays, setRangeDays] = useState('7')
   const [mode, setMode] = useState<PlanMode>('day')
   const [lockStart, setLockStart] = useState('')
@@ -115,6 +186,14 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
     () => (plan ? groupLockedByDate(plan.lockedBlocks, timeZone) : []),
     [plan, timeZone],
   )
+  const diff = useMemo(
+    () => buildPlanDiff(plan?.blocks ?? [], candidate?.blocks ?? []),
+    [candidate?.blocks, plan?.blocks],
+  )
+  const diffByKey = useMemo(
+    () => new Map(diff.candidate.map((entry) => [blockKey(entry.block), entry.kind])),
+    [diff],
+  )
 
   const generate = async (): Promise<UiResult<PlanCandidate>> => {
     const start = new Date()
@@ -133,17 +212,65 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
         if (result.ok) setCandidate(result.value)
         return result
       },
-      '候选计划已生成；确认前不会写入确认计划',
+      '计划建议已生成，查看后可以确认采用',
     )
   }
 
-  const accept = async (): Promise<UiResult<PlanMutationResult>> => {
+  const confirmCandidate = async (): Promise<boolean> => {
     if (!candidate) {
-      return { ok: false, error: { code: 'VALIDATION', message: '没有候选计划' } }
+      action.setNotice({ tone: 'error', text: '没有候选计划' })
+      return false
     }
-    return callApi<PlanMutationResult>(ctx, 'acceptPlan', {
-      previewId: candidate.previewId,
-    })
+    let archived = false
+    const ok = await action.run(
+      'confirm-flow',
+      async (): Promise<UiResult<PlanMutationResult>> => {
+        if (plan?.status === 'active') {
+          setStage('archiving')
+          const archivedResult = await callApi<PlanMutationResult>(
+            ctx,
+            'archivePlan',
+            {},
+          )
+          if (!archivedResult.ok) {
+            setStage('idle')
+            return archivedResult
+          }
+          archived = true
+          setStage('archived')
+          await refresh()
+        }
+        setStage('accepting')
+        const accepted = await callApi<PlanMutationResult>(ctx, 'acceptPlan', {
+          previewId: candidate.previewId,
+        })
+        if (!accepted.ok) {
+          setStage(archived ? 'archived-not-accepted' : 'idle')
+          return archived
+            ? {
+                ok: false,
+                error: {
+                  code: accepted.error.code,
+                  message: `旧计划已归档，候选尚未确认：${accepted.error.message}。可重试确认，或重新生成候选。`,
+                },
+              }
+            : accepted
+        }
+        setStage('idle')
+        return accepted
+      },
+      archived ? '旧计划已归档，计划建议已确认' : '计划建议已确认',
+    )
+    if (ok) {
+      if (archived) {
+        action.setNotice({
+          tone: 'ok',
+          text: '旧计划已归档，候选计划已确认',
+        })
+      }
+      setCandidate(undefined)
+    }
+    return ok
   }
 
   const lock = async (start: string, end: string, title?: string) => {
@@ -193,7 +320,7 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
           <div className="ac-inline-bar">
             <div>
               <Badge tone={data.plannerAvailable ? 'ok' : 'bad'}>
-                {data.plannerAvailable ? 'Planner 已加载' : 'Planner 不可用'}
+                {data.plannerAvailable ? '可以生成计划' : '暂时无法生成计划'}
               </Badge>
               <span className="ac-muted">{availabilitySummary(data.availability)}</span>
             </div>
@@ -252,7 +379,7 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
             <div className="ac-banner ac-banner-warn" role="status">
               <div>
                 <strong>规划能力当前不可用</strong>
-                <p>已有计划仍可查询和查看；生成新计划需要重新加载 Planner 插件。</p>
+                <p>已有计划仍可查看。要生成新计划，请在插件设置中重新启用规划插件。</p>
               </div>
             </div>
           )}
@@ -267,14 +394,18 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
                   <button
                     type="button"
                     className="ac-button ac-button-primary"
-                    disabled={action.pending !== undefined || plan?.status === 'active'}
-                    onClick={() =>
-                      void action.run('accept', accept, '候选计划已确认').then((ok) => {
-                        if (ok) setCandidate(undefined)
-                      })
-                    }
+                    disabled={action.pending !== undefined}
+                    onClick={() => void confirmCandidate()}
                   >
-                    {action.pending === 'accept' ? '确认中…' : '确认候选计划'}
+                    {action.pending === 'confirm-flow'
+                      ? stage === 'archiving'
+                        ? '归档旧计划…'
+                        : '确认中…'
+                      : stage === 'archived-not-accepted'
+                        ? '重试确认这份建议'
+                        : plan?.status === 'active'
+                          ? '归档旧计划并确认'
+                          : '确认这份计划建议'}
                   </button>
                   <button type="button" className="ac-button" onClick={() => setCandidate(undefined)}>
                     放弃候选
@@ -283,9 +414,40 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
               }
             >
               {plan?.status === 'active' && (
-                <p className="ac-muted">
-                  已有确认计划；请先归档旧计划，确认候选不会静默覆盖它。
-                </p>
+                <ol className="ac-plan-steps">
+                  <li
+                    className={
+                      stage === 'archiving' || stage === 'archived' || stage === 'accepting'
+                        ? 'ac-plan-step-done'
+                        : 'ac-plan-step-current'
+                    }
+                  >
+                    <strong>1. 归档旧计划</strong>
+                    <span>预览阶段不会改动旧计划；点击确认后才归档。</span>
+                  </li>
+                  <li
+                    className={
+                      stage === 'archived-not-accepted'
+                        ? 'ac-plan-step-warn'
+                        : stage === 'accepting'
+                          ? 'ac-plan-step-current'
+                          : 'ac-plan-step-pending'
+                    }
+                  >
+                    <strong>2. 确认候选计划</strong>
+                    <span>旧计划归档成功后才会写入；失败时可重试，不会显示全部完成。</span>
+                  </li>
+                </ol>
+              )}
+              {stage === 'archived-not-accepted' && (
+                <div className="ac-banner ac-banner-warn" role="alert">
+                  <div>
+                    <strong>旧计划已归档，候选尚未确认</strong>
+                    <p>
+                      可以重试确认；如果候选已失效，请重新生成。旧计划的历史安排仍可查询。
+                    </p>
+                  </div>
+                </div>
               )}
               <div className="ac-stat-grid ac-stat-grid-small">
                 <div className="ac-stat">
@@ -311,6 +473,19 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
                   </strong>
                 </div>
               </div>
+              {plan?.status === 'active' && (
+                <div className="ac-plan-diff" aria-label="与当前计划的差异">
+                  <Badge tone={diffTone('added')}>新增 {diff.counts.added}</Badge>
+                  <Badge tone={diffTone('moved')}>移时 {diff.counts.moved}</Badge>
+                  <Badge tone={diffTone('removed')}>移除 {diff.counts.removed}</Badge>
+                  <Badge tone={diffTone('unchanged')}>
+                    未变化 {diff.counts.unchanged}
+                  </Badge>
+                  <span className="ac-muted">
+                    按任务与时间区间比较 Host 返回的计划块，不在客户端重新规划。
+                  </span>
+                </div>
+              )}
               {candidate.warnings.length > 0 && (
                 <ul className="ac-warning-list">
                   {candidate.warnings.map((warning) => (
@@ -328,25 +503,60 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
                     <div key={group.key} className="ac-day-group">
                       <h3>{group.label}</h3>
                       <ul className="ac-block-list">
-                        {group.blocks.map((block) => (
-                          <li key={`${block.taskId}:${block.start}`} className="ac-block-row">
-                            <time>{formatDateTime(block.start, timeZone)}</time>
-                            <span>{taskTitle(tasks, block.taskId)}</span>
-                            <span className="ac-muted">
-                              {formatMinutes(
-                                (Date.parse(block.end) - Date.parse(block.start)) / 60_000,
-                              )}
-                            </span>
-                          </li>
-                        ))}
+                        {group.blocks.map((block) => {
+                          const kind =
+                            plan?.status === 'active'
+                              ? diffByKey.get(blockKey(block))
+                              : undefined
+                          const locked = (plan?.lockedBlocks ?? []).some((entry) =>
+                            overlaps(block, entry),
+                          )
+                          return (
+                            <li key={`${block.taskId}:${block.start}`} className="ac-block-row">
+                              <time>{formatDateTime(block.start, timeZone)}</time>
+                              <span>{taskTitle(tasks, block.taskId)}</span>
+                              <span className="ac-muted">
+                                {formatMinutes(
+                                  (Date.parse(block.end) - Date.parse(block.start)) / 60_000,
+                                )}
+                              </span>
+                              <span className="ac-row-meta">
+                                {kind && <Badge tone={diffTone(kind)}>{diffLabel(kind)}</Badge>}
+                                {locked && <Badge tone="info">锁定时段</Badge>}
+                              </span>
+                            </li>
+                          )
+                        })}
                       </ul>
                     </div>
                   ))}
                 </div>
               )}
+              {plan?.status === 'active' && diff.removed.length > 0 && (
+                <div className="ac-subsection">
+                  <h3>将被移除的当前安排</h3>
+                  <ul className="ac-list">
+                    {diff.removed.map((block) => (
+                      <li key={blockKey(block)} className="ac-list-row">
+                        <div>
+                          <strong>{taskTitle(tasks, block.taskId)}</strong>
+                          <span className="ac-muted">
+                            {formatDateTime(block.start, timeZone)} —{' '}
+                            {formatDateTime(block.end, timeZone)}
+                          </span>
+                        </div>
+                        <Badge tone="bad">移除</Badge>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {candidate.unscheduled.length > 0 && (
                 <div className="ac-subsection">
                   <h3>未能安排的任务</h3>
+                  <p className="ac-muted">
+                    原因来自 Planner 的结构化结果；每类原因都可以直接去修改对应设置。
+                  </p>
                   <ul className="ac-list">
                     {candidate.unscheduled.map((entry) => (
                       <li key={entry.taskId} className="ac-list-row">
@@ -356,7 +566,49 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
                             {unscheduledReasonLabel(entry.reason)}
                           </span>
                         </div>
-                        <Badge tone="warn">{formatMinutes(entry.remainingMinutes)}</Badge>
+                        <div className="ac-inline-actions">
+                          <Badge tone="warn">
+                            {formatMinutes(entry.remainingMinutes)}
+                          </Badge>
+                          {entry.reason === 'no-available-time' ||
+                          entry.reason === 'insufficient-time' ? (
+                            <button
+                              type="button"
+                              className="ac-button"
+                              onClick={() => onNavigate('settings')}
+                            >
+                              修改可用时间
+                            </button>
+                          ) : entry.reason === 'invalid-duration' ? (
+                            <button
+                              type="button"
+                              className="ac-button"
+                              onClick={() =>
+                                onNavigate('tasks', {
+                                  pane: 'tasks',
+                                  status: 'active',
+                                  taskId: entry.taskId,
+                                })
+                              }
+                            >
+                              修改预计时长
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="ac-button"
+                              onClick={() =>
+                                onNavigate('tasks', {
+                                  pane: 'tasks',
+                                  status: 'active',
+                                  taskId: entry.taskId,
+                                })
+                              }
+                            >
+                              查看任务
+                            </button>
+                          )}
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -378,7 +630,7 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
                     void action.run(
                       'archive',
                       () => callApi<PlanMutationResult>(ctx, 'archivePlan', {}),
-                      '计划已归档；已确认历史仍可追溯',
+                      '计划已归档，历史安排仍会保留',
                     ).then((ok) => {
                       if (ok) setCandidate(undefined)
                     })
@@ -412,6 +664,11 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
                                 {formatMinutes(
                                   (Date.parse(block.end) - Date.parse(block.start)) / 60_000,
                                 )}
+                                {(plan.lockedBlocks ?? []).some((entry) =>
+                                  overlaps(block, entry),
+                                ) ? (
+                                  <> · 已锁定</>
+                                ) : null}
                               </span>
                               <button
                                 type="button"
@@ -438,7 +695,7 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
                 <div className="ac-subsection">
                   <h3>锁定时段</h3>
                   {lockedGroups.length === 0 ? (
-                    <p className="ac-muted">没有锁定时段；锁定是硬约束，Planner 不会占用。</p>
+                    <p className="ac-muted">还没有锁定时段。锁定后，自动规划会避开这段时间。</p>
                   ) : (
                     <ul className="ac-list">
                       {lockedGroups.flatMap((group) =>
@@ -480,7 +737,7 @@ export function PlanPage({ ctx, active, onNavigate }: PageProps) {
 
           <Section
             title="临时锁定时段"
-            subtitle="锁定为硬约束；解锁后重新生成候选计划"
+            subtitle="锁定的时间不会安排新任务；解锁后可重新生成计划建议"
           >
             <form
               className="ac-form-card"

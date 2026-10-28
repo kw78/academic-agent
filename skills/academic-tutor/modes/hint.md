@@ -1,30 +1,15 @@
-# Mode: hint
+# 提示
 
-## When
+适用于用户说“给点提示”“卡住了”或明确不想看完整答案。
 
-The user asks for a hint, says they are stuck, or explicitly does not want the full solution.
+## 处理方式
 
-## Inputs
+先看题目和已有尝试，找到当前卡住的一步。用户还没写思路，但题目信息足够时，可以先给一个起点，不必先问“你尝试过什么”。缺少信息会改变提示时再追问。
 
-- The problem text and what the user has tried so far.
-- Optional saved item/course context.
+一次只给一个能继续推进的提示，可以是一句引导问题、一个观察或一个具体操作。需要时简短说明为什么值得从这里入手，然后停下来，留给用户尝试。
 
-## Procedure
+连续两次提示仍无进展时，可以缩小步骤或示范其中一步；用户明确要求完整讲解后再切换 explain。
 
-1. Ask what the user has tried, unless they already described it.
-2. Identify the smallest missing idea, not the whole solution.
-3. Give one hint, phrased as a question or a concrete nudge.
-4. Stop and let the user respond. Do not append the full solution.
-5. If the user is still stuck after two hints, offer a stronger scaffold or ask permission to show a worked step.
+## 回答要求
 
-## Output
-
-- One hint at a time.
-- The reasoning for why this hint is relevant.
-- A request for the user's next attempt.
-
-## Boundaries
-
-- Do not reveal the complete answer by default.
-- Do not switch to explain mode without the user asking.
-- Do not pretend to know the course's expected method when it was not provided.
+保持简短，不把完整解答藏在长提示里。只依据已给出的题目和已检索资料，不假定老师要求某一种方法。

@@ -8,7 +8,7 @@
 | 检查 | 命令 | 结果 |
 |---|---|---|
 | 类型检查 | `npm run typecheck` | 通过 |
-| 全量测试 | `npm test` | 通过：42 个文件、231 项 |
+| 全量测试 | `npm test` | 通过：45 个文件、246 项 |
 | DSH 构建 | `npm run build:dsh` | 通过 |
 | UI 构建 | `npm run build:ui` | 通过 |
 | DSH 自测 | `ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=.data/dsh-academic.db dsh academic --json "hello"` | 通过：host/planner/tools 加载，`tools=17 registered=true`，只读查询成功，未授权写入 `FORBIDDEN` |
@@ -127,3 +127,21 @@ USTC 教务（第二平台，Manifest）：
 - 样本以 URL+方法+body 三者精确匹配，GET 与 POST 样本不会互相误用；`academic_probe_source` 支持 `method`/`body` 并捕获 POST 样本，`capture=true` 仍只返回 `sampleId`。
 - 验证：`npm run typecheck`、`npm test`（42 文件/231 项）通过；覆盖 POST body 模板、body 内分页、样本体不匹配、GET 带 body/POST 缺 body 拒绝与 302 降级。
 - 未验证：真实超星/智慧树 POST 接口同步（需用户重新登录并提供真实接口）。
+
+## 引导录制与出口修复（2026-10-28）
+
+- `engine.capture` + UI“登录并录制”：在登录浏览器内只读录制 `xhr`/`fetch`/`document`（2xx、JSON/HTML、≤512 KB、最多 40 条/8 MB），原始 body 只进宿主样本库（60 分钟）。模型只拿到接口清单：方法、脱敏 URL、JSON 形状、字段示例、分页参数、`sampleId`。
+- 录制结束保存会话 Cookie（覆盖录制中出现的全部主机），并把这些主机并入来源 `cookieDomains`；Agent 工具 `academic_list_capture_endpoints` 只读，样本用 `sampleIds` 离线回放，不把原始响应交给模型。
+- 修复登录误判：只有 HTML 响应才按 `/login` 路径/标题/表单判断登出；JSON 接口路径含 `/login`（例如智慧树 `.../login/getLoginUserInfo`）不再被当成会话失效。
+- 修复出口分类：`UNSAFE_HOST`/`UNSAFE_PATH`/DNS 失败改为 `AdapterEgressError`，同步失败不再把网络问题报成“重新登录”。
+- 代理 TUN 的 fake-IP：仅当某主机**全部**解析结果都在 `198.18.0.0/15` 时放行；混入真实私网地址仍拒绝。实测本机 `www.baidu.com` 等域名均解析到 `198.18.0.x`，修复前探测/同步全部失败。
+- 验证：`npm run typecheck`、`npm test`（45 文件/246 项）、`npm run build:dsh`、`npm run build:ui` 通过；DSH 自测 `tools=25 registered=true`，只读成功，写入 `FORBIDDEN`。
+- 真实浏览器验证：本地测试站点（HTTP + 3 个 JSON 接口）由真实 Edge/Chromium 录制，返回文档 + 3 个接口、请求头名与 Cookie；随后构建的清单识别出列表、字段与 `page` 分页参数。
+- 未验证：超星/智慧树真实登录后的录制结果；DSH Web UI 中“登录并录制”按钮的点击链路（后端 UI API 已有集成测试）；表单编码 POST 与自定义请求头。
+
+### 证据链补齐（同日）
+
+- 按 `docs/adapter-discovery-architecture-review.md` 第一步修正：JSON 数组改为“枚举所有数组节点 + 精确路径”，不再只取最长数组（`data.payload.result.records` 可识别，`filters` 不再遮挡 `data.records`）；字段返回嵌套路径（`details.due`）；接口先评分排序再截断；样本库上限提到 80，覆盖录制上限 40，返回的 `sampleId` 不会立刻被淘汰。
+- 录制同时统计被过滤/超限/读取失败的响应数并写入警告；POST 请求记录 `requestContentType`，表单编码标记 `transport=form`，清单给出宿主判定的 `nextStep`（validate / recapture / unsupported-transport / needs-confirmation），UI 在 `unsupported-transport` 时禁用“交给 Agent”。
+- 验证：`npm test`（45 文件/252 项）；DSH Web 重新点验：`集合 data.list`、`集合 data.records`、`details.due`、`details.teacher`、表单请求提示与“下一步：用 sampleIds 离线验证 Manifest · 首选接口 items 路径：data.list”。
+- 未验证：真实超星/智慧树的深层数组与表单接口；渲染后 DOM / iframe 采集（评审第二步）尚未实现。

@@ -1,36 +1,17 @@
-# Mode: review
+# 安排复习
 
-## When
+适用于用户问先复习什么、怎样准备考试，或希望整理复习顺序。
 
-The user asks what to review, how to prepare for an exam, or how to order study work.
+## 处理方式
 
-## Inputs
+用只读工具查看相关考试、测验、作业、学习任务和当前计划。参考已保存的空闲时间和锁定时段，不假定用户全天有空。
 
-- Saved exams/quizzes/assignments from read-only academic tools.
-- Active study plan and saved tasks.
-- Optional material snippets from `academic_search_materials` for the weak topic or exam.
-- User-declared weak topics or unavailable time, if provided.
+先看截止紧迫程度，再结合用户说明的薄弱点、任务优先级和预计时长安排顺序。截止时间未知的事项单独说明，不能默认为不紧急。用户说“这章不熟”只是其自述，不是测得的能力分数。
 
-## Procedure
+复习重点涉及具体讲义或课件时检索资料，注明标题和已有页码；没有找到就说明，不能把通用复习建议说成课程考纲。
 
-1. List the saved assessments and tasks you are using, with course and due kind.
-2. Order by urgency first (overdue/today/soon/unknown), then by user-declared weakness or task priority, then by estimate.
-3. Respect saved available time and locked blocks; do not assume all-day availability.
-4. State what is unscheduled and why (deadline passed, insufficient time, unknown due, no estimate).
-5. If the user declares a weak topic, treat it as user-provided, not measured; do not invent mastery scores.
-6. When a weak topic maps to course materials, search the library and cite the title/page/slide that supports the review focus. If nothing is indexed, say so.
-7. End with one concrete next block or check task.
+## 回答要求
 
-## Output
+给出简短的复习顺序，说明用了哪些已保存的事项、为什么这样排序，并给一个现在就能开始的小任务。安排不下、截止已过、缺少时长或截止时间的事项要说清楚。
 
-- A short ordered review list.
-- Material citations for course-specific focus, when available.
-- The evidence used (saved items/tasks/plan/materials) and the ordering rationale.
-- Unscheduled work and missing data.
-- One next action.
-
-## Boundaries
-
-- Do not produce grade predictions, mastery percentages, or ability ratings.
-- Do not claim to have read course materials that were not provided or indexed.
-- Do not modify the plan or tasks without an explicit local command from the user.
+不要预测成绩或编造掌握度。这里给出的是建议；修改本地任务或计划仍需用户明确提出，并经可信宿主授权。

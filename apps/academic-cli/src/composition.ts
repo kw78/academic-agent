@@ -33,6 +33,9 @@ import {
   type SourceEngine,
   type SourceCrawlOptions,
   type SourceCrawlResult,
+  type SourceCaptureOptions,
+  type SourceCaptureSummary,
+  type SourceConfig,
   type SourceProbeEvidence,
   type StudyPlanView,
   type SyncPreview,
@@ -47,6 +50,7 @@ import {
   SourceConfigStore,
   ProbeSampleStore,
   ProbeRateLimiter,
+  buildCaptureSummary,
   crawlSourcePages,
   probeSourcePage,
 } from '@academic/sources'
@@ -56,7 +60,10 @@ import {
   type ResolveHost,
   type WebCookie,
 } from '@academic/web-sessions'
-import { createBrowserSessionEngine } from '@academic/source-browser'
+import {
+  createBrowserSessionEngine,
+  type BrowserSessionEngineOptions,
+} from '@academic/source-browser'
 import {
   DEFAULT_FIXTURE_COURSE,
   FixtureLmsAdapter,
@@ -111,7 +118,20 @@ import {
   type AcademicStore,
   type ProjectionHealth,
 } from '@academic/storage-sqlite'
-import { backupDatabase } from './backup.js'
+import {
+  backupApplication,
+  backupDatabase,
+  type ApplicationBackupManifest,
+} from './backup.js'
+
+const FIXTURE_SYNC_JOB_ID = 'fixture-lms-sync'
+const SOURCE_SYNC_JOB_KIND = 'connector.sync.source'
+const DEFAULT_SYNC_INTERVAL_MS = 60 * 60_000
+
+/** Stable per-source job id, so restarts and re-enables target the same row. */
+function sourceSyncJobId(sourceId: string): string {
+  return `source.sync.${sourceId}`
+}
 
 export class ModelUsageMeter {
   #calls = 0
@@ -173,6 +193,8 @@ export interface AcademicAppOptions {
   materialsDir?: string
   /** Test seam for URL/attachment imports. */
   materialFetch?: MaterialFetcher
+  /** Test seam for the guided “登录并录制” browser. */
+  browserCaptureImpl?: BrowserSessionEngineOptions['captureImpl']
 }
 
 export interface AutomationStatus {
@@ -291,6 +313,15 @@ export interface AcademicApp {
     startUrl: string,
     options?: SourceCrawlOptions,
   ): Promise<SourceCrawlResult>
+  /**
+   * Opens the source's login browser, records the traffic the user produces,
+   * refreshes the saved session and returns an endpoint inventory.
+   */
+  captureSource(
+    sourceId: string,
+    options?: SourceCaptureOptions,
+  ): Promise<SourceCaptureSummary>
+  latestCapture(sourceId: string): SourceCaptureSummary | undefined
   previewSourceSync(sourceId: string, connectionId?: string): Promise<SyncPreview>
   syncSource(sourceId: string, connectionId?: string): Promise<SyncRunSummary>
   previewPlan(
@@ -327,10 +358,17 @@ export interface AcademicApp {
   markAllNotificationsRead(): number
   scanDeadlineReminders(): Promise<DeadlineScanResult>
   getAutomationStatus(): Promise<AutomationStatus>
+  /** Aligns per-source sync jobs after a source is created/archived/restored. */
+  reconcileSourceSyncJobs(options?: { resume?: boolean }): void
+  /** Applies one interval to the fixture and every per-source sync job. */
+  applySyncInterval(intervalMinutes: number): ScheduledJob | undefined
   backup(targetPath: string): void
+  /** Database + material files + SHA-256 manifest in one directory. */
+  backupApplication(targetDir: string): ApplicationBackupManifest
   start(): void
   stop(): void
-  close(): void
+  /** Stops intake, waits for in-flight work, then closes the store. */
+  close(): Promise<void>
 }
 
 function blocksOverlap(left: PlanBlock, right: LockedBlock): boolean {
@@ -385,6 +423,9 @@ export async function createAcademicApp(
   }
   const clock = options.clock ?? systemClock
   const ids = options.ids ?? { next: () => randomUUID() }
+  // Source mutations reach this store before the scheduler wiring below; the
+  // callback stays inert until reconcileSourceSyncJobs can run safely.
+  let sourceJobsReady = false
   const store = createAcademicStore({
     databasePath: options.databasePath,
     ...(options.migrationsDir ? { migrationsDir: options.migrationsDir } : {}),
@@ -483,7 +524,13 @@ export async function createAcademicApp(
   }
   if (!configuredIds.has('browser-session')) {
     sourceEngineRegistrations.push(
-      sourceEngines.register(createBrowserSessionEngine()),
+      sourceEngines.register(
+        createBrowserSessionEngine({
+          ...(options.browserCaptureImpl
+            ? { captureImpl: options.browserCaptureImpl }
+            : {}),
+        }),
+      ),
     )
   }
   const hasExistingBlackboardSource =
@@ -534,6 +581,19 @@ export async function createAcademicApp(
         }
       }
       return descriptor.validateConfig?.(input.config)
+    },
+    onChange(change) {
+      if (!sourceJobsReady) return
+      reconcileSourceSyncJobs({
+        resume:
+          change.type === 'created' ||
+          change.type === 'restored' ||
+          // Only a real disabled -> enabled transition resumes the job; an
+          // unrelated edit must not override a manual pause.
+          (change.type === 'updated' &&
+            change.enabled &&
+            change.previouslyEnabled === false),
+      })
     },
   })
   sources.ensure({
@@ -688,7 +748,9 @@ export async function createAcademicApp(
     },
   })
 
-  const probeSamples = new ProbeSampleStore()
+  // A guided capture can hold 40 samples; keep the store above that so a
+  // returned sampleId is never evicted before the agent can validate it.
+  const probeSamples = new ProbeSampleStore({ maxSamples: 80 })
   const probeLimiter = new ProbeRateLimiter({
     ...(options.probeMinIntervalMs !== undefined
       ? { minIntervalMs: options.probeMinIntervalMs }
@@ -776,13 +838,117 @@ export async function createAcademicApp(
     })
   }
 
+  const captures = new Map<string, SourceCaptureSummary>()
+
+  const captureSourceById = async (
+    sourceId: string,
+    captureOptions: SourceCaptureOptions = {},
+  ): Promise<SourceCaptureSummary> => {
+    const source = sources.get(sourceId)
+    if (!source || source.archived) {
+      throw new CapabilityUnavailableError(`source.${sourceId}`)
+    }
+    if (source.authKind === 'none') {
+      throw new CapabilityUnavailableError(`source.session.${sourceId}`)
+    }
+    const engine = sourceEngines.get(source.engine)
+    if (!engine?.capture) {
+      throw new CapabilityUnavailableError(`source.capture.${sourceId}`)
+    }
+    const session = await engine.capture(
+      { sourceId, config: source.config },
+      captureOptions,
+    )
+    let connection = connections
+      .list()
+      .find((entry) => entry.sourceId === sourceId)
+    if (!connection) {
+      connection = connections.create({
+        sourceId,
+        displayName: source.displayName,
+        authKind: source.authKind,
+        scopes: source.capabilities,
+      })
+    }
+    await connections.setSecret(connection.connectionId, session.secret)
+    const warnings = [...session.warnings]
+    const verify = engine.verify
+    if (verify) {
+      const verification = await connections.verify(
+        connection.connectionId,
+        async (secret) => verify({ sourceId, config: source.config }, secret),
+      )
+      if (verification.status === 'auth-required') {
+        warnings.push(
+          `会话校验未通过：${verification.lastError ?? '请确认已完成登录'}`,
+        )
+      }
+    }
+    const configuredDomains = Array.isArray(source.config.cookieDomains)
+      ? source.config.cookieDomains.filter(
+          (entry): entry is string => typeof entry === 'string',
+        )
+      : []
+    const mergedDomains = [...new Set([...configuredDomains, ...session.hosts])]
+    if (mergedDomains.length !== configuredDomains.length) {
+      sources.update(sourceId, {
+        config: { ...source.config, cookieDomains: mergedDomains },
+      })
+    }
+    const stored = session.captures.map((capture) => {
+      const sample = {
+        url: capture.url,
+        method: capture.method,
+        body: capture.body,
+        ...(capture.contentType ? { contentType: capture.contentType } : {}),
+        ...(capture.requestBody ? { requestBody: capture.requestBody } : {}),
+      }
+      return { capture, sample, stored: probeSamples.put(sample) }
+    })
+    const summary = buildCaptureSummary({
+      sourceId,
+      captureId: ids.next(),
+      startedAt: session.startedAt,
+      finishedAt: session.finishedAt,
+      hosts: session.hosts,
+      visited: session.visited,
+      samples: stored.map(({ capture, sample, stored: entry }) => ({
+        sampleId: entry.sampleId,
+        sample,
+        status: capture.status,
+        headerNames: capture.headerNames,
+        ...(capture.requestContentType
+          ? { requestContentType: capture.requestContentType }
+          : {}),
+      })),
+      ...(session.skipped ? { skipped: session.skipped } : {}),
+      warnings,
+    })
+    const available = summary.endpoints.filter(
+      (endpoint) => probeSamples.get(endpoint.sampleId) !== undefined,
+    )
+    if (available.length !== summary.endpoints.length) {
+      summary.endpoints = available
+      summary.warnings.push('部分样本已过期，已从清单移除；请重新录制')
+    }
+    captures.set(sourceId, summary)
+    return summary
+  }
+
   const ensureCandidateSource = async (
     candidate: AdapterCandidateSummary,
   ): Promise<{ sourceId?: string; warning?: string }> => {
     const manifest = manifestRegistry.get(candidate.adapterId, candidate.version)
-    if (!manifest) return { warning: 'Manifest 未注册，无法创建同步数据源' }
+    // Activation already registered the manifest; missing prerequisites here
+    // mean the source cannot be wired, so fail instead of leaving an active
+    // version without a syncable source.
+    if (!manifest) {
+      throw new CapabilityUnavailableError(
+        `manifest.${candidate.adapterId}@${candidate.version}`,
+      )
+    }
     if (!sourceEngines.get('declarative')) {
-      return { warning: 'declarative engine 未加载，无法创建同步数据源' }
+      throw new CapabilityUnavailableError('source.engine.declarative')
     }
     const syncDisplayName = manifest.displayName.endsWith('（同步）')
       ? manifest.displayName
@@ -797,7 +963,6 @@ export async function createAcademicApp(
       authenticatedUrlPatterns: [`^${escapePattern(base.origin)}/`],
       cookieDomains: [host],
       verifyUrl: base.toString(),
-      loggedOutPatterns: ['/login'],
     }
     let sourceId = candidateSourceId(candidate.adapterId)
     let existing = sources.get(sourceId)
@@ -884,9 +1049,29 @@ export async function createAcademicApp(
     sourceId?: string
     warning?: string
   }> => {
+    // Registry active version mirrors the persisted activation; capture it so a
+    // failed source wiring can be undone instead of leaving an active version
+    // that no source points at.
+    const previousActiveVersion = manifestRegistry.get(adapterId)?.version
     const candidate = adapterCandidates.activate(adapterId, version)
-    const activation = await ensureCandidateSource(candidate)
-    return { candidate, ...activation }
+    try {
+      const activation = await ensureCandidateSource(candidate)
+      return { candidate, ...activation }
+    } catch (error) {
+      if (previousActiveVersion) {
+        try {
+          adapterCandidates.rollback(adapterId, previousActiveVersion)
+        } catch {
+          // Keep the original failure; the message names the lost rollback.
+        }
+        throw new Error(
+          `启用候选失败，已恢复到 ${previousActiveVersion}：${errorMessage(error)}`,
+        )
+      }
+      throw new Error(
+        `启用候选失败，且没有可恢复的旧版本；请重试启用：${errorMessage(error)}`,
+      )
+    }
   }
 
   const rollbackCandidate = async (
@@ -953,6 +1138,7 @@ export async function createAcademicApp(
     syncAdapterSource,
     probeSource: probeSourceById,
     crawlSource: crawlSourceById,
+    captureSummary: (sourceId: string) => captures.get(sourceId),
     getProbeSample: (sampleId: string) => probeSamples.get(sampleId),
     allowWrites: options.agentWrites ?? false,
     ...(options.authorizeAgentWrite
@@ -1114,6 +1300,50 @@ export async function createAcademicApp(
   scheduler.registerHandler('notifications.scan-deadlines', async () => ({
     summary: await scanReminders(),
   }))
+  scheduler.registerHandler(SOURCE_SYNC_JOB_KIND, async ({ payload }) => {
+    const sourceId =
+      typeof (payload as { sourceId?: unknown } | undefined)?.sourceId === 'string'
+        ? (payload as { sourceId: string }).sourceId
+        : undefined
+    if (!sourceId) throw new Error('source sync job is missing sourceId')
+    const source = sources.get(sourceId)
+    if (!source || !sourceHasSyncJob(source)) {
+      // Archived, disabled, deleted or adapter-less: leave the queue instead
+      // of failing every interval. restore/enable calls resume through onChange.
+      throw new SchedulerPauseError(`Source is not syncable: ${sourceId}`)
+    }
+    let connectionId: string | undefined
+    if (source.authKind !== 'none') {
+      const connection = connections
+        .list()
+        .find(
+          (entry) =>
+            entry.sourceId === sourceId && entry.status === 'connected',
+        )
+      // No verified session: skip quietly. The connection stage already tells
+      // the user to log in; retrying with a dead session only adds noise.
+      if (!connection) return { summary: { sourceId, skipped: 'auth-required' } }
+      connectionId = connection.connectionId
+    }
+    try {
+      return { summary: await runSourceSync(sourceId, connectionId) }
+    } catch (error) {
+      if (error instanceof SourceConflictError) {
+        return { summary: { sourceId, skipped: 'busy' } }
+      }
+      if (error instanceof AdapterAuthError) {
+        return { summary: { sourceId, skipped: 'auth-required' } }
+      }
+      if (error instanceof CapabilityUnavailableError) {
+        throw new SchedulerPauseError(error.message)
+      }
+      throw error
+    }
+  })
+  // Existing sources predate the per-source jobs; install them without
+  // resuming anything the user paused on purpose.
+  reconcileSourceSyncJobs()
+  sourceJobsReady = true
 
   const userActor = { kind: 'user' as const, id: 'local-user' }
 
@@ -1166,7 +1396,142 @@ export async function createAcademicApp(
 
   let started = false
   let closed = false
+  let closing: Promise<void> | undefined
   const syncInFlight = new Set<string>()
+
+  const runSourceSync = async (
+    sourceId: string,
+    connectionId?: string,
+  ): Promise<SyncRunSummary> => {
+    if (syncInFlight.has(sourceId)) {
+      throw new SourceConflictError(`Sync already running: ${sourceId}`)
+    }
+    syncInFlight.add(sourceId)
+    try {
+      const source = sources.get(sourceId)
+      if (!source || !source.enabled || source.archived) {
+        throw new CapabilityUnavailableError(`source.${sourceId}`)
+      }
+      const engine = sourceEngines.get(source.engine)
+      if (!engine?.createAdapter) {
+        throw new CapabilityUnavailableError(`source.engine.${source.engine}`)
+      }
+      const context = { sourceId, config: source.config }
+      let credentials: CredentialAccess | undefined
+      let connection: ConnectionSyncBinding | undefined
+      if (connectionId) {
+        const record = connections.get(connectionId)
+        if (!record) throw new Error(`Connection not found: ${connectionId}`)
+        if (record.sourceId !== sourceId) {
+          throw new Error('Connection does not belong to the requested source')
+        }
+        if (source.authKind !== 'none' && record.status !== 'connected') {
+          throw new Error('请先验证连接；未验证会话不能进入正式同步')
+        }
+        credentials = await connections.openCredential(connectionId, sourceId)
+        connection = { connectionId, credentials: connections }
+      } else if (source.authKind !== 'none') {
+        throw new CapabilityUnavailableError(`source.credentials.${sourceId}`)
+      }
+      let courses: NormalizedCourse[] | undefined
+      if (engine.listCourses) {
+        try {
+          courses = await retryTransient(() =>
+            engine.listCourses!(context, credentials),
+          )
+          for (const course of courses) {
+            await connectors.registerCourse({ ...course, sourceId })
+          }
+        } catch (error) {
+          if (connectionId && error instanceof AdapterAuthError) {
+            await connections.markAuthRequired(connectionId, error.message)
+          }
+          throw error
+        }
+      }
+      const summary = await connectors.sync(engine.createAdapter(context), {
+        ...(connection ? { connection } : {}),
+        // The engine only covers these courses (for example after termFilter),
+        // so items of other courses must not look "missing".
+        ...(courses
+          ? {
+              scopeCourseExternalIds: courses.map(
+                (course) => course.externalCourseId,
+              ),
+            }
+          : {}),
+      })
+      await dispatcher.processOnce()
+      return summary
+    } finally {
+      syncInFlight.delete(sourceId)
+    }
+  }
+
+  function currentSyncIntervalMs(): number {
+    return (
+      scheduler.getJob(FIXTURE_SYNC_JOB_ID)?.policy.intervalMs ??
+      DEFAULT_SYNC_INTERVAL_MS
+    )
+  }
+
+  function sourceHasSyncJob(source: SourceConfig): boolean {
+    // The fixture source keeps its dedicated job and seeded course.
+    if (source.engine === 'fixture') return false
+    if (!source.enabled || source.archived) return false
+    return Boolean(sourceEngines.get(source.engine)?.createAdapter)
+  }
+
+  function reconcileSourceSyncJobs(options: { resume?: boolean } = {}): void {
+    const intervalMs = currentSyncIntervalMs()
+    for (const source of sources.list()) {
+      if (!sourceHasSyncJob(source)) continue
+      const jobId = sourceSyncJobId(source.sourceId)
+      const existing = scheduler.getJob(jobId)
+      if (!existing) {
+        scheduler.ensureJob({
+          jobId,
+          kind: SOURCE_SYNC_JOB_KIND,
+          payload: { sourceId: source.sourceId },
+          nextRunAt: addMilliseconds(clock.now(), intervalMs),
+          policy: { intervalMs, timeoutMs: 180_000 },
+        })
+      } else if (options.resume && !existing.enabled) {
+        scheduler.resume(jobId)
+      }
+    }
+    for (const job of scheduler.listJobs()) {
+      if (job.kind !== SOURCE_SYNC_JOB_KIND) continue
+      const sourceId = (job.payload as { sourceId?: unknown }).sourceId
+      const source =
+        typeof sourceId === 'string' ? sources.get(sourceId) : undefined
+      if (source && sourceHasSyncJob(source)) continue
+      if (job.enabled) scheduler.pause(job.jobId)
+    }
+  }
+
+  function applySyncInterval(
+    intervalMinutes: number,
+  ): ScheduledJob | undefined {
+    const intervalMs = Math.max(60_000, Math.trunc(intervalMinutes) * 60_000)
+    const now = clock.now()
+    let fixtureJob: ScheduledJob | undefined
+    for (const job of scheduler.listJobs()) {
+      if (job.jobId !== FIXTURE_SYNC_JOB_ID && job.kind !== SOURCE_SYNC_JOB_KIND) {
+        continue
+      }
+      const updated = scheduler.schedule({
+        jobId: job.jobId,
+        kind: job.kind,
+        payload: job.payload,
+        enabled: job.enabled,
+        nextRunAt: addMilliseconds(now, intervalMs),
+        policy: { ...job.policy, intervalMs },
+      })
+      if (job.jobId === FIXTURE_SYNC_JOB_ID) fixtureJob = updated
+    }
+    return fixtureJob
+  }
 
   const app: AcademicApp = {
     store,
@@ -1215,6 +1580,8 @@ export async function createAcademicApp(
 
     probeSource: probeSourceById,
     crawlSource: crawlSourceById,
+    captureSource: captureSourceById,
+    latestCapture: (sourceId) => captures.get(sourceId),
 
     async previewSourceSync(sourceId, connectionId) {
       const source = sources.get(sourceId)
@@ -1249,76 +1616,7 @@ export async function createAcademicApp(
       }
     },
 
-    async syncSource(sourceId, connectionId) {
-      if (syncInFlight.has(sourceId)) {
-        throw new SourceConflictError(`Sync already running: ${sourceId}`)
-      }
-      syncInFlight.add(sourceId)
-      try {
-      const source = sources.get(sourceId)
-      if (!source || !source.enabled || source.archived) {
-        throw new CapabilityUnavailableError(`source.${sourceId}`)
-      }
-      const engine = sourceEngines.get(source.engine)
-      if (!engine?.createAdapter) {
-        throw new CapabilityUnavailableError(`source.engine.${source.engine}`)
-      }
-      const context = { sourceId, config: source.config }
-      let credentials: CredentialAccess | undefined
-      let connection: ConnectionSyncBinding | undefined
-      if (connectionId) {
-        const record = connections.get(connectionId)
-        if (!record) throw new Error(`Connection not found: ${connectionId}`)
-        if (record.sourceId !== sourceId) {
-          throw new Error('Connection does not belong to the requested source')
-        }
-        if (source.authKind !== 'none' && record.status !== 'connected') {
-          throw new Error(
-            '请先验证连接；未验证会话不能进入正式同步',
-          )
-        }
-        credentials = await connections.openCredential(connectionId, sourceId)
-        connection = { connectionId, credentials: connections }
-      } else if (source.authKind !== 'none') {
-        throw new CapabilityUnavailableError(`source.credentials.${sourceId}`)
-      }
-      let courses: NormalizedCourse[] | undefined
-      if (engine.listCourses) {
-        try {
-          courses = await retryTransient(() =>
-            engine.listCourses!(context, credentials),
-          )
-          for (const course of courses) {
-            await connectors.registerCourse({ ...course, sourceId })
-          }
-        } catch (error) {
-          if (connectionId && error instanceof AdapterAuthError) {
-            await connections.markAuthRequired(connectionId, error.message)
-          }
-          throw error
-        }
-      }
-      const summary = await connectors.sync(
-        engine.createAdapter(context),
-        {
-          ...(connection ? { connection } : {}),
-          // The engine only covers these courses (for example after termFilter),
-          // so items of other courses must not look "missing".
-          ...(courses
-            ? {
-                scopeCourseExternalIds: courses.map(
-                  (course) => course.externalCourseId,
-                ),
-              }
-            : {}),
-        },
-      )
-      await dispatcher.processOnce()
-      return summary
-      } finally {
-        syncInFlight.delete(sourceId)
-      }
-    },
+    syncSource: runSourceSync,
 
     async previewPlan(range, previewOptions = {}) {
       return planner.preview({ range, ...previewOptions })
@@ -1585,18 +1883,41 @@ export async function createAcademicApp(
 
       for (const item of items) {
         if (item.archived) continue
-        const result = await store.commands.execute(
-          parseCommand({
-            commandId: ids.next(),
-            type: COMMAND.AcademicItemArchive,
-            aggregateId: item.itemId,
-            expectedVersion: item.version,
-            actor: userActor,
-            correlationId: `course-delete/${courseId}`,
-            payload: { reason: 'course deleted' },
-          }),
-        )
-        if (!result.ok && result.code !== 'CONFLICT') return result
+        let version = item.version
+        let archived = false
+        for (let attempt = 1; attempt <= 3 && !archived; attempt += 1) {
+          const result = await store.commands.execute(
+            parseCommand({
+              commandId: ids.next(),
+              type: COMMAND.AcademicItemArchive,
+              aggregateId: item.itemId,
+              expectedVersion: version,
+              actor: userActor,
+              correlationId: `course-delete/${courseId}`,
+              payload: { reason: 'course deleted' },
+            }),
+          )
+          if (result.ok) {
+            archived = true
+            break
+          }
+          if (result.code !== 'CONFLICT') return result
+          // A concurrent update won; re-read and retry rather than claiming
+          // the course is fully deleted while one item stays active.
+          const current = await store.queries.getAcademicItem(item.itemId)
+          if (!current || current.archived) {
+            archived = true
+            break
+          }
+          version = current.version
+        }
+        if (!archived) {
+          return {
+            ok: false,
+            code: 'CONFLICT',
+            message: `归档事项并发冲突，课程未删除，可重试：${item.itemId}`,
+          }
+        }
       }
 
       const tasks = (
@@ -1607,31 +1928,72 @@ export async function createAcademicApp(
       ).items
       for (const task of tasks) {
         if (task.archived || !task.itemId || !itemIds.has(task.itemId)) continue
+        let version = task.version
+        let archived = false
+        for (let attempt = 1; attempt <= 3 && !archived; attempt += 1) {
+          const result = await store.commands.execute(
+            parseCommand({
+              commandId: ids.next(),
+              type: COMMAND.StudyTaskArchive,
+              aggregateId: task.taskId,
+              expectedVersion: version,
+              actor: userActor,
+              correlationId: `course-delete/${courseId}`,
+              payload: { reason: 'course deleted' },
+            }),
+          )
+          if (result.ok) {
+            archived = true
+            break
+          }
+          if (result.code !== 'CONFLICT') return result
+          const current = await store.queries.getStudyTask(task.taskId)
+          if (!current || current.archived) {
+            archived = true
+            break
+          }
+          version = current.version
+        }
+        if (!archived) {
+          return {
+            ok: false,
+            code: 'CONFLICT',
+            message: `归档任务并发冲突，课程未删除，可重试：${task.taskId}`,
+          }
+        }
+      }
+
+      let courseVersion = course.version
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
         const result = await store.commands.execute(
           parseCommand({
             commandId: ids.next(),
-            type: COMMAND.StudyTaskArchive,
-            aggregateId: task.taskId,
-            expectedVersion: task.version,
+            type: COMMAND.CourseDelete,
+            aggregateId: courseId,
+            expectedVersion: courseVersion,
             actor: userActor,
-            correlationId: `course-delete/${courseId}`,
-            payload: { reason: 'course deleted' },
+            correlationId: `course/${courseId}`,
+            payload: {},
           }),
         )
-        if (!result.ok && result.code !== 'CONFLICT') return result
+        if (result.ok) return result
+        if (result.code !== 'CONFLICT') return result
+        const current = await store.queries.getCourse(courseId)
+        if (!current || current.deleted) {
+          return {
+            ok: true,
+            aggregateId: courseId,
+            version: courseVersion,
+            eventIds: [],
+          }
+        }
+        courseVersion = current.version
       }
-
-      return store.commands.execute(
-        parseCommand({
-          commandId: ids.next(),
-          type: COMMAND.CourseDelete,
-          aggregateId: courseId,
-          expectedVersion: course.version,
-          actor: userActor,
-          correlationId: `course/${courseId}`,
-          payload: {},
-        }),
-      )
+      return {
+        ok: false,
+        code: 'CONFLICT',
+        message: '删除课程并发冲突，事项与任务已归档，可重试删除课程',
+      }
     },
 
     async archiveItem(itemId) {
@@ -1817,8 +2179,21 @@ export async function createAcademicApp(
       }
     },
 
+    reconcileSourceSyncJobs,
+
+    applySyncInterval,
+
     backup(targetPath) {
       backupDatabase(store, targetPath)
+    },
+
+    backupApplication(targetDir) {
+      return backupApplication({
+        store,
+        materialsDir: materialRoot,
+        targetDir,
+        createdAt: clock.now(),
+      })
     },
 
     start() {
@@ -1837,16 +2212,24 @@ export async function createAcademicApp(
     },
 
     close() {
-      if (closed) return
+      if (closing) return closing
       closed = true
-      unsubscribe()
-      for (const disposable of disposables.splice(0)) disposable.dispose()
-      scheduler.close()
-      dispatcher.close()
-      store.close()
-      if (ephemeralMaterials) {
-        rmSync(materialRoot, { recursive: true, force: true })
-      }
+      closing = (async () => {
+        unsubscribe()
+        scheduler.stop()
+        dispatcher.stop()
+        // In-flight handlers may still write; only close the store once they
+        // have finished so a reload cannot pull the database out from under them.
+        await Promise.all([scheduler.waitForIdle(), dispatcher.waitForIdle()])
+        for (const disposable of disposables.splice(0)) disposable.dispose()
+        scheduler.close()
+        dispatcher.close()
+        store.close()
+        if (ephemeralMaterials) {
+          rmSync(materialRoot, { recursive: true, force: true })
+        }
+      })()
+      return closing
     },
   }
   appRef = app

@@ -19756,6 +19756,8 @@ BLOCKED_NETWORKS.addSubnet("2001:db8::", 32, "ipv6");
 BLOCKED_NETWORKS.addSubnet("64:ff9b::", 96, "ipv6");
 BLOCKED_NETWORKS.addSubnet("2002::", 16, "ipv6");
 BLOCKED_NETWORKS.addSubnet("2001::", 32, "ipv6");
+var PROXY_FAKE_IP_NETWORK = new BlockList();
+PROXY_FAKE_IP_NETWORK.addSubnet("198.18.0.0", 15, "ipv4");
 
 // packages/academic-web-sessions/src/index.ts
 var DEFAULT_LOGIN_TIMEOUT_MS = 5 * 6e4;
@@ -20049,6 +20051,7 @@ var ACADEMIC_TOOL_NAMES = {
   ListSourceEngines: "academic_list_source_engines",
   ProbeSource: "academic_probe_source",
   CrawlSource: "academic_crawl_source",
+  ListCaptureEndpoints: "academic_list_capture_endpoints",
   CreateSource: "academic_create_source",
   ListWebSessions: "academic_list_web_sessions",
   FetchWebSession: "academic_fetch_web_session",
@@ -20270,7 +20273,7 @@ var TOOL_SPECS = [
   },
   {
     name: ACADEMIC_TOOL_NAMES.ProbeSource,
-    description: "Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host's cookies. POST is allowed only as an explicit JSON body for read-only list/detail APIs; forms and custom headers are never sent. Read-only; never returns cookies or URL query strings.",
+    description: "Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host's cookies. POST is allowed only as an explicit JSON body for read-only list/detail APIs; forms and custom headers are never sent. Read-only; never returns cookies or URL query strings. If the page is an SPA shell or the data lives on another host, stop guessing URLs: ask the user to click \u201C\u767B\u5F55\u5E76\u5F55\u5236\u201D in the \u8FDE\u63A5 page, then read academic_list_capture_endpoints.",
     parameters: {
       sourceId: {
         type: "string",
@@ -20308,6 +20311,14 @@ var TOOL_SPECS = [
       maxDepth: { type: "integer", description: "Link depth, 0-2; default 1" },
       pathPrefix: { type: "string", description: "Optional path prefix, e.g. /space/" },
       capture: { type: "boolean", description: "Keep raw page bodies in the host sample store" }
+    },
+    write: false
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.ListCaptureEndpoints,
+    description: "List endpoints observed in the user\u2019s guided \u201C\u767B\u5F55\u5E76\u5F55\u5236\u201D session: method, masked URL, collections[] with exact JSON paths, field paths, pagination parameter, transport and sampleIds. Use the matching collection path as the Manifest items path; pass sampleIds to academic_validate_adapter_candidate. If transport is \u201Cform\u201D or custom headers are required, stop and report. Read-only.",
+    parameters: {
+      sourceId: { type: "string", required: true, description: "Source id with a capture" }
     },
     write: false
   },

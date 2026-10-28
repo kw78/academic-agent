@@ -18,5 +18,8 @@
 | [0014](0014-course-material-library.md) | 课程资料库：文件/索引分离、FTS5 检索与受控附件导入 | 已接受 |
 | [0015](0015-course-identity-merge.md) | 同学期同名课程合并：来源别名、事项迁移与重复课程关闭 | 已接受 |
 | [0016](0016-declarative-readonly-post.md) | 声明式 Adapter 的显式只读 POST：JSON body、body 内分页与按请求匹配样本 | 已接受 |
+| [0017](0017-per-source-sync-jobs.md) | 每个真实来源的持久同步作业与生命周期联动 | 已接受 |
+| [0018](0018-application-backup.md) | 数据库 + 资料 + SHA-256 清单的完整应用备份包 | 已接受 |
+| [0019](0019-multi-step-failure-semantics.md) | 课程删除重读重试、候选启用失败回滚 | 已接受 |
 
 新增决策时按 `NNNN-kebab-title.md` 命名，并更新本索引。已接受决策的契约不得静默修改；需要变更时新增 ADR 并说明迁移方案。

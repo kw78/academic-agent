@@ -14,6 +14,7 @@ import {
   type ReplanRequestPort,
   type SourceConfigStoreApi,
   type SourceEngineRegistryApi,
+  type SourceCaptureSummary,
   type SourceCrawlOptions,
   type SourceCrawlResult,
   type SourceProbeEvidence,
@@ -102,6 +103,8 @@ export interface AcademicToolDependencies {
     },
   ) => Promise<SourceProbeEvidence>
   getProbeSample?: (sampleId: string) => AdapterSample | undefined
+  /** Latest guided-capture inventory for a source, if the user recorded one. */
+  captureSummary?: (sourceId: string) => SourceCaptureSummary | undefined
 }
 
 export const ACADEMIC_TOOL_NAMES = {
@@ -113,6 +116,7 @@ export const ACADEMIC_TOOL_NAMES = {
   ListSourceEngines: 'academic_list_source_engines',
   ProbeSource: 'academic_probe_source',
   CrawlSource: 'academic_crawl_source',
+  ListCaptureEndpoints: 'academic_list_capture_endpoints',
   CreateSource: 'academic_create_source',
   ListWebSessions: 'academic_list_web_sessions',
   FetchWebSession: 'academic_fetch_web_session',
@@ -533,7 +537,7 @@ export function createAcademicTools(
             ? [
                 defineTool(
                   ACADEMIC_TOOL_NAMES.ProbeSource,
-                  'Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host\'s cookies. POST is allowed only as an explicit JSON body for read-only list/detail APIs; forms and custom headers are never sent. Read-only; never returns cookies or URL query strings.',
+                  'Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host\'s cookies. POST is allowed only as an explicit JSON body for read-only list/detail APIs; forms and custom headers are never sent. Read-only; never returns cookies or URL query strings. If the page is an SPA shell (only a mount div, no tables/links) or the data lives on another host, stop guessing URLs: ask the user to click “登录并录制” on the source in the 连接 page, then read academic_list_capture_endpoints instead.',
                   z
                     .object({
                       sourceId: z.string().min(1).max(200),
@@ -609,6 +613,28 @@ export function createAcademicTools(
                   error instanceof Error ? error.message : String(error),
                 )
               }
+            },
+          ),
+
+          defineTool(
+            ACADEMIC_TOOL_NAMES.ListCaptureEndpoints,
+            'List the real endpoints the user produced in the guided “登录并录制” browser session for one source: method, masked URL, collections[] with exact JSON paths (e.g. data.payload.result.records), field paths (e.g. details.due), pagination parameter, transport and opaque sampleIds. Use the collection path that matches courses/assignments as the Manifest items path instead of guessing. Prefer these observed endpoints; pass sampleIds to academic_validate_adapter_candidate. Read-only; never returns cookies or raw bodies. If transport is "form" or the site needs custom headers, report that as an unsupported transport and stop. If empty, ask the user to run 登录并录制 on the 连接 page.',
+            z.object({ sourceId: z.string().min(1).max(200) }),
+            async (input) => {
+              if (!dependencies.captureSummary) {
+                return failure(
+                  'CAPABILITY_UNAVAILABLE',
+                  'Guided capture is not available in this host',
+                )
+              }
+              const capture = dependencies.captureSummary(input.sourceId)
+              if (!capture) {
+                return failure(
+                  'NOT_FOUND',
+                  'No capture yet. Ask the user to click “登录并录制” for this source and open the course/assignment list once.',
+                )
+              }
+              return success({ capture })
             },
           ),
 

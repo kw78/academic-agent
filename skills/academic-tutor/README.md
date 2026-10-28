@@ -1,6 +1,8 @@
 # Academic Tutor skill
 
-A project-owned teaching wrapper for Academic Agent. It keeps one stable tutoring contract and makes teaching modes extensible through Markdown files, not new tools.
+Academic Agent 的学习辅导提示词，覆盖讲解、提示、解答检查和复习建议。回答先解决具体问题，再按需要展开；资料引用和写入授权规则保留在 SKILL.md 中。
+
+教学方式通过 modes/ 下的文档扩展。模式描述的是如何帮助用户，不要求每次套用固定栏目、英文事实标签或结尾提问。
 
 ## Structure
 

@@ -90,7 +90,7 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
   const saveAvailability = async (): Promise<UiResult<AvailabilityView>> => {
     const minutes = Number(granularity)
     if (!timeZone.trim()) {
-      return { ok: false, error: { code: 'VALIDATION', message: '请填写 IANA 时区' } }
+      return { ok: false, error: { code: 'VALIDATION', message: '请填写 时区' } }
     }
     if (!Number.isFinite(minutes) || minutes < 5 || minutes > 60) {
       return { ok: false, error: { code: 'VALIDATION', message: '计划粒度需要是 5–60 分钟' } }
@@ -172,15 +172,15 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
           {!data.plannerAvailable && (
             <div className="ac-banner ac-banner-warn" role="status">
               <div>
-                <strong>Planner 当前不可用</strong>
-                <p>可以保存可用时间；生成计划和候选需要重新加载 Planner 插件。</p>
+                <strong>暂时无法生成计划</strong>
+                <p>你仍可以保存空闲时间。要生成计划，请在插件设置中重新启用规划插件。</p>
               </div>
             </div>
           )}
 
           <Section
             title="学习时间"
-            subtitle="Planner 不会默认全天可用；以下设置会持久化到 Host"
+            subtitle="设置每周能用来学习的时间，保存后会用于安排计划"
           >
             <form
               className="ac-form-card"
@@ -190,7 +190,7 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
               }}
             >
               <div className="ac-form-grid">
-                <Field label="IANA 时区" hint="例如 Asia/Shanghai">
+                <Field label="时区" hint="例如 Asia/Shanghai">
                   <input
                     value={timeZone}
                     onChange={(event) => {
@@ -200,7 +200,7 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
                     required
                   />
                 </Field>
-                <Field label="计划粒度（分钟）" hint="5–60 分钟">
+                <Field label="最小安排时长（分钟）" hint="5–60 分钟">
                   <input
                     type="number"
                     min={5}
@@ -218,7 +218,7 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
                 <h3>每周可用时段</h3>
                 {slots.length === 0 ? (
                   <EmptyState title="还没有可用时段">
-                    没有可用时段时 Planner 不会自行把全天视为可用。
+                    先添加每周空闲的时间，系统才能为你安排学习任务。
                   </EmptyState>
                 ) : (
                   <ul className="ac-slot-list">
@@ -364,7 +364,10 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
             </form>
           </Section>
 
-          <Section title="同步周期" subtitle="只修改内置同步任务的周期；不会启动第二份 Runtime">
+          <Section
+            title="提醒与同步"
+            subtitle="同步周期与截止提醒共用 Host 配置；自动化页负责运行状态"
+          >
             <form
               className="ac-form-card"
               onSubmit={(event) => {
@@ -392,32 +395,36 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
                 </span>
               </div>
             </form>
-          </Section>
-
-          <Section
-            title="课程维护"
-            subtitle="同一学期内标题相同的课程会视为同一门课"
-          >
-            <div className="ac-form-card">
-              <p className="ac-muted">
-                同步和手动添加会复用同学期同名课程。若历史数据已有重复，可在这里合并一次：事项、资料和课程优先级会迁到保留课程，重复课程随后关闭。
-              </p>
-              <div className="ac-form-actions">
-                <button
-                  type="button"
-                  className="ac-button"
-                  disabled={mergingCourses || action.pending !== undefined}
-                  onClick={() => void mergeCourses()}
-                >
-                  {mergingCourses ? '合并中…' : '合并同学期同名课程'}
-                </button>
+            <div className="ac-inline-bar">
+              <div>
+                <Badge tone={data.reminders.enabled ? 'ok' : 'warn'}>
+                  {data.reminders.enabled ? '提醒已启用' : '提醒已关闭'}
+                </Badge>
+                <span className="ac-muted">
+                  阈值：
+                  {data.reminders.thresholdsHours
+                    .slice()
+                    .sort((a, b) => b - a)
+                    .map((hours) => `${hours}h`)
+                    .join(' / ')}
+                </span>
+                <span className="ac-muted">
+                  提醒已读状态与阈值在自动化页统一管理，不在本页另存草稿。
+                </span>
               </div>
+              <button
+                type="button"
+                className="ac-button"
+                onClick={() => onNavigate('automation', { focus: 'notifications' })}
+              >
+                打开提醒与通知
+              </button>
             </div>
           </Section>
 
           <Section
             title="课程优先级"
-            subtitle="用户明确设定；仅在任务自身优先级相同时影响计划排序"
+            subtitle="任务优先级相同时，优先安排你更重视的课程"
           >
             {data.preferences.courses.length === 0 ? (
               <EmptyState title="还没有课程">添加课程后可设置优先级。</EmptyState>
@@ -474,8 +481,8 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
           </Section>
 
           <Section
-            title="Agent 自动接入"
-            subtitle="一次性开启；不需要逐个候选点击审核"
+            title="Agent 权限"
+            subtitle="默认关闭；开启后，Agent 可以在以下范围内自动接入平台"
           >
             <form
               className="ac-form-card"
@@ -498,7 +505,7 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
                 />
                 <div>
                   <strong>
-                    允许 Agent 自动启用已验证 Adapter 并同步其声明式数据源
+                    允许 Agent 启用已验证的接入规则，并预览、同步对应平台
                   </strong>
                   <span className="ac-muted">
                     仍不能启用未验证候选、读取凭据、提交作业或修改学校平台；
@@ -518,74 +525,77 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
             </form>
           </Section>
 
-          <Section title="提醒" subtitle="阈值与未读提醒在自动化页管理">
-            <div className="ac-inline-bar">
-              <div>
-                <Badge tone={data.reminders.enabled ? 'ok' : 'warn'}>
-                  {data.reminders.enabled ? '提醒已启用' : '提醒已关闭'}
-                </Badge>
-                <span className="ac-muted">
-                  阈值：
-                  {data.reminders.thresholdsHours
-                    .slice()
-                    .sort((a, b) => b - a)
-                    .map((hours) => `${hours}h`)
-                    .join(' / ')}
-                </span>
+          <Section
+            title="维护与诊断"
+            subtitle="课程合并、能力状态与界面偏好"
+          >
+            <div className="ac-subsection">
+              <h3>合并同学期同名课程</h3>
+              <p className="ac-muted">
+                同步和手动添加会复用同学期同名课程。若历史数据已有重复，可在这里合并一次：事项、资料和课程优先级会迁到保留课程，重复课程随后关闭。合并前请先备份。
+              </p>
+              <div className="ac-form-actions">
+                <button
+                  type="button"
+                  className="ac-button"
+                  disabled={mergingCourses || action.pending !== undefined}
+                  onClick={() => void mergeCourses()}
+                >
+                  {mergingCourses ? '合并中…' : '合并同学期同名课程'}
+                </button>
               </div>
-              <button type="button" className="ac-button" onClick={() => onNavigate('automation')}>
-                打开自动化
+            </div>
+            <div className="ac-subsection">
+              <h3>已加载能力</h3>
+              <p className="ac-muted">
+                这里显示当前可用的功能；如需启用或停用，请前往插件设置。
+              </p>
+              {data.capabilities.length === 0 ? (
+                <EmptyState title="没有已注册能力">请在插件设置中检查学业服务是否已启用。</EmptyState>
+              ) : (
+                <ul className="ac-list">
+                  {data.capabilities.map((entry) => (
+                    <li key={entry.id} className="ac-list-row">
+                      <div>
+                        <strong>
+                          {entry.id} · {entry.version}
+                        </strong>
+                        <span className="ac-muted">
+                          {entry.kind} · 提供方 {entry.providerPlugin}
+                        </span>
+                        <span className="ac-muted">
+                          能力：{entry.capabilities.join('、') || '—'} · 权限：
+                          {entry.requiredPermissions.join('、') || '无'}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="ac-subsection">
+              <h3>界面偏好</h3>
+              <p className="ac-muted">
+                当前页面和筛选等纯界面偏好保存在本机浏览器；课程、任务、计划、可用时间与凭据不会保存在浏览器存储。
+              </p>
+              <button
+                type="button"
+                className="ac-button"
+                onClick={() => {
+                  try {
+                    window.localStorage.removeItem('academic.ui.tab.v1')
+                    window.localStorage.removeItem('academic.ui.guide.v1')
+                  } catch {
+                    // Storage may be disabled; nothing sensitive is stored here.
+                  }
+                  action.setNotice({ tone: 'ok', text: '已清除界面偏好，课程、任务和计划仍然保留' })
+                }}
+              >
+                清除界面偏好
               </button>
             </div>
           </Section>
 
-          <Section
-            title="已加载能力"
-            subtitle="只读；启停由插件生命周期控制，停用后相关操作返回 CAPABILITY_UNAVAILABLE"
-          >
-            {data.capabilities.length === 0 ? (
-              <EmptyState title="没有已注册能力">检查 Host 插件是否加载。</EmptyState>
-            ) : (
-              <ul className="ac-list">
-                {data.capabilities.map((entry) => (
-                  <li key={entry.id} className="ac-list-row">
-                    <div>
-                      <strong>
-                        {entry.id} · {entry.version}
-                      </strong>
-                      <span className="ac-muted">
-                        {entry.kind} · 提供方 {entry.providerPlugin}
-                      </span>
-                      <span className="ac-muted">
-                        能力：{entry.capabilities.join('、') || '—'} · 权限：
-                        {entry.requiredPermissions.join('、') || '无'}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          <Section title="界面偏好" subtitle="只保存非敏感 UI 偏好">
-            <p className="ac-muted">
-              当前页面和筛选等纯界面偏好保存在本机浏览器；课程、任务、计划、可用时间与凭据不会保存在浏览器存储。
-            </p>
-            <button
-              type="button"
-              className="ac-button"
-              onClick={() => {
-                try {
-                  window.localStorage.removeItem('academic.ui.tab.v1')
-                } catch {
-                  // Storage may be disabled; nothing sensitive is stored here.
-                }
-                action.setNotice({ tone: 'ok', text: '已清除本机界面偏好；业务数据不受影响' })
-              }}
-            >
-              清除界面偏好
-            </button>
-          </Section>
         </>
       )}
     </div>

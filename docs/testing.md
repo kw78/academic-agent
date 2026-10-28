@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**231 项测试通过**（42 个测试文件）。
+当前基线：**273 项测试通过**（47 个测试文件）。
 
 ## 分层
 
@@ -163,6 +163,19 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 - `tests/integration/ui-api.test.ts`：数据源编辑非敏感配置；归档后仍出现在连接列表并可恢复；彻底删除后 source/连接/凭据消失，已同步课程仍在。
 - `tests/integration/migrations.test.ts`：0013 迁移在保留旧课程数据的同时新增 `deleted` 列。
 - `tests/unit/ui-view.test.ts`：课程 `deleted`、任务 `archived` 字段的类型与视图映射。
+
+## 来源定时同步与生命周期
+
+- `tests/integration/source-sync-jobs.test.ts`：每个可同步来源生成稳定的 `source.sync.<id>` 作业（fixture 不重复）；作业运行后写入真实课程/同步记录；归档/禁用暂停、恢复/启用恢复、彻底删除暂停；未验证连接的来源记录 `skipped: auth-required` 且不计失败；设置周期同时应用到 fixture 与全部来源作业，并保留用户手动暂停。
+- `tests/integration/scheduler.test.ts`：运行期间暂停或重新配置作业后，完成回写不会覆盖用户变更。
+- `tests/integration/dispatcher.test.ts`：消费者在自己的处理器中被卸载后，同批次不再收到后续事件。
+- `tests/e2e/app.test.ts`：`close()` 等待在途作业结束后才关闭存储。
+
+## 应用备份与多步骤恢复
+
+- `tests/e2e/backup-application.test.ts`：应用备份包含数据库、资料原文件与 SHA-256 清单；恢复到新目录后课程/事项/资料检索可用；资料文件被篡改或目标已存在时拒绝恢复且不留下目标目录。
+- `tests/e2e/management.test.ts`：课程删除遇到一次 `CONFLICT` 会重读版本并重试；持续冲突时返回 `CONFLICT` 且不删除课程。
+- `tests/integration/declarative.test.ts`：候选启用后若同步源写入失败，激活版本回滚到原版本并明确报错。
 
 ## 稳定性与运维
 

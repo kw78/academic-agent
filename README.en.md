@@ -2,31 +2,60 @@
 
 [English](README.en.md) | [中文](README.md)
 
-A personal academic assistant that runs on your own computer. Courses, assignments, exams, tasks, plans and reminders stay local; when you want explanations or material lookup, connect it to a DSH Agent.
+**Keep courses, assignments and exams together. Spend less time checking portals.**
 
-Business data stays on your machine by default. Credentials only go into the system credential vault. It never submits homework or changes your school account.
+Academic Agent runs on your computer. It brings courses, assignments and exams from school platforms into one place, saves your progress, and plans study time around your availability. You can also import course materials and ask the Agent to find relevant passages, explain a problem or suggest what to review.
 
-## What it can do
+Routine sync, deduplication, reminders and basic planning run without model calls. For an unsupported site, you can ask the Agent in a DSH conversation to inspect its pages and draft connection rules. Once those rules are validated and authorized, later syncs reuse them.
 
-- **Keep courses and assignments together**: tested with Blackboard and USTC academic systems, with manual entry as a fallback. Re-syncing does not duplicate courses; courses with the same name in the same term are merged.
-- **Tell you what to do today**: build a study plan from deadlines, priority and your available time; lock time blocks or adjust them manually, and get a clear reason when work cannot fit.
-- **Remind you before deadlines**: local 72-hour / 24-hour scans, with no model calls.
-- **Search course materials**: import PDF, PPTX, DOCX, web pages or pasted text, then search by keyword. Agent answers cite the material title and page number. Scanned PDFs without a text layer are reported honestly.
-- **Ask an Agent about your studies**: use the DSH “Academic” panel or chat to query courses, tasks, plans and materials. If no material is available, it says so instead of making one up.
-- **Add sites without waiting for a release**: log in and connect through site rules; new sites prefer configuration over hard-coded school-specific code.
-- **Your data stays yours**: local SQLite; original material files live beside the database; deleting material does not delete academic records; backup and restore have dedicated commands.
+Business data stays on your machine by default, and credentials go into the system credential vault. Important changes have sources and history; you can pause automation, confirm plans and lock study blocks.
 
-## Self-adapting, self-iterating (direction)
+## Connect a school platform
 
-The goal is not one adapter per school, but software that grows with your usage:
+Schools differ in their sites, APIs and page structures. Academic Agent captures those differences in a verifiable **Manifest: declarative connection rules**. Existing engines execute the rules, with configuration as the first choice for new integrations.
 
-- **Find its own way**: give it a logged-in URL; it probes pages, scripts, pagination and endpoints, same-host or cross-host, as long as they are public HTTPS. POST-only lists are supported for read-only probes.
-- **Prove itself with real data**: inferred rules must replay real captured pages/JSON; synthetic fixtures never count, and failures name the stage that broke.
-- **Repair itself when sites change**: when a redesign breaks sync, it traces the failing field/request, re-probes and produces a new rule version; old versions stay available for rollback.
-- **Improve with use**: new sites become Manifests instead of code; validation, activation and failure reasons stay local and feed the next generation; with trusted automation enabled, the Agent can connect without per-step approval.
-- **Always bounded**: no homework submission, no credential access, no out-of-scope hosts; every automatic change can be stopped, rolled back and explained.
+1. **Observe the real site**: after you log in, the Agent uses controlled tools to probe pages and crawl a limited section, looking for lists, fields, pagination and endpoint clues. HTML, JSON and explicitly declared read-only JSON POST requests are supported.
+2. **Generate candidate rules**: in a DSH conversation, the Agent turns its findings into a Manifest declaring the hosts, paths, courses and academic fields to read. Candidates can be staged for review.
+3. **Test the inference against samples**: offline replay checks the rule structure, field contracts and access scope against real page / JSON samples. Host-captured samples can be referenced by `sampleId`, keeping raw responses out of the model context.
+4. **Authorize and reuse**: only validated versions can be enabled. Activation creates or updates a sync source; a deterministic runtime then executes its rules without reasoning about the site structure on every run.
 
-Today this covers “probe → candidate → real-sample validation → enable/rollback”; generation and repair still happen through an Agent conversation. The next step is closing the loop from “sync failure → diagnose → re-probe → new version” so the software can genuinely iterate on its own.
+```mermaid
+flowchart LR
+    A[User login and entry URL] --> B[Agent exploration and candidate]
+    B --> C[Sample replay and contract validation]
+    C --> D[Authorized Manifest activation]
+    D --> E[Zero-LLM routine sync]
+    E --> F[Tasks, plans and reminders]
+    E -. Sync failure: diagnose in chat today .-> B
+```
+
+**Working example: USTC exam schedules.** The integration added one Manifest, two fixtures and an integration test suite to read exam information, without changing the kernel, Connector or UI, or adding a platform-specific engine. See [real-source verification](docs/real-sources.md) for its scope.
+
+Adaptation also applies to your schedule: changes to deadlines, task progress or availability can produce revised plan suggestions, preserving locked blocks and explaining work that cannot fit.
+
+## When a school site changes
+
+The system retains **verifiable connection rules, candidate versions and validation records**. When a site changes, failure information can guide another probe, a new rule version, replay validation and activation. Previous versions remain available for rollback. Rule versions are managed separately from academic facts; failed syncs preserve existing data and your progress.
+
+| Stage | Current status |
+|---|---|
+| Probe → candidate → validate → enable / rollback | Implemented; the Agent generates candidates in a DSH conversation |
+| Enable → live preview / sync | Implemented; enabling “Agent auto-connect” in Settings lets the Agent complete these steps within its authorized scope, without per-call approval |
+| Diagnose → revise rules → validate a new version | Currently performed through a user-initiated Agent conversation using the available tools |
+| Automatically invoke the Agent and repair failed syncs | Future goal; unattended self-repair is not implemented |
+
+**Passing sample replay establishes that rules parse the supplied samples. Live preview, live sync and a repeat sync producing no changes need separate verification.** See [MVP verification](docs/mvp-verification.md) and the [roadmap](doc/ACADEMIC_AGENT_ROADMAP_MVP_FIRST.md) for implementation status.
+
+“Agent auto-connect” is off by default and can be disabled at any time. It only permits activating validated candidates and previewing or syncing declarative sources. Other writes, such as task changes, still require per-call authorization from the trusted host. The Agent never receives cookies or tokens, submits homework or changes your school account.
+
+## Daily use: automate the work with known rules
+
+- **Collect courses and deadlines**: tested with Blackboard courses / assignments and USTC exam schedules, with manual entry available. Repeated syncs do not duplicate courses; matching names within a term reuse the same course identity.
+- **Plan study time**: use deadlines, task and course priorities, and your available hours; confirm plans, lock blocks and inspect conflicts.
+- **Get deadline reminders**: local 72-hour / 24-hour scans by default, with deduplication and catch-up checks after restart.
+- **Search course materials**: import PDF, PPTX, DOCX, web pages or text; keyword results provide titles, excerpts and available page numbers for Agent citations. Scanned PDFs do not yet support OCR.
+- **Ask for queries and explanations**: use course, task, plan and material tools in DSH chat. The Tutor skill requires material lookup and source attribution, and disclosure when material is missing.
+- **Keep results across sessions**: data, configuration, plans and background jobs are recoverable. While the host is running, routine automation operates independently of Agent sessions. Disabling the Agent or UI plugin preserves academic facts.
 
 ## Quick start
 
@@ -75,7 +104,7 @@ dsh plugin --profile academic-web add \
 
 The UI includes: Overview, Tasks, Plan, Connections, Materials, Automation and Settings.
 
-The Agent is read-only by default. Writes such as changing tasks or importing/deleting materials require per-call approval from the trusted host. Without a DSH approval UI, Agent writes are rejected; CLI and direct UI actions still work.
+The Agent is read-only by default. Writes such as changing tasks or importing/deleting materials require per-call approval from the trusted host. Without a DSH approval UI, those writes are rejected; CLI and direct UI actions still work. The “Agent auto-connect” setting described above is a separate, limited user authorization for validated candidate activation and declarative source preview / sync.
 
 DSH has no official central market; its Discover page reads index URLs configured by the user. The Academic Agent index is:
 
@@ -92,7 +121,7 @@ Install details: [plugin README](packages/academic-dsh-plugin/README.md), [UI RE
 - Database: `.data/academic.db` for CLI; `$DSH_HOME/academic-agent/academic.db` for DSH.
 - Materials: a `materials/` directory beside the database, content-addressed; SQLite stores only metadata and search chunks.
 - Credentials: Windows DPAPI; no plaintext cookies or tokens in the database, logs or Agent results.
-- Backup: SQLite only; copy `materials/` as well when moving the whole library.
+- Backup: `backup` snapshots SQLite only; `backup-app` also captures `materials/` with a SHA-256 manifest — use it when moving the whole library.
 - Deletion, recovery and troubleshooting: [operations guide](docs/operations.md) (Chinese).
 
 ## Known limitations

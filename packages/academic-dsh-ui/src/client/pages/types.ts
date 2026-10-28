@@ -1,18 +1,40 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type { TaskScope } from '../../protocol.js'
 
 export type TabId =
-  | 'dashboard'
+  | 'today'
   | 'tasks'
   | 'plan'
-  | 'connections'
+  | 'courses'
   | 'materials'
+  | 'connections'
   | 'automation'
   | 'settings'
+
+/**
+ * Client-side navigation context. It only carries non-sensitive identifiers
+ * and filter intent; the Host stays the authority for every object's state.
+ */
+export interface NavigationContext {
+  courseId?: string
+  taskId?: string
+  itemId?: string
+  sourceId?: string
+  due?: TaskScope
+  status?: 'active' | 'completed' | 'all'
+  pane?: 'tasks' | 'items' | 'review'
+  focus?: 'notifications' | 'sources' | 'guide'
+  create?: boolean
+  nonce?: number
+}
+
+export type Navigate = (tab: TabId, context?: NavigationContext) => void
 
 export interface PageProps {
   ctx: Context
   active: boolean
-  onNavigate: (tab: TabId) => void
+  onNavigate: Navigate
+  nav?: NavigationContext
 }
 
 export interface WorkspaceNavigation {

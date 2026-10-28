@@ -17,6 +17,7 @@ export function useLoad<T>(
   load: (signal: AbortSignal) => Promise<UiResult<T>>,
   active: boolean,
   intervalMs = 0,
+  refreshKey?: unknown,
 ): { state: LoadState<T>; refresh: () => Promise<UiResult<T> | undefined> } {
   const [state, setState] = useState<LoadState<T>>(() => initialLoad<T>())
   const loadRef = useRef(load)
@@ -56,7 +57,7 @@ export function useLoad<T>(
       document.removeEventListener('visibilitychange', onVisibility)
       inFlight.current?.abort()
     }
-  }, [active, intervalMs, refresh])
+  }, [active, intervalMs, refresh, refreshKey])
 
   // A stopped or restarting Host is recoverable. Keep a bounded retry alive
   // while the page is visible so the panel returns without a manual reload.

@@ -243,6 +243,50 @@ describe('durable scheduler', () => {
     }).policy).toMatchObject({ intervalMs: 60_000 })
   })
 
+  it('keeps a pause issued while the job is running', async () => {
+    const { clock, scheduler } = setup()
+    scheduler.schedule({
+      jobId: 'job-pause-during-run',
+      kind: 'pause-during-run',
+      nextRunAt: clock.now(),
+      policy: { intervalMs: 60_000 },
+    })
+    scheduler.registerHandler('pause-during-run', () => {
+      scheduler.pause('job-pause-during-run')
+    })
+
+    const results = await scheduler.runDueJobs(clock.now())
+    expect(results).toMatchObject([{ status: 'succeeded' }])
+    // The completion path must not resurrect the job from its start snapshot.
+    expect(scheduler.getJob('job-pause-during-run')?.enabled).toBe(false)
+  })
+
+  it('keeps a schedule change issued while the job is running', async () => {
+    const { clock, scheduler } = setup()
+    scheduler.schedule({
+      jobId: 'job-reconfigured',
+      kind: 'reconfigured',
+      nextRunAt: clock.now(),
+      policy: { intervalMs: 60_000 },
+    })
+    const manualNextRun = '2030-01-01T00:00:00.000Z'
+    scheduler.registerHandler('reconfigured', () => {
+      scheduler.schedule({
+        jobId: 'job-reconfigured',
+        kind: 'reconfigured',
+        nextRunAt: manualNextRun,
+        policy: { intervalMs: 5 * 60_000 },
+      })
+    })
+
+    await scheduler.runDueJobs(clock.now())
+    expect(scheduler.getJob('job-reconfigured')).toMatchObject({
+      enabled: true,
+      nextRunAt: manualNextRun,
+      policy: { intervalMs: 5 * 60_000 },
+    })
+  })
+
   it('T17 releases handlers and timers on dispose or close', async () => {
     const { clock, scheduler } = setup()
     scheduler.schedule({

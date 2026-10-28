@@ -5,10 +5,10 @@ import { COMMAND, type Range } from '@academic/contracts'
 import { createAcademicApp } from '@academic/cli'
 import { execute, fixedClock, makeCommand } from '../helpers/store.js'
 
-const cleanup: Array<() => void> = []
+const cleanup: Array<() => void | Promise<void>> = []
 
-afterEach(() => {
-  for (const dispose of cleanup.splice(0).reverse()) dispose()
+afterEach(async () => {
+  for (const dispose of cleanup.splice(0).reverse()) await dispose()
 })
 
 function tempDir(prefix: string): string {
@@ -218,5 +218,60 @@ describe('MVP user control', () => {
 
     expect(await app.archivePlan()).toMatchObject({ ok: true })
     expect(await app.getLatestPlan()).toBeUndefined()
+  })
+
+  it('retries a conflicting item archive during course deletion', async () => {
+    const { app } = await createApp()
+    await app.syncFixture()
+    const course = (await app.store.queries.listCourses()).items[0]!
+
+    const original = app.store.commands.execute.bind(app.store.commands)
+    let injected = false
+    app.store.commands.execute = (async (
+      command: Parameters<typeof original>[0],
+    ) => {
+      if (!injected && command.type === COMMAND.AcademicItemArchive) {
+        injected = true
+        return { ok: false, code: 'CONFLICT', message: 'injected conflict' }
+      }
+      return original(command)
+    }) as typeof app.store.commands.execute
+
+    const result = await app.deleteCourse(course.courseId)
+    app.store.commands.execute = original
+
+    expect(injected).toBe(true)
+    expect(result).toMatchObject({ ok: true })
+    expect((await app.store.queries.getCourse(course.courseId))?.deleted).toBe(true)
+    const items = (
+      await app.store.queries.listAcademicItems({
+        courseId: course.courseId,
+        status: 'all',
+      })
+    ).items
+    expect(items.length).toBeGreaterThan(0)
+    expect(items.every((item) => item.archived)).toBe(true)
+  })
+
+  it('refuses to delete a course when an item archive keeps conflicting', async () => {
+    const { app } = await createApp()
+    await app.syncFixture()
+    const course = (await app.store.queries.listCourses()).items[0]!
+
+    const original = app.store.commands.execute.bind(app.store.commands)
+    app.store.commands.execute = (async (
+      command: Parameters<typeof original>[0],
+    ) => {
+      if (command.type === COMMAND.AcademicItemArchive) {
+        return { ok: false, code: 'CONFLICT', message: 'injected conflict' }
+      }
+      return original(command)
+    }) as typeof app.store.commands.execute
+
+    const result = await app.deleteCourse(course.courseId)
+    app.store.commands.execute = original
+
+    expect(result).toMatchObject({ ok: false, code: 'CONFLICT' })
+    expect((await app.store.queries.getCourse(course.courseId))?.deleted).toBe(false)
   })
 })

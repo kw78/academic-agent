@@ -24,10 +24,15 @@ Blackboard 的配置示例、限制和真实页面结构见 [real-sources.md](re
 
 同步运行记录写入 `sync_runs`；失败不会清空已有学业数据。Adapter 对 5xx/429/超时会做一次有限重试，认证失败不重试。手动快速重复点击由 Host 的同源并发锁拒绝（`Sync already running`）。
 
+自动同步按来源执行：每个可同步来源有稳定作业 `source.sync.<sourceId>`，创建/启用/恢复来源时自动建立并恢复，归档/禁用/删除时暂停。作业运行时若没有已验证连接，只记录 `skipped: auth-required` 并等待下次周期，不计为失败；同一来源手动同步进行中则记录 `skipped: busy`。设置页的同步周期会同时应用到 fixture 与所有来源作业，已有作业的用户暂停状态保持不变。`fixture-lms` 使用专属 `fixture-lms-sync`，不会重复创建来源作业。
+
 ## 3. 备份、恢复与迁移
 
-- 备份：`ACADEMIC_DB=.data/academic.db npm run demo -- backup [target.db]`，使用 SQLite `VACUUM INTO` 生成一致性快照。
-- 恢复：`npm run demo -- restore <backup.db> <target.db>`。目标文件必须不存在；命令复制快照后打开新数据库，执行 `PRAGMA integrity_check`，校验事件位置与投影位置一致，任一失败即报错退出。
+- 数据库备份：`ACADEMIC_DB=.data/academic.db npm run demo -- backup [target.db]`，使用 SQLite `VACUUM INTO` 生成一致性快照。
+- 数据库恢复：`npm run demo -- restore <backup.db> <target.db>`。目标文件必须不存在；命令复制快照后打开新数据库，执行 `PRAGMA integrity_check`，校验事件位置与投影位置一致，任一失败即报错退出。
+- 完整应用备份：`npm run demo -- backup-app [targetDir]`。目录包含 `academic.db`、`materials/` 原文件与 `manifest.json`（每个文件的 SHA-256 与字节数）。数据库只做一致性快照，资料原文件逐个复制。
+- 完整应用恢复：`npm run demo -- restore-app <backupDir> <targetDir>`。先校验清单中的全部哈希再复制，任一文件缺失或被改动即失败，且不会留下半成品目录；恢复后打开数据库执行 `integrity_check` 与投影一致性检查，数据源连接需按提示重新登录。
+- 备份只包含 SQLite 时（`backup`），迁移整库还需同时复制数据库同目录的 `materials/`；需要一步到位请使用 `backup-app`。
 - 恢复演练（2026-10-28，本机）：fixture 数据源生成 2 个事项/2 个任务/2 条提醒后备份，恢复到独立文件 `.data/drill-restored-20261028.db`，结果 `integrity=ok · events=6 · projection=6 · consistent=true`；用 `list` 重新读取到相同事项、任务与提醒。
 - 恢复后先确认没有第二个 Host 使用目标数据库，再用目标路径启动；桌面端同时只能有一个 Host 使用默认数据库。
 - 迁移：`migrations/*.sql` 按编号执行；`0010_adapter_candidates.sql` 增加 Adapter 候选/激活表。升级前先备份，迁移后运行 `npm run typecheck` 与 `npm test`。

@@ -15,6 +15,7 @@ export interface TaskFilters {
   kind: 'all' | 'assignment' | 'exam' | 'quiz'
   due: 'all' | 'today' | 'week' | 'overdue' | 'unknown' | 'unscheduled'
   status: 'active' | 'completed' | 'all'
+  search?: string
 }
 
 export const DEFAULT_TASK_FILTERS: TaskFilters = {
@@ -22,6 +23,7 @@ export const DEFAULT_TASK_FILTERS: TaskFilters = {
   kind: 'all',
   due: 'all',
   status: 'active',
+  search: '',
 }
 
 const DATE_FORMATTERS = new Map<string, Intl.DateTimeFormat>()
@@ -162,6 +164,13 @@ export function taskMatches(
   if (filters.status !== 'all' && card.task.status !== filters.status) return false
   if (filters.courseId !== 'all' && card.item?.courseId !== filters.courseId) return false
   if (filters.kind !== 'all' && card.item?.kind !== filters.kind) return false
+  if (filters.search?.trim()) {
+    const needle = filters.search.trim().toLocaleLowerCase('zh-CN')
+    const haystack = `${card.task.title}\n${card.item?.title ?? ''}`.toLocaleLowerCase(
+      'zh-CN',
+    )
+    if (!haystack.includes(needle)) return false
+  }
   const due = formatDue(card.effectiveDue, timeZone, now)
   switch (filters.due) {
     case 'all':

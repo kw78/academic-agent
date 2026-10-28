@@ -341,6 +341,11 @@ export class Scheduler {
     this.#handlers.clear()
   }
 
+  /** Resolves once the in-flight pass (if any) has finished. */
+  async waitForIdle(): Promise<void> {
+    if (this.#pass) await this.#pass
+  }
+
   async #runDueJobsInternal(now: string, limit: number): Promise<JobRunResult[]> {
     const due = this.#db
       .prepare(
@@ -537,6 +542,20 @@ export class Scheduler {
           JSON.stringify(result.outcome?.summary ?? {}),
           runId,
         )
+      // The run started from an older snapshot. If the user paused/resumed or
+      // reconfigured the job meanwhile, their change wins over the stale copy.
+      const currentRow = this.#db
+        .prepare('SELECT * FROM scheduled_jobs WHERE job_id = ?')
+        .get(job.jobId) as SqlRow | undefined
+      if (currentRow) {
+        const current = this.#toJob(currentRow)
+        if (current.revision !== job.revision) {
+          jobEnabled = current.enabled
+          nextRunAt = current.nextRunAt
+        } else if (current.enabled !== job.enabled) {
+          jobEnabled = current.enabled
+        }
+      }
       this.#db
         .prepare(
           `UPDATE scheduled_jobs SET

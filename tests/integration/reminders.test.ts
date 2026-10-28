@@ -5,10 +5,10 @@ import { COMMAND, type AcademicItemSnapshot } from '@academic/contracts'
 import { createAcademicApp } from '@academic/cli'
 import { fixedClock, makeCommand } from '../helpers/store.js'
 
-const cleanup: Array<() => void> = []
+const cleanup: Array<() => void | Promise<void>> = []
 
-afterEach(() => {
-  for (const dispose of cleanup.splice(0).reverse()) dispose()
+afterEach(async () => {
+  for (const dispose of cleanup.splice(0).reverse()) await dispose()
 })
 
 function tempDb(prefix: string): string {
@@ -122,7 +122,7 @@ describe('FIX-06 deadline reminders', () => {
       ]),
     )
     expect(first.app.notifications.list(10)).toHaveLength(1)
-    first.app.close()
+    await first.app.close()
 
     const second = await createApp(databasePath)
     expect(second.app.notifications.getSettings()).toMatchObject({

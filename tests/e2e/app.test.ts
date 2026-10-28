@@ -8,10 +8,10 @@ import {
   fixedClock,
 } from '../helpers/store.js'
 
-const cleanup: Array<() => void> = []
+const cleanup: Array<() => void | Promise<void>> = []
 
-afterEach(() => {
-  for (const dispose of cleanup.splice(0).reverse()) dispose()
+afterEach(async () => {
+  for (const dispose of cleanup.splice(0).reverse()) await dispose()
 })
 
 function tempDir(prefix: string): string {
@@ -88,6 +88,40 @@ describe('application composition', () => {
     expect(app.modelUsage.count()).toBe(0)
   })
 
+  it('waits for in-flight automation before closing the store', async () => {
+    const app = await createApp(join(tempDir('app-close-'), 'academic.db'))
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let started = false
+    app.scheduler.schedule({
+      jobId: 'slow-job',
+      kind: 'slow-job',
+      nextRunAt: app.clock.now(),
+    })
+    app.scheduler.registerHandler('slow-job', async () => {
+      started = true
+      await gate
+      return { summary: { done: true } }
+    })
+
+    const run = app.scheduler.runDueJobs(app.clock.now())
+    while (!started) await new Promise((resolve) => setTimeout(resolve, 1))
+
+    let closed = false
+    const closing = app.close().then(() => {
+      closed = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(closed).toBe(false)
+
+    release()
+    await Promise.all([run, closing])
+    expect(closed).toBe(true)
+    expect(() => app.store.database.prepare('SELECT 1').get()).toThrow()
+  })
+
   it('T18 backs up and restores a consistent event-sourced database', async () => {
     const directory = tempDir('app-backup-')
     const databasePath = join(directory, 'academic.db')
@@ -106,7 +140,7 @@ describe('application composition', () => {
     app.backup(backupPath)
 
     await createTask(app, 'Only in the original database')
-    app.close()
+    await app.close()
 
     restoreDatabase(backupPath, restoredPath)
     const restored = await createApp(restoredPath)
@@ -139,7 +173,7 @@ describe('application composition', () => {
     first.scheduler.pause('fixture-lms-sync')
     first.start()
     first.stop()
-    first.close()
+    await first.close()
 
     const second = await createApp(databasePath, clock)
     expect(second.store.health()).toMatchObject({ consistent: true })

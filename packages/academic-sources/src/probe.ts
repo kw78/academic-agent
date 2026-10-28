@@ -6,6 +6,7 @@ import type {
   SourceProbeTable,
 } from '@academic/contracts'
 import {
+  loginPageSignals,
   safeFetch,
   safeUrlForDisplay,
   type ResolveHost,
@@ -70,33 +71,6 @@ export function cookiesFromSecret(secret: string): WebCookie[] {
   return parsed.cookies as WebCookie[]
 }
 
-function loginLikePage(
-  finalUrl: string,
-  body: string,
-  patterns: unknown,
-  contentType?: string,
-): boolean {
-  if (/\/login|\/signin|\/cas\/login/i.test(finalUrl)) return true
-  // JS/JSON bundles commonly contain route strings such as "/login"; matching
-  // their body would turn a healthy asset into a false AUTH_REQUIRED.
-  const isHtml =
-    contentType === undefined ||
-    contentType.toLowerCase().includes('html')
-  if (!isHtml) return false
-  const title = plainText(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(body)?.[1] ?? '')
-  if (/登录|sign in|log in/i.test(title)) return true
-  if (!Array.isArray(patterns)) return false
-  // Patterns are URL/title hints, not arbitrary body grep rules.
-  const haystack = `${finalUrl}\n${title}`
-  return patterns.some((pattern) => {
-    if (typeof pattern !== 'string') return false
-    try {
-      return new RegExp(pattern).test(haystack)
-    } catch {
-      return false
-    }
-  })
-}
 
 function jsonShape(value: unknown, depth = 0): string {
   if (Array.isArray(value)) {
@@ -349,12 +323,12 @@ export function buildEvidence(
     ...(contentType?.includes('json') && jsonShapeText
       ? { jsonShape: jsonShapeText }
       : {}),
-    loginLike: loginLikePage(
-      result.finalUrl,
-      result.body,
+    loginLike: loginPageSignals({
+      finalUrl: result.finalUrl,
+      body: result.body,
+      ...(result.contentType ? { contentType: result.contentType } : {}),
       patterns,
-      result.contentType,
-    ),
+    }),
     warnings: result.truncated ? ['响应超过大小上限，仅分析前 512KB'] : [],
     probedAt,
     digest: createHash('sha256').update(result.body).digest('hex'),

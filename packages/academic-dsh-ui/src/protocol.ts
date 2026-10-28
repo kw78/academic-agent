@@ -18,6 +18,7 @@ import type {
   StudyPlanView,
   StudyTaskView,
   SyncRunSummary,
+  SourceCaptureSummary,
   SourceEngineDescriptor,
 } from '@academic/contracts'
 
@@ -62,6 +63,7 @@ export interface HostStatus {
   generatedAt: string
   plannerAvailable: boolean
   notificationAvailable: boolean
+  unreadNotifications: number
 }
 
 export interface TaskCard {
@@ -71,6 +73,8 @@ export interface TaskCard {
   effectiveDue?: Due
   dueSource: 'task' | 'item' | 'none'
   planned: boolean
+  /** True when an active plan block for this task overlaps the business day. */
+  plannedToday?: boolean
 }
 
 export interface ItemCard {
@@ -154,6 +158,7 @@ export interface SourceStatus {
   syncAvailable: boolean
   canLogin: boolean
   canVerify: boolean
+  canCapture?: boolean
   loginMode?: 'browser' | 'manual'
   capabilities: string[]
   config: Record<string, unknown>
@@ -179,6 +184,7 @@ export interface SourceStatus {
   diagnosis?: SourceDiagnosis
   connection?: ConnectionView
   lastSync?: SyncRunSummary
+  lastSuccessfulSync?: SyncRunSummary
   detail?: string
 }
 
@@ -212,25 +218,37 @@ export interface AdapterCandidatesView {
   active: Array<{ adapterId: string; active?: string }>
 }
 
+export interface DashboardCounts {
+  activeTasks: number
+  completedTasks: number
+  overdueTasks: number
+  todayTasks: number
+  unreadNotifications: number
+  unscheduledTasks: number
+  itemsDueSoon: number
+  /** False when the host stopped scanning items; counts are then lower bounds. */
+  complete: boolean
+  generatedAt: string
+}
+
 export interface DashboardView {
   generatedAt: string
   range: Range
   timeZone: string
-  counts: {
-    activeTasks: number
-    overdueTasks: number
-    unreadNotifications: number
-    unscheduledTasks: number
-    itemsDueSoon: number
-  }
+  counts: DashboardCounts
   todayTasks: TaskCard[]
+  todayTasksTotal: number
+  overdueTasks: TaskCard[]
   upcoming: ItemCard[]
+  upcomingTotal: number
   recentChanges: ItemCard[]
   todayBlocks: Array<{ block: PlanBlock; task?: StudyTaskView }>
   plan?: StudyPlanView
   unread: NotificationCard[]
   connections: ConnectionView[]
   sources: SourceStatus[]
+  coursesCount: number
+  availabilityConfigured: boolean
   lastSync?: SyncRunSummary
   lastSuccessfulSync?: SyncRunSummary
   syncHealth: 'ok' | 'stale' | 'failed' | 'auth-required' | 'degraded' | 'unknown'
@@ -238,18 +256,48 @@ export interface DashboardView {
   projection: { projectionPosition: number; generatedAt: string }
 }
 
+export interface CourseSummary {
+  courseId: string
+  activeTasks: number
+  completedTasks: number
+  activeItems: number
+  plannedTasks: number
+  materialCount: number
+  sourceIds: string[]
+}
+
 export interface CoursesView {
   courses: CourseView[]
   items: ItemCard[]
+  summaries: CourseSummary[]
+  sources: SourceStatus[]
+  generatedAt: string
   projection: { projectionPosition: number; generatedAt: string }
+}
+
+export type TaskScope = 'all' | 'today' | 'week' | 'overdue' | 'unknown' | 'unscheduled'
+
+export interface TaskViewCounts {
+  active: number
+  completed: number
+  archived: number
+  overdue: number
+  today: number
+  unscheduled: number
 }
 
 export interface TasksView {
   cards: TaskCard[]
+  total: number
+  offset: number
+  hasMore: boolean
+  counts: TaskViewCounts
   courses: CourseView[]
   items: ItemCard[]
   planBlocks: PlanBlock[]
+  /** @deprecated use hasMore; kept for older clients. */
   truncated: boolean
+  itemsComplete: boolean
   timeZone: string
   generatedAt: string
 }
@@ -297,6 +345,7 @@ export interface ConnectionsView {
   courses: CourseView[]
   syncRuns: SyncRunSummary[]
   engines: SourceEngineDescriptor[]
+  agentAdapterAutomation: boolean
   generatedAt: string
 }
 
@@ -410,6 +459,12 @@ export interface ItemsRequest {
 export interface TasksRequest {
   status?: 'active' | 'completed' | 'all'
   includeArchived?: boolean
+  courseId?: string
+  kind?: 'all' | 'assignment' | 'exam' | 'quiz'
+  due?: TaskScope
+  search?: string
+  limit?: number
+  offset?: number
 }
 
 export interface PreviewPlanRequest {
@@ -481,6 +536,10 @@ export interface SourceIdRequest {
 export interface SourceProbeRequest {
   sourceId: string
   url?: string
+}
+
+export interface SourceCaptureView {
+  capture: SourceCaptureSummary
 }
 
 export interface SourceSecretRequest {

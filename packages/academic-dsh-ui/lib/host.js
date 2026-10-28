@@ -20059,6 +20059,8 @@ BLOCKED_NETWORKS.addSubnet("2001:db8::", 32, "ipv6");
 BLOCKED_NETWORKS.addSubnet("64:ff9b::", 96, "ipv6");
 BLOCKED_NETWORKS.addSubnet("2002::", 16, "ipv6");
 BLOCKED_NETWORKS.addSubnet("2001::", 32, "ipv6");
+var PROXY_FAKE_IP_NETWORK = new BlockList();
+PROXY_FAKE_IP_NETWORK.addSubnet("198.18.0.0", 15, "ipv4");
 function safeUrlForDisplay(value) {
   try {
     const url2 = new URL(value);
@@ -20922,6 +20924,7 @@ function buildSources(app, connections, syncRuns) {
       syncAvailable: adapterReady,
       canLogin: available && Boolean(engine?.login),
       canVerify: available && Boolean(engine?.verify),
+      canCapture: available && Boolean(engine?.capture) && engine?.descriptor.supportsCapture === true,
       ...config2.loginMode ? { loginMode: config2.loginMode } : {},
       capabilities: config2.capabilities,
       config: config2.config,
@@ -20952,6 +20955,7 @@ function buildSources(app, connections, syncRuns) {
         syncAvailable: false,
         canLogin: false,
         canVerify: false,
+        canCapture: false,
         capabilities: [],
         config: {},
         enabled: false,
@@ -21495,6 +21499,23 @@ function createAcademicUiApi(app) {
           return failure2("AUTH_REQUIRED", verified.lastError ?? "\u767B\u5F55\u4F1A\u8BDD\u9A8C\u8BC1\u5931\u8D25");
         }
         return ok(verified);
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async sourceCapture(request) {
+      const parsed = parse3(sourceIdSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      const source = app.sources.get(body.sourceId);
+      if (!source || source.archived) return failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
+      const engine = app.sourceEngines.get(source.engine);
+      if (!engine?.capture || engine.descriptor.supportsCapture !== true) {
+        return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u4E0D\u652F\u6301\u201C\u767B\u5F55\u5E76\u5F55\u5236\u201D");
+      }
+      try {
+        const capture = await app.captureSource(source.sourceId);
+        return ok({ capture });
       } catch (error62) {
         return fromError(error62);
       }
@@ -22189,6 +22210,7 @@ var REMOTE_METHODS = [
   "restoreSource",
   "deleteSource",
   "sourceLogin",
+  "sourceCapture",
   "probeSource",
   "adapterCandidates",
   "validateAdapterCandidate",
@@ -22322,6 +22344,9 @@ var AcademicUiService = class extends TypertRemoteService {
   }
   async sourceLogin(request) {
     return (await this.apiReady).sourceLogin(request);
+  }
+  async sourceCapture(request) {
+    return (await this.apiReady).sourceCapture(request);
   }
   async probeSource(request) {
     return (await this.apiReady).probeSource(request);

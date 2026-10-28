@@ -87,7 +87,9 @@ npm run demo -- material attachments <sourceId> <pageUrl> --course <courseId> [-
 ```bash
 npm run demo -- backup [target.db]
 npm run demo -- restore <backup.db> <target.db>
+npm run demo -- backup-app [targetDir]              # 数据库 + materials + SHA-256 清单
+npm run demo -- restore-app <backupDir> <targetDir>
 npm run benchmark               # 1k/10k 事项同步、查询、投影重建基线
 ```
 
-备份只包含 SQLite；迁移整库时同时复制数据库同目录的 `materials/`。详见 [operations.md](operations.md)。
+`backup`/`restore` 只处理 SQLite；`backup-app`/`restore-app` 面向整库迁移，恢复前会校验每个文件的哈希。详见 [operations.md](operations.md)。

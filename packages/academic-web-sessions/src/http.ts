@@ -141,6 +141,15 @@ BLOCKED_NETWORKS.addSubnet('64:ff9b::', 96, 'ipv6')
 BLOCKED_NETWORKS.addSubnet('2002::', 16, 'ipv6')
 BLOCKED_NETWORKS.addSubnet('2001::', 32, 'ipv6')
 
+/**
+ * Clash-style TUN resolvers answer every proxied hostname with an address from
+ * this benchmarking range and route it back by SNI. Blocking it makes every
+ * request fail whenever the proxy is on, so it is accepted only when all of a
+ * host's answers land in the range; real private/loopback ranges stay blocked.
+ */
+const PROXY_FAKE_IP_NETWORK = new BlockList()
+PROXY_FAKE_IP_NETWORK.addSubnet('198.18.0.0', 15, 'ipv4')
+
 const BLOCKED_HOSTNAMES = new Set([
   'metadata',
   'metadata.google.internal',
@@ -222,6 +231,16 @@ function isBlockedAddress(address: string): boolean {
     return BLOCKED_NETWORKS.check(address, family === 4 ? 'ipv4' : 'ipv6')
   } catch {
     return true
+  }
+}
+
+function isProxyFakeIp(address: string): boolean {
+  const family = isIP(address)
+  if (family !== 4) return false
+  try {
+    return PROXY_FAKE_IP_NETWORK.check(address, 'ipv4')
+  } catch {
+    return false
   }
 }
 
@@ -328,8 +347,14 @@ async function assertSafeTarget(
   if (addresses.length === 0) {
     throw new SafeFetchError('DNS_FAILED', `无法解析目标主机：${host}`)
   }
-  for (const entry of addresses) {
-    if (isBlockedAddress(entry.address)) {
+  const blocked = addresses.filter((entry) => isBlockedAddress(entry.address))
+  if (blocked.length > 0) {
+    // Mixed answers mean the resolver is not a pure fake-IP proxy, so the
+    // private-looking address is real and stays rejected.
+    const allProxyFakeIp =
+      blocked.every((entry) => isProxyFakeIp(entry.address)) &&
+      addresses.every((entry) => isProxyFakeIp(entry.address))
+    if (!allProxyFakeIp) {
       throw new SafeFetchError('UNSAFE_HOST', `目标主机解析到受限地址：${host}`)
     }
   }

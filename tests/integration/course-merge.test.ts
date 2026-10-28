@@ -6,10 +6,10 @@ import { COMMAND, parseCommand, type AcademicItemSnapshot } from '@academic/cont
 import { createAcademicApp, type AcademicApp } from '@academic/cli'
 import { fixedClock, sequentialIds } from '../helpers/store.js'
 
-const cleanup: Array<() => void> = []
+const cleanup: Array<() => void | Promise<void>> = []
 
-afterEach(() => {
-  for (const dispose of cleanup.splice(0).reverse()) dispose()
+afterEach(async () => {
+  for (const dispose of cleanup.splice(0).reverse()) await dispose()
 })
 
 async function setup(): Promise<AcademicApp> {

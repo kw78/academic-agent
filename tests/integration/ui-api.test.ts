@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createAcademicApp } from '@academic/cli'
 import { InMemoryCredentialVault } from '@academic/connections'
-import type { SourceEngine } from '@academic/contracts'
+import type {
+  NormalizedAcademicItem,
+  SourceEngine,
+  SourceEngineContext,
+} from '@academic/contracts'
 import { createAcademicUiApi } from '../../packages/academic-dsh-ui/src/api.js'
 import { fixedClock } from '../helpers/store.js'
 
@@ -11,11 +15,69 @@ afterEach(() => {
   for (const dispose of cleanup.splice(0).reverse()) dispose()
 })
 
+function bulkEngine(
+  id: string,
+  items: NormalizedAcademicItem[],
+): SourceEngine {
+  const course = {
+    sourceId: id,
+    externalCourseId: `${id}-course`,
+    termId: '2026-fall',
+    code: id.toUpperCase(),
+    title: `${id} course`,
+  }
+  return {
+    descriptor: {
+      id,
+      displayName: id,
+      supportsSync: true,
+      supportsLogin: false,
+      supportsVerify: false,
+      authKinds: ['none'],
+    },
+    async listCourses(context: SourceEngineContext) {
+      return [{ ...course, sourceId: context.sourceId }]
+    },
+    createAdapter(context: SourceEngineContext) {
+      return {
+        id: `${id}-adapter`,
+        sourceId: context.sourceId,
+        async fetch() {
+          return {
+            items: items.map((item) => ({ ...item, sourceId: context.sourceId })),
+            completeness: 'full' as const,
+            fetchedAt: '2026-10-27T10:00:00.000Z',
+            warnings: [],
+          }
+        },
+      }
+    },
+  }
+}
+
+function bulkItems(
+  id: string,
+  count: number,
+  due: NormalizedAcademicItem['due'] = { kind: 'unknown' },
+): NormalizedAcademicItem[] {
+  return Array.from({ length: count }, (_, index) => ({
+    sourceId: id,
+    externalItemId: `${id}-item-${index}`,
+    courseExternalId: `${id}-course`,
+    kind: 'assignment' as const,
+    title: `Bulk ${String(index).padStart(3, '0')}`,
+    due,
+    contentHash: `${id}-hash-${index}`,
+  }))
+}
+
 async function setup(
   options: {
     probeFetch?: typeof fetch
     probeResolveHost?: (hostname: string) => Promise<Array<{ address: string; family: number }>>
     probeMinIntervalMs?: number
+    browserCaptureImpl?: Parameters<typeof createAcademicApp>[0]['browserCaptureImpl']
+    sourceEngines?: SourceEngine[]
   } = {},
 ) {
   const clock = fixedClock()
@@ -25,6 +87,7 @@ async function setup(
     probeMinIntervalMs: 0,
     ...options,
   })
+
   cleanup.push(() => app.close())
   await app.syncFixture()
   return { app, api: createAcademicUiApi(app), clock }
@@ -58,6 +121,68 @@ describe('academic UI host API', () => {
     expect(tasks.value.cards).toHaveLength(2)
     expect(tasks.value.items).toHaveLength(2)
     expect(tasks.value.timeZone).toBeTruthy()
+  })
+
+  it('counts every task and filters records beyond the first page', async () => {
+    const { app, api } = await setup()
+    for (let index = 0; index < 505; index += 1) {
+      await app.createTask({
+        title: `Task ${String(index).padStart(3, '0')}`,
+        estimateMinutes: 30,
+      })
+    }
+
+    const page = await api.tasks({ status: 'active', limit: 200 })
+    expect(page.ok).toBe(true)
+    if (!page.ok) return
+    expect(page.value.cards).toHaveLength(200)
+    expect(page.value.total).toBe(507)
+    expect(page.value.hasMore).toBe(true)
+    expect(page.value.counts.active).toBe(507)
+
+    const later = await api.tasks({
+      status: 'active',
+      search: 'Task 504',
+    })
+    expect(later.ok).toBe(true)
+    if (!later.ok) return
+    expect(later.value.cards).toHaveLength(1)
+    expect(later.value.cards[0]?.task.title).toBe('Task 504')
+
+    const dashboard = await api.dashboard({})
+    expect(dashboard.ok).toBe(true)
+    if (!dashboard.ok) return
+    expect(dashboard.value.counts.activeTasks).toBe(507)
+    expect(dashboard.value.counts.complete).toBe(true)
+  })
+
+  it('counts upcoming items across all pages instead of the preview slice', async () => {
+    const { app, api } = await setup({
+      sourceEngines: [
+        bulkEngine(
+          'soon',
+          bulkItems('soon', 25, {
+            kind: 'instant',
+            utc: '2026-11-02T12:00:00.000Z',
+            zone: 'UTC',
+          }),
+        ),
+      ],
+    })
+    app.sources.create({
+      sourceId: 'soon',
+      engine: 'soon',
+      displayName: 'Soon source',
+      authKind: 'none',
+    })
+    await app.syncSource('soon')
+
+    const dashboard = await api.dashboard({})
+    expect(dashboard.ok).toBe(true)
+    if (!dashboard.ok) return
+    expect(dashboard.value.upcoming).toHaveLength(20)
+    expect(dashboard.value.upcomingTotal).toBe(dashboard.value.counts.itemsDueSoon)
+    expect(dashboard.value.upcomingTotal).toBeGreaterThanOrEqual(25)
   })
 
   it('does not offer the legacy Blackboard engine for new sources', async () => {
@@ -1311,5 +1436,69 @@ describe('generic DB-backed source login', () => {
     })
     expect(badUpdate.ok).toBe(false)
     if (!badUpdate.ok) expect(badUpdate.error.code).toBe('VALIDATION')
+  })
+})
+
+describe('guided capture UI API', () => {
+  const captureSession = {
+    secret: JSON.stringify({
+      cookies: [
+        { name: 'sid', value: 'lms-session', domain: 'lms.example.edu', path: '/' },
+      ],
+    }),
+    captures: [
+      {
+        url: 'https://lms.example.edu/api/courses',
+        method: 'GET' as const,
+        status: 200,
+        body: JSON.stringify([{ courseId: 'C1', courseName: '高等数学' }]),
+        contentType: 'application/json',
+        headerNames: ['accept'],
+      },
+    ],
+    hosts: ['lms.example.edu'],
+    visited: 3,
+    startedAt: '2026-10-28T10:00:00.000Z',
+    finishedAt: '2026-10-28T10:01:00.000Z',
+    warnings: [],
+  }
+
+  it('returns the inventory and marks the source as capture-capable', async () => {
+    const { app, api } = await setup({
+      browserCaptureImpl: async () => captureSession,
+    })
+    app.sources.create({
+      sourceId: 'lms',
+      engine: 'browser-session',
+      displayName: 'LMS',
+      authKind: 'token',
+      loginMode: 'browser',
+      config: {
+        loginUrl: 'https://lms.example.edu/login',
+        authenticatedUrlPatterns: ['^https://lms\.example\.edu/'],
+        cookieDomains: ['lms.example.edu'],
+      },
+    })
+
+    const result = await api.sourceCapture({ sourceId: 'lms' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.capture.endpoints).toHaveLength(1)
+    expect(result.value.capture.endpoints[0]?.response.fields[0]?.key).toBe(
+      'courseId',
+    )
+
+    const view = await api.connections({})
+    expect(view.ok).toBe(true)
+    if (!view.ok) return
+    const source = view.value.sources.find((entry) => entry.sourceId === 'lms')
+    expect(source?.canCapture).toBe(true)
+  })
+
+  it('rejects engines without a capture flow', async () => {
+    const { api } = await setup()
+    const result = await api.sourceCapture({ sourceId: 'fixture-lms' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.code).toBe('CAPABILITY_UNAVAILABLE')
   })
 })

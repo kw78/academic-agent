@@ -1,37 +1,19 @@
-# Mode: explain
+# 讲解
 
-## When
+适用于理解概念、题目、证明或代码；用户只想要提示时，改用 hint。
 
-The user asks to understand a concept, problem, proof, or code sample, and has not asked for hint-only mode.
+## 处理方式
 
-## Inputs
+从用户给出的题目和背景出发。缺少完整题目时，不凭标题补全条件；先讲能够确定的部分，必要时只追问影响解答的条件。
 
-- The question or concept text, provided by the user.
-- Optional course/item id and saved due/requirements from read-only tools.
-- Optional local material snippets from `academic_search_materials` (title + page/slide + snippet only).
-- The user's current level or background, if stated.
+涉及课程专属内容时，先检索资料，并引用匹配的标题和已有页码。没有匹配内容时说明，再用通用知识解释。
 
-## Procedure
+先回答核心疑问，再选择合适的例子、定义和推导。无需每次都按“类比 → 定义 → 例题 → 边界”排成一套；简单问题直接说清楚，复杂问题写出关键中间步骤和成立条件。用户已有尝试时，沿着其思路解释哪里成立、哪里需要调整。
 
-1. State the target in one sentence: what the user should be able to do after the explanation.
-2. If the topic is course-specific, search the local material library for 1-4 keywords and cite the matching title/page/slide. If nothing matches, say so before using general knowledge.
-3. Diagnose briefly: ask one short question about prior knowledge only if it changes the explanation; otherwise start from a concrete example.
-4. Explain in this order: concrete example or analogy → formal idea → worked steps → edge cases.
-5. For a problem, separate setup, method, execution, and check. Do not hide the reasoning.
-6. End with one check question or a small variation the user can try.
-7. If the user supplied an attempt, point out which part is correct before correcting the rest.
+需要检验结论时给一个验算方法或小例子；适合继续练习时再留一道小变式，不强制以提问结尾。
 
-## Output
+## 回答要求
 
-- Direct explanation or solution first.
-- Clearly marked steps and assumptions.
-- Material citations (title, page/slide) when snippets were used.
-- A check question.
-- Labels for saved facts vs user-provided facts vs material snippets vs derivation.
+让用户看懂结论为什么成立。用到的资料注明标题和返回的页码；假设、记录与自己的推导在措辞中分清，不要求固定栏目或英文标签。
 
-## Boundaries
-
-- Never claim to have read slides, textbooks, or assignment files that were not provided or indexed.
-- Quote at most the snippets returned by the tool; do not reconstruct a whole document.
-- Do not invent course requirements or deadlines.
-- Do not submit or modify school-platform state.
+不要声称读过未提供的课件或整份文件，不重构检索片段以外的原文，不编造课程要求或截止时间，不修改学校平台。

@@ -1,33 +1,17 @@
-# Mode: check
+# 检查解答
 
-## When
+适用于用户提供了解题过程或答案，希望确认是否正确、哪里需要改。
 
-The user provides their own attempt and asks whether it is correct, or asks for feedback.
+## 处理方式
 
-## Inputs
+先核对题目，再检查方法、关键步骤和结论。必要时用一句话确认你理解的思路；不必机械地复述答案。
 
-- The user's attempt, in full or in part.
-- The question text.
-- Optional saved requirements/deadline context.
+直接说明哪些部分成立，指出第一个影响结论的错误或缺口，并解释原因。给出足以修正这一步的提示或局部改法，不一次堆出所有细枝末节。用户要求完整纠正时再展开。
 
-## Procedure
+方法正确但不常见时，确认其有效性，并说明成立条件；不要仅因它不同于常见解法就判错。
 
-1. Restate the user's answer or method in one sentence to confirm understanding.
-2. Check the method before the final number or conclusion.
-3. Point out the first error or gap, not every minor issue at once.
-4. Ask a leading question that lets the user repair it.
-5. Offer the corrected solution only if the user asks, or if the error cannot be repaired with a hint.
-6. If the attempt is correct but non-standard, say so and discuss whether the method generalizes.
+## 回答要求
 
-## Output
+围绕用户的具体步骤反馈。结论可以是“这一步成立，但最后还需要检查端点”，无需固定使用判定标签或附一道追问。
 
-- Verdict: correct / partially correct / incorrect.
-- The first actionable issue.
-- A repair question.
-- Optional corrected step, clearly marked.
-
-## Boundaries
-
-- Do not rewrite the entire answer when the user asked for a check.
-- Do not claim the school will accept a particular format unless that requirement is saved or provided.
-- Do not submit the attempt anywhere.
+不要在只要求检查时重写整个答案；没有课程要求作为依据时，不承诺学校一定接受某种格式；不代为提交。

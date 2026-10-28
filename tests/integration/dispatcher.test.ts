@@ -138,6 +138,39 @@ describe('T10 extension projection full replay', () => {
   })
 })
 
+describe('consumer lifecycle during a batch', () => {
+  it('stops delivering to a consumer unloaded by its own handler', async () => {
+    const store = createTestStore()
+    const dispatcher = new EventDispatcher({
+      events: store.events,
+      checkpoints: store.checkpoints,
+      clock: fixedClock(),
+    })
+    cleanup.push(() => {
+      dispatcher.close()
+      store.close()
+    })
+    await seedThreeEvents(store)
+
+    const seen: string[] = []
+    let handle: Awaited<ReturnType<typeof dispatcher.register>>
+    handle = await dispatcher.register({
+      consumerId: 'academic.unload-mid-batch.v1',
+      eventTypes: '*',
+      projectionVersion: 1,
+      startPosition: 'beginning',
+      handler(event) {
+        seen.push(event.eventId)
+        if (seen.length === 1) handle.dispose()
+      },
+    })
+
+    const summary = await dispatcher.processOnce()
+    expect(seen).toHaveLength(1)
+    expect(summary.processed).toBe(1)
+  })
+})
+
 describe('T11 activation from the latest position', () => {
   it('ignores historical events and only processes new ones after enable', async () => {
     const store = createTestStore()

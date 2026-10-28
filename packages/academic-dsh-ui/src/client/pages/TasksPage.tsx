@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AcademicItemView } from '@academic/contracts'
 import { callApi } from '../api.js'
 import {
@@ -15,7 +15,6 @@ import { useAction, useLoad } from '../hooks.js'
 import { viewState } from '../state.js'
 import {
   DEFAULT_TASK_FILTERS,
-  filterTaskCards,
   formatDateTimeOrDash,
   formatDue,
   formatMinutes,
@@ -65,15 +64,15 @@ function tutorPrompt(
   const task = 'task' in card ? card.task : undefined
   const due = 'task' in card ? card.effectiveDue : item?.due
   const lines = [
-    '请基于已保存的学业数据，帮我理解或拆解下面的内容。',
+    '帮我看看下面这项学习内容该怎么入手，给我一个可以先做的小步骤。',
     `课程：${course ? `${course.code} ${course.title}` : '未关联课程'}`,
     task ? `本地任务：${task.title}` : undefined,
     item
       ? `来源事项：${item.title}（${kindLabel(item.kind)}，数据源 ${item.source.sourceId}）`
       : undefined,
     due ? `本地记录的截止：${formatDue(due, timeZone, now).label}` : '本地没有截止时间',
-    '先用只读工具核对事实（如 academic_get_item、academic_get_study_plan），区分数据库事实与你的建议。',
-    '没有提供或读取到课程材料时，不要声称读过材料；不要修改任何数据。',
+    '先用只读工具核对相关记录（如 academic_get_item、academic_get_study_plan）。解释建议的依据，用“记录中显示”或“建议先”等自然表述区分记录和建议。',
+    '如果需要题目或课件，请先检索已导入的资料；没有找到就说明缺少什么，不要仅凭标题猜题。只提供讲解和建议，不修改数据。',
   ].filter((line): line is string => Boolean(line))
   return lines.join('\n')
 }
@@ -98,6 +97,7 @@ function TaskRow({
   timeZone,
   now,
   pending,
+  highlight,
   onComplete,
   onReopen,
   onUpdate,
@@ -109,6 +109,7 @@ function TaskRow({
   timeZone: string
   now: string
   pending: boolean
+  highlight?: boolean
   onComplete: () => void
   onReopen: () => void
   onUpdate: (input: {
@@ -144,7 +145,11 @@ function TaskRow({
 
   if (archived) {
     return (
-      <li className="ac-task-row ac-task-completed">
+      <li
+        id={`ac-task-${card.task.taskId}`}
+        tabIndex={-1}
+        className={`ac-task-row ac-task-completed${highlight ? ' ac-task-highlight' : ''}`}
+      >
         <div className="ac-task-main">
           <div className="ac-task-title">
             <strong>{card.task.title}</strong>
@@ -171,7 +176,11 @@ function TaskRow({
   }
 
   return (
-    <li className={`ac-task-row${completed ? ' ac-task-completed' : ''}`}>
+    <li
+      id={`ac-task-${card.task.taskId}`}
+      tabIndex={-1}
+      className={`ac-task-row${completed ? ' ac-task-completed' : ''}${highlight ? ' ac-task-highlight' : ''}`}
+    >
       <button
         type="button"
         className={completed ? 'ac-check ac-check-done' : 'ac-check'}
@@ -305,7 +314,7 @@ function ItemRow({
 }) {
   const due = formatDue(card.item.due, timeZone, now)
   return (
-    <li className="ac-item-row">
+    <li id={`ac-item-${card.item.itemId}`} tabIndex={-1} className="ac-item-row">
       <div>
         <div className="ac-task-title">
           <strong>{card.item.title}</strong>
@@ -333,7 +342,7 @@ function ItemRow({
         <p className="ac-muted ac-task-note">
           {card.item.archived
             ? '已归档：同步会跳过该事项；恢复后继续接收来源更新。'
-            : '来源事实；学校提交状态未接入，不能由本地进度推断。'}
+            : '来自平台同步。这里尚未接入学校的提交状态，本地完成标记只用于记录学习进度。'}
         </p>
       </div>
       <div className="ac-item-due">
@@ -364,46 +373,75 @@ function ItemRow({
   )
 }
 
-export function TasksPage({ ctx, active }: PageProps) {
-  const load = useCallback(
-    (signal: AbortSignal) =>
-      callApi<TasksView>(
-        ctx,
-        'tasks',
-        { status: 'all', includeArchived: true },
-        signal,
-      ),
-    [ctx],
-  )
-  const { state, refresh } = useLoad(load, active)
+const TASK_PAGE_SIZE = 200
+
+export function TasksPage({ ctx, active, nav }: PageProps) {
   const [filters, setFilters] = useState<TaskFilters>(DEFAULT_TASK_FILTERS)
   const [pane, setPane] = useState<'tasks' | 'items' | 'review'>('tasks')
   const [showArchived, setShowArchived] = useState(false)
+  const [offset, setOffset] = useState(0)
+  const [searchDraft, setSearchDraft] = useState('')
   const [creating, setCreating] = useState(false)
   const [title, setTitle] = useState('')
   const [estimate, setEstimate] = useState('60')
   const [itemId, setItemId] = useState('')
   const [priority, setPriority] = useState('1')
+
+  useEffect(() => {
+    if (!nav?.nonce) return
+    if (nav.pane) setPane(nav.pane)
+    if (nav.create) setCreating(true)
+    setFilters((current) => ({
+      ...current,
+      ...(nav.courseId ? { courseId: nav.courseId } : {}),
+      ...(nav.due ? { due: nav.due } : {}),
+      ...(nav.status ? { status: nav.status } : {}),
+    }))
+    setOffset(0)
+  }, [nav?.nonce])
+
+  const request = useMemo(
+    () => ({
+      status: filters.status,
+      includeArchived: showArchived,
+      ...(filters.courseId !== 'all' ? { courseId: filters.courseId } : {}),
+      ...(filters.kind !== 'all' ? { kind: filters.kind } : {}),
+      ...(filters.due !== 'all' ? { due: filters.due } : {}),
+      ...(filters.search?.trim() ? { search: filters.search.trim() } : {}),
+      limit: TASK_PAGE_SIZE,
+      offset,
+    }),
+    [filters, offset, showArchived],
+  )
+  const requestKey = JSON.stringify(request)
+  const load = useCallback(
+    (signal: AbortSignal) => callApi<TasksView>(ctx, 'tasks', request, signal),
+    [ctx, request],
+  )
+  const { state, refresh } = useLoad(load, active, 0, requestKey)
   const action = useAction(refresh)
   const view = viewState(state)
   const data = state.data
   const timeZone = data?.timeZone ?? 'UTC'
   const now = new Date().toISOString()
 
-  const visibleTasks = useMemo(
-    () =>
-      data
-        ? filterTaskCards(
-            showArchived
-              ? data.cards
-              : data.cards.filter((card) => !card.task.archived),
-            filters,
-            timeZone,
-            now,
-          )
-        : [],
-    [data, filters, timeZone, now, showArchived],
-  )
+  useEffect(() => {
+    setOffset(0)
+  }, [filters, showArchived])
+
+  useEffect(() => {
+    if (!data) return
+    const id = nav?.taskId
+      ? `ac-task-${nav.taskId}`
+      : nav?.itemId
+        ? `ac-item-${nav.itemId}`
+        : undefined
+    if (!id) return
+    const row = document.getElementById(id)
+    row?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [data, nav?.itemId, nav?.nonce, nav?.taskId])
+
+  const visibleTasks = data?.cards ?? []
   const visibleItems = useMemo(() => {
     if (!data) return []
     const rank: Record<DueTone, number> = {
@@ -417,6 +455,10 @@ export function TasksPage({ ctx, active }: PageProps) {
       .filter((card) => showArchived || !card.item.archived)
       .filter((card) => filters.courseId === 'all' || card.item.courseId === filters.courseId)
       .filter((card) => filters.kind === 'all' || card.item.kind === filters.kind)
+      .filter((card) => {
+        const needle = filters.search?.trim().toLocaleLowerCase('zh-CN')
+        return !needle || card.item.title.toLocaleLowerCase('zh-CN').includes(needle)
+      })
       .filter((card) => {
         if (filters.due === 'all') return true
         const tone = formatDue(card.item.due, timeZone, now).tone
@@ -597,6 +639,21 @@ export function TasksPage({ ctx, active }: PageProps) {
           </div>
 
           <div className="ac-filter-bar">
+            <Field label="搜索" hint="按标题筛选；由 Host 执行">
+              <input
+                value={searchDraft}
+                onChange={(event) => setSearchDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    setFilters((current) => ({
+                      ...current,
+                      search: searchDraft,
+                    }))
+                  }
+                }}
+                placeholder="任务或来源标题"
+              />
+            </Field>
             <Field label="课程">
               <select
                 value={filters.courseId}
@@ -666,7 +723,10 @@ export function TasksPage({ ctx, active }: PageProps) {
             <button
               type="button"
               className="ac-button"
-              onClick={() => setFilters(DEFAULT_TASK_FILTERS)}
+              onClick={() => {
+                setFilters(DEFAULT_TASK_FILTERS)
+                setSearchDraft('')
+              }}
             >
               重置筛选
             </button>
@@ -727,18 +787,22 @@ export function TasksPage({ ctx, active }: PageProps) {
             </form>
           )}
 
-          {data.truncated && (
-            <p className="ac-muted">任务较多，仅显示前 500 条；请使用筛选缩小范围。</p>
+          {!data.itemsComplete && (
+            <p className="ac-text-warn">
+              来源事项过多，仅扫描了前 {TASK_PAGE_SIZE * 25} 条；统计可能不完整。
+            </p>
           )}
 
           {pane === 'tasks' && (
             <Section
               title="学习任务"
-              subtitle={`${visibleTasks.length} 条；本地完成状态不会冒充学校提交状态`}
+              subtitle={`共 ${data.total} 条，当前显示 ${visibleTasks.length === 0 ? 0 : offset + 1}–${offset + visibleTasks.length} 条；勾选完成仅记录学习进度，不代表已在学校平台提交`}
             >
               {visibleTasks.length === 0 ? (
                 <EmptyState title="没有符合条件的任务">
-                  检查筛选条件，或新建一个本地学习任务。
+                  {filters.search || filters.courseId !== 'all' || filters.due !== 'all'
+                    ? '检查筛选条件；筛选由 Host 在全量任务上执行。'
+                    : '新建一个本地学习任务，或先同步来源事项。'}
                 </EmptyState>
               ) : (
                 <ul className="ac-task-list">
@@ -749,6 +813,7 @@ export function TasksPage({ ctx, active }: PageProps) {
                       timeZone={timeZone}
                       now={now}
                       pending={action.pending !== undefined}
+                      highlight={nav?.taskId === card.task.taskId}
                       onComplete={() =>
                         void taskCommand('complete', 'completeTask', card.task.taskId)
                       }
@@ -798,6 +863,31 @@ export function TasksPage({ ctx, active }: PageProps) {
                     />
                   ))}
                 </ul>
+              )}
+              {data.total > TASK_PAGE_SIZE && (
+                <div className="ac-pagination" role="group" aria-label="任务分页">
+                  <button
+                    type="button"
+                    className="ac-button"
+                    disabled={offset === 0 || state.loading}
+                    onClick={() =>
+                      setOffset((current) => Math.max(0, current - TASK_PAGE_SIZE))
+                    }
+                  >
+                    上一页
+                  </button>
+                  <span className="ac-muted">
+                    第 {Math.floor(offset / TASK_PAGE_SIZE) + 1} 页 · 共 {data.total} 条
+                  </span>
+                  <button
+                    type="button"
+                    className="ac-button"
+                    disabled={!data.hasMore || state.loading}
+                    onClick={() => setOffset((current) => current + TASK_PAGE_SIZE)}
+                  >
+                    下一页
+                  </button>
+                </div>
               )}
             </Section>
           )}
@@ -858,7 +948,7 @@ export function TasksPage({ ctx, active }: PageProps) {
           {pane === 'review' && (
             <Section
               title="复习清单"
-              subtitle="按课程整理考试/测验；只依据已保存事项、本地任务与当前计划"
+              subtitle="按课程查看考试、测验和学习任务，结合当前计划准备复习"
             >
               <p className="ac-muted">
                 依据：来源事项、本地任务与当前计划。没有成绩、掌握度或课程材料数据，

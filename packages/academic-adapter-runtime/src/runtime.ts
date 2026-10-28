@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import {
   AdapterAuthError,
+  AdapterEgressError,
   AdapterTransientError,
   dueSchema,
   type AcademicSourceAdapter,
@@ -26,6 +27,7 @@ import {
 } from '@academic/source-browser'
 import {
   SafeFetchError,
+  loginPageSignals,
   safeFetch,
   type AllowedProtocol,
   type PinnedRequest,
@@ -371,21 +373,22 @@ class ManifestClient {
       if (result.status >= 500) {
         throw new AdapterTransientError(`平台返回 HTTP ${result.status}`)
       }
-      const loginLike = (this.#config.loggedOutPatterns ?? []).some((pattern) => {
-        try {
-          return new RegExp(pattern).test(`${result.finalUrl}\n${result.body.slice(0, 4_000)}`)
-        } catch {
-          return false
-        }
-      })
-      if (loginLike) {
+      if (
+        loginPageSignals({
+          finalUrl: result.finalUrl,
+          body: result.body.slice(0, 20_000),
+          ...(result.contentType ? { contentType: result.contentType } : {}),
+          patterns: this.#config.loggedOutPatterns,
+        })
+      ) {
         throw new AdapterAuthError('会话已失效，请重新登录')
       }
       return result.body
     } catch (error) {
       if (
         error instanceof AdapterAuthError ||
-        error instanceof AdapterTransientError
+        error instanceof AdapterTransientError ||
+        error instanceof AdapterEgressError
       ) {
         throw error
       }
@@ -393,9 +396,13 @@ class ManifestClient {
         if (error.code === 'TIMEOUT' || error.code === 'NETWORK') {
           throw new AdapterTransientError(error.message)
         }
-        if (error.code === 'UNSAFE_HOST') {
-          throw new AdapterAuthError(
-            '请求跳转到未授权站点，可能是会话失效；请重新登录',
+        if (
+          error.code === 'UNSAFE_HOST' ||
+          error.code === 'UNSAFE_PATH' ||
+          error.code === 'DNS_FAILED'
+        ) {
+          throw new AdapterEgressError(
+            `请求未到达站点（${error.message}）；请检查代理/网络或 Manifest 的 allowedOrigins、allowedPathPrefixes，这不是会话失效`,
           )
         }
         throw new AdapterTransientError(error.message)

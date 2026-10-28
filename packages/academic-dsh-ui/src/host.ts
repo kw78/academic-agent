@@ -44,7 +44,9 @@ import type {
   PlanCandidate,
   PlanMutationResult,
   PlanView,
+  PreferencesView,
   SettingsView,
+  SourceCaptureView,
   SourceIdRequest,
   SourceProbeEvidence,
   SourceSecretRequest,
@@ -87,6 +89,7 @@ const REMOTE_METHODS = [
   'restoreSource',
   'deleteSource',
   'sourceLogin',
+  'sourceCapture',
   'probeSource',
   'adapterCandidates',
   'validateAdapterCandidate',
@@ -110,6 +113,7 @@ const REMOTE_METHODS = [
   'markNotificationRead',
   'markAllNotificationsRead',
   'settings',
+  'preferences',
   'updateReminderSettings',
   'addCourse',
   'updateCourse',
@@ -267,6 +271,10 @@ export class AcademicUiService extends TypertRemoteService {
     return (await this.apiReady).sourceLogin(request as SourceIdRequest)
   }
 
+  async sourceCapture(request: unknown): Promise<UiResult<SourceCaptureView>> {
+    return (await this.apiReady).sourceCapture(request)
+  }
+
   async probeSource(request: unknown): Promise<UiResult<SourceProbeEvidence>> {
     return (await this.apiReady).probeSource(request)
   }
@@ -391,6 +399,10 @@ export class AcademicUiService extends TypertRemoteService {
 
   async settings(request: unknown): Promise<UiResult<SettingsView>> {
     return (await this.apiReady).settings(request)
+  }
+
+  async preferences(request: unknown): Promise<UiResult<PreferencesView>> {
+    return (await this.apiReady).preferences(request)
   }
 
   async updateReminderSettings(

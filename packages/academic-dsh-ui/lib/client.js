@@ -3257,6 +3257,7 @@ function SourceCard({
   });
   const [preview, setPreview] = (0, import_react6.useState)();
   const [probe, setProbe] = (0, import_react6.useState)();
+  const [capture, setCapture] = (0, import_react6.useState)();
   const [agentNote, setAgentNote] = (0, import_react6.useState)();
   const [editing, setEditing] = (0, import_react6.useState)(false);
   const connection = source.connection;
@@ -3269,7 +3270,8 @@ function SourceCard({
     const ok = askAgent(
       ctx,
       `\u8BF7\u4E3A\u6570\u636E\u6E90 ${source.sourceId}\uFF08${source.displayName}\uFF09\u751F\u6210\u53EF\u9A8C\u8BC1\u7684\u58F0\u660E\u5F0F Adapter\u3002\u6309\u9636\u6BB5\u6267\u884C\uFF0C\u8BC1\u636E\u4E0D\u8DB3\u65F6\u505C\u6B62\u5E76\u8BF4\u660E\uFF0C\u4E0D\u8981\u731C\u6D4B\u3002
-1. \u5148\u8C03\u7528 academic_probe_source \u63A2\u6D4B\u5F53\u524D\u914D\u7F6E\u9875\u9762\uFF0C\u8BB0\u5F55 status/title/headings/links/scripts/endpointCandidates/tables/containers/jsonShape/digest\uFF1B\u4E0D\u8981\u8BB0\u5F55 Cookie\u3002
+0. \u5148\u8C03\u7528 academic_list_capture_endpoints\uFF1B\u82E5\u6709\u201C\u767B\u5F55\u5E76\u5F55\u5236\u201D\u7684\u7ED3\u679C\uFF0C\u76F4\u63A5\u7528\u5B83\u7ED9\u51FA\u7684\u771F\u5B9E\u63A5\u53E3\u3001\u5B57\u6BB5\u3001\u5206\u9875\u53C2\u6570\u4E0E sampleIds \u751F\u6210 Manifest\uFF0C\u4E0D\u8981\u7EE7\u7EED\u76F2\u63A2 URL\u3002
+1. \u6CA1\u6709\u5F55\u5236\u7ED3\u679C\u65F6\uFF0C\u518D\u8C03\u7528 academic_probe_source \u63A2\u6D4B\u5F53\u524D\u914D\u7F6E\u9875\u9762\uFF0C\u8BB0\u5F55 status/title/headings/links/scripts/endpointCandidates/tables/containers/jsonShape/digest\uFF1B\u4E0D\u8981\u8BB0\u5F55 Cookie\u3002
 2. \u82E5\u9875\u9762\u662F SPA \u5916\u58F3\uFF08\u6807\u9898/\u5217\u8868/\u8868\u683C/\u94FE\u63A5\u57FA\u672C\u4E3A\u7A7A\uFF0C\u53EA\u6709\u201C\u52A0\u8F7D\u4E2D\u201D\uFF09\uFF0C\u4E0D\u8981\u751F\u6210 selector \u5360\u4F4D\u5019\u9009\uFF1B\u7528 academic_probe_source \u7684\u53EF\u9009 url \u53C2\u6570\u7EE7\u7EED\u63A2\u6D4B\u540C\u7AD9\u811A\u672C\u3001\u5206\u9875/\u5217\u8868\u94FE\u63A5\u548C\u5019\u9009\u63A5\u53E3\uFF0C\u4F18\u5148\u627E\u540C\u6E90 JSON \u63A5\u53E3\u5E76\u8BB0\u5F55\u5B57\u6BB5/\u6570\u7EC4\u5F62\u72B6\u3002\u9ED8\u8BA4\u5141\u8BB8\u63A2\u6D4B\u4EFB\u610F\u516C\u5F00 HTTPS \u4E3B\u673A\uFF1B\u53EA\u6709\u6765\u6E90\u663E\u5F0F\u8BBE\u7F6E probeAllowAnyPublicHost=false \u65F6\u624D\u9650\u5236\u5728 cookieDomains/probeAllowedHosts\u3002\u8DE8\u4E3B\u673A\u4E0D\u4F1A\u81EA\u52A8\u5E26\u8BE5\u57DF\u540D Cookie\uFF1BManifest \u7684 allowedOrigins \u8981\u5217\u51FA\u6240\u6709\u5B9E\u9645\u8BF7\u6C42\u4E3B\u673A\u3002\u9700\u8981\u5148\u6478\u6E05\u4E00\u4E2A\u680F\u76EE\u65F6\uFF0C\u53EF\u8C03\u7528 academic_crawl_source \u4ECE\u5165\u53E3 URL \u6709\u754C\u6293\u53D6\uFF08\u6700\u591A 10 \u9875\u3001\u6DF1\u5EA6 2\u3001\u53EA\u8DDF GET \u94FE\u63A5\uFF0C\u4ECD\u53D7 probePathPrefixes \u9650\u5236\uFF09\u3002\u82E5\u5217\u8868\u53EA\u80FD POST \u53D6\u5F97\uFF0C\u53EF\u5BF9\u5019\u9009\u63A5\u53E3\u7528 method=POST + JSON body \u63A2\u6D4B\u5E76 capture\uFF1BManifest \u7528 method/body \u8868\u8FBE\u540C\u6837\u7684\u53EA\u8BFB JSON \u8BF7\u6C42\uFF08POST \u4E0D\u652F\u6301 next \u7FFB\u9875\uFF0C\u6539\u7528 pageParam/pageIn=body \u6216 offsetParam/offsetIn=body\uFF09\u3002
 3. \u627E\u5230\u771F\u5B9E\u5217\u8868\u9875\u6216 JSON \u63A5\u53E3\u540E\uFF0C\u5148\u6839\u636E tables[].className/headers\u3001containers[].className \u548C links \u63A8\u65AD\u9009\u62E9\u5668\uFF0C\u518D\u7528 academic_probe_source \u7684 capture=true \u6355\u83B7\u54CD\u5E94\uFF0C\u62FF\u5230 sampleId\uFF1B\u539F\u59CB\u9875\u9762\u53EA\u7559\u5728\u5BBF\u4E3B\uFF0C\u4E0D\u8981\u628A\u6574\u9875\u5185\u5BB9\u7C98\u8D34\u5230\u5BF9\u8BDD\u91CC\u3002
 4. \u53EA\u6709\u62FF\u5230\u771F\u5B9E\u9875\u9762/\u771F\u5B9E JSON \u6837\u672C\u540E\u624D\u751F\u6210\u5B57\u6BB5\u6620\u5C04\uFF1B\u7528 sampleIds\uFF08\u6216\u771F\u5B9E samples\uFF09\u8C03\u7528 academic_validate_adapter_candidate\uFF0C\u6837\u672C\u5FC5\u987B\u8986\u76D6\u6240\u6709\u8BF7\u6C42 URL\uFF1BPOST \u6837\u672C\u9700\u5E26 method:"POST" \u548C\u4E0E Manifest \u5B8C\u5168\u4E00\u81F4\u7684 requestBody\u3002\u7981\u6B62\u7528\u5408\u6210 HTML \u8BA9\u9A8C\u8BC1\u53D8\u7EFF\uFF0C\u5931\u8D25\u53EA\u62A5\u544A\u7ED3\u6784\u5316\u539F\u56E0\u3002
@@ -3286,6 +3288,28 @@ function SourceCard({
     });
     if (result.ok) setProbe(result.value);
     return result;
+  };
+  const runCapture = async () => {
+    const result = await callApi(ctx, "sourceCapture", {
+      sourceId: source.sourceId
+    });
+    if (!result.ok) return result;
+    setCapture(result.value.capture);
+    return { ok: true, value: result.value.capture };
+  };
+  const askAgentWithCapture = () => {
+    const ok = askAgent(
+      ctx,
+      `\u8BF7\u4E3A\u6570\u636E\u6E90 ${source.sourceId}\uFF08${source.displayName}\uFF09\u751F\u6210\u53EF\u9A8C\u8BC1\u7684\u58F0\u660E\u5F0F Adapter\u3002\u6211\u5728\u201C\u8FDE\u63A5\u201D\u9875\u5B8C\u6210\u4E86\u201C\u767B\u5F55\u5E76\u5F55\u5236\u201D\uFF0C\u8BF7\u5148\u8C03\u7528 academic_list_capture_endpoints \u8BFB\u53D6\u771F\u5B9E\u63A5\u53E3\uFF0C\u4E0D\u8981\u518D\u76F2\u63A2 URL\u3002
+1. \u53EA\u4F7F\u7528\u6E05\u5355\u91CC\u7684\u771F\u5B9E URL\u3001\u65B9\u6CD5\u3001\u67E5\u8BE2/\u8BF7\u6C42\u4F53\u53C2\u6570\u3001\u5206\u9875\u53C2\u6570\u3001collections[].path \u4E0E\u5B57\u6BB5\u8DEF\u5F84\uFF1B\u4E0D\u8981\u628A\u6E05\u5355\u5916\u7684\u4E3B\u673A\u6216\u8DEF\u5F84\u5199\u8FDB Manifest\u3002
+1.1 \u5148\u770B nextStep.action\uFF1A\u53EA\u6709 validate \u65F6\u624D\u751F\u6210\u5019\u9009\uFF1Brecapture / unsupported-transport / needs-confirmation \u65F6\u76F4\u63A5\u8BF4\u660E\u5E76\u505C\u6B62\u3002
+2. Manifest \u7684 allowedOrigins \u8986\u76D6\u6E05\u5355\u4E2D\u7684\u5168\u90E8\u4E3B\u673A\uFF0CallowedPathPrefixes \u4F7F\u7528\u5EFA\u8BAE\u524D\u7F00\uFF1B\u5148\u7528 sampleIds \u8C03 academic_validate_adapter_candidate \u79BB\u7EBF\u56DE\u653E\uFF0C\u6837\u672C\u5FC5\u987B\u8986\u76D6\u6240\u6709\u8BF7\u6C42\u3002
+3. \u82E5\u63A5\u53E3\u542B\u5DF2\u5C4F\u853D\u7684\u9274\u6743\u53C2\u6570\u3001\u6216\u9700\u8981\u8868\u5355\u7F16\u7801/\u81EA\u5B9A\u4E49\u5934\u5BFC\u81F4\u65E0\u6CD5\u7CBE\u786E\u56DE\u653E\uFF0C\u76F4\u63A5\u8BF4\u660E\u5E76\u505C\u6B62\uFF0C\u4E0D\u8981\u7528\u5408\u6210\u6837\u672C\u8BA9\u9A8C\u8BC1\u901A\u8FC7\u3002
+4. \u4FDD\u5B58\u5019\u9009\u5373\u53EF\uFF0C\u4E0D\u8981\u542F\u7528\uFF1B\u8F93\u51FA\u5019\u9009\u6458\u8981\u3001\u9A8C\u8BC1\u7ED3\u679C\u3001\u4ECD\u9700\u6211\u5728\u201C\u8FDE\u63A5\u201D\u9875\u786E\u8BA4\u7684\u4E8B\u9879\u3002`
+    );
+    setAgentNote(
+      ok ? "\u5DF2\u6253\u5F00 Agent \u4F1A\u8BDD\uFF1B\u751F\u6210\u5B8C\u6210\u540E\u56DE\u5230\u201C\u8FDE\u63A5\u201D\u9875\u9A8C\u8BC1\u5E76\u542F\u7528\u5019\u9009\u3002" : "\u5F53\u524D\u73AF\u5883\u6CA1\u6709\u53EF\u7528\u7684 Agent \u4F1A\u8BDD\u5165\u53E3\uFF0C\u8BF7\u5728 DSH \u5BF9\u8BDD\u4E2D\u53D1\u8D77\u3002"
+    );
   };
   const previewSync = async () => {
     const result = await callApi(ctx, "previewSourceSync", {
@@ -3529,6 +3553,82 @@ function SourceCard({
             children: action.pending === "source-login" ? "\u7B49\u5F85\u767B\u5F55\u7A97\u53E3\u2026" : connection ? `\u91CD\u65B0\u767B\u5F55 ${source.displayName}` : `\u767B\u5F55 ${source.displayName}`
           }
         )
+      ] }),
+      source.canCapture && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u4F1A\u6253\u5F00 Edge/Chrome \u5E76\u5F55\u5236\u4F60\u8BBF\u95EE\u7684 JSON/HTML \u54CD\u5E94\uFF08\u53EA\u8BFB\uFF09\u3002\u767B\u5F55\u540E\u8BF7\u6253\u5F00\u8BFE\u7A0B\u5217\u8868\u548C\u4F5C\u4E1A\u5217\u8868\uFF0C\u6700\u597D\u7FFB\u4E00\u9875\uFF1B\u5B8C\u6210\u540E\u70B9\u7A97\u53E3\u53F3\u4E0A\u89D2\u201C\u5B8C\u6210\u5F55\u5236\u5E76\u4FDD\u5B58\u4F1A\u8BDD\u201D\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          "button",
+          {
+            type: "button",
+            className: "ac-button",
+            disabled: action.pending !== void 0,
+            onClick: () => void action.run(
+              "source-capture",
+              runCapture,
+              "\u5F55\u5236\u5B8C\u6210\uFF1B\u5DF2\u4FDD\u5B58\u4F1A\u8BDD\uFF0C\u53EF\u628A\u771F\u5B9E\u63A5\u53E3\u4EA4\u7ED9 Agent \u751F\u6210\u5019\u9009"
+            ),
+            children: action.pending === "source-capture" ? "\u5F55\u5236\u4E2D\uFF1A\u8BF7\u5728\u5F39\u51FA\u7684\u6D4F\u89C8\u5668\u91CC\u64CD\u4F5C\u2026" : "\u767B\u5F55\u5E76\u5F55\u5236"
+          }
+        )
+      ] }),
+      capture && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
+          "\u5F55\u5236\u7ED3\u679C\uFF08\u53EA\u8BFB\uFF09\uFF1A",
+          capture.visited,
+          " \u6B21\u8BF7\u6C42 \xB7 ",
+          capture.hosts.length,
+          " \u4E2A\u7AD9\u70B9 \xB7",
+          " ",
+          capture.endpoints.length,
+          " \u4E2A\u63A5\u53E3 \xB7 ",
+          capture.endpoints.reduce((sum, endpoint) => sum + (endpoint.response.itemCount ?? 0), 0),
+          " \u6761\u8BB0\u5F55"
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
+          "\u6D89\u53CA\u7AD9\u70B9\uFF1A",
+          capture.hosts.join(" / ")
+        ] }),
+        capture.endpoints.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-list", children: capture.endpoints.slice(0, 12).map((endpoint) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Badge, { tone: endpoint.kind === "list" ? "ok" : "neutral", children: endpoint.kind === "list" ? "\u5217\u8868" : endpoint.kind === "detail" ? "\u8BE6\u60C5" : endpoint.kind === "document" ? "\u9875\u9762" : "\u5176\u4ED6" }),
+          " ",
+          endpoint.method,
+          " ",
+          endpoint.path,
+          endpoint.response.itemCount !== void 0 ? ` \xB7 ${endpoint.response.itemCount} \u6761` : "",
+          endpoint.response.collectionPath && endpoint.response.collectionPath !== "$" ? ` \xB7 \u96C6\u5408 ${endpoint.response.collectionPath}` : "",
+          endpoint.pagination ? ` \xB7 \u5206\u9875\u53C2\u6570 ${endpoint.pagination.param}` : "",
+          endpoint.transport === "form" ? " \xB7 \u8868\u5355\u8BF7\u6C42\uFF08\u5F53\u524D\u4E0D\u652F\u6301\uFF09" : "",
+          endpoint.response.fields.length > 0 ? ` \xB7 \u5B57\u6BB5 ${endpoint.response.fields.slice(0, 6).map((field) => field.path ?? field.key).join(", ")}` : "",
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "ac-muted", children: [
+            " ",
+            "\xB7 \u6837\u672C ",
+            endpoint.sampleId.slice(0, 8)
+          ] })
+        ] }, endpoint.sampleId)) }),
+        capture.warnings.map((warning) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-warn", children: warning }, warning)),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+          "p",
+          {
+            className: capture.nextStep.action === "validate" ? "ac-muted" : "ac-text-warn",
+            children: [
+              "\u4E0B\u4E00\u6B65\uFF1A",
+              capture.nextStep.label,
+              capture.nextStep.reason ? ` \xB7 ${capture.nextStep.reason}` : ""
+            ]
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          "button",
+          {
+            type: "button",
+            className: "ac-button ac-button-primary",
+            disabled: action.pending !== void 0 || capture.endpoints.length === 0 || capture.nextStep.action === "unsupported-transport",
+            title: capture.nextStep.action === "unsupported-transport" ? "\u8BE5\u63A5\u53E3\u9700\u8981\u8868\u5355\u7F16\u7801\uFF0C\u5F53\u524D Manifest \u65E0\u6CD5\u56DE\u653E" : void 0,
+            onClick: askAgentWithCapture,
+            children: "\u628A\u5F55\u5236\u7ED3\u679C\u4EA4\u7ED9 Agent"
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u539F\u59CB\u54CD\u5E94\u53EA\u7559\u5728\u5BBF\u4E3B\u6837\u672C\u5E93\uFF0860 \u5206\u949F\uFF09\uFF0C\u4E0D\u53D1\u7ED9\u6A21\u578B\uFF1B\u5019\u9009\u4ECD\u9700\u4F60\u5728\u9875\u9762\u786E\u8BA4\u540E\u624D\u4F1A\u542F\u7528\u3002" })
       ] }),
       manualCredential && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
         SourceCredentialForm,

@@ -97,3 +97,17 @@ export class AdapterTransientError extends Error {
     this.name = 'AdapterTransientError'
   }
 }
+
+/**
+ * The request never reached the site's data: blocked host/path, proxy refusal
+ * or DNS failure. It must not be reported as an expired session, otherwise the
+ * user is pushed into a pointless re-login loop.
+ */
+export class AdapterEgressError extends Error {
+  readonly code = 'EGRESS_BLOCKED'
+
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options)
+    this.name = 'AdapterEgressError'
+  }
+}

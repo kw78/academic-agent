@@ -98,6 +98,18 @@ ACADEMIC_DB=.data/academic.db npm run demo -- source sync ustc-blackboard
 - 新平台准入：有真实用户需求、合法访问方式、可复用已登录会话、明确的数据类型与访问范围；先评估官方 API/ICS/OAuth，再写 Manifest，只有 Manifest 无法表达时才增加 Adapter 代码。
 - 当前不为每个平台建立独立 UI 或 Connector；平台只声明真实验证过的数据类型，未覆盖项在文档与 UI 中明确标注。
 
+## 引导录制（发现真实接口）
+
+SPA 平台（如超星、智慧树）的课程/作业数据不在入口页，盲探 URL 和跟 `<a>` 都拿不到。改用“连接”页的 **登录并录制**：
+
+1. 宿主拉起 Edge/Chrome；用户登录后打开课程列表、作业列表，最好翻一页。
+2. 宿主只读录制 `xhr/fetch/document` 响应（2xx、JSON/HTML、≤512 KB、最多 40 条/8 MB），原始 body 留在宿主样本库（60 分钟），不发给模型。
+3. 结束时保存会话 Cookie（覆盖录制中出现的全部主机），并把观测主机并入来源的 `cookieDomains`。
+4. 生成接口清单：方法、脱敏 URL、`collections[]`（每个数组的精确路径、条数、字段）、嵌套字段路径（如 `details.due`）、分页参数、传输类型、`sampleId`，以及宿主判定的下一步。Agent 调 `academic_list_capture_endpoints` 读取清单，再用 `sampleIds` 离线验证 Manifest；`nextStep` 不是 `validate` 时（需要补录、表单请求、待确认字段）应直接停止。
+5. 候选仍需用户在“连接”页启用；录制不会扩大任何域名/路径授权，也不会提交表单。
+
+限制：表单编码 POST 与自定义请求头（如 `X-Requested-With`）暂不被 Manifest 表达；遇到这类接口需要在录制清单中说明，或另开受控能力。
+
 ## 可行接入路径
 
 按 Intent/Architecture 的优先级：

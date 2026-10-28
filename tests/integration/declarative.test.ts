@@ -742,4 +742,41 @@ describe('declarative adapter runtime', () => {
     const summary = await app.syncSource('decl', connection.connectionId)
     expect(summary.created).toBe(3)
   })
+
+  it('rolls the active version back when the sync source cannot be wired', async () => {
+    const registry = new ManifestRegistry()
+    const state = router()
+    const app = await createAcademicApp({
+      databasePath: ':memory:',
+      credentialVault: new InMemoryCredentialVault(),
+      manifestRegistry: registry,
+      sourceEngines: [
+        createDeclarativeEngine(registry, {
+          fetchImpl: state.fetchImpl,
+          resolveHost: publicResolver,
+          now: () => '2026-10-28T00:00:00.000Z',
+        }),
+      ],
+    })
+    cleanup.push(() => app.close())
+
+    await app.adapterCandidates.register(jsonManifest, jsonSamples())
+    const first = await app.activateAdapterCandidate('demo-json', '1.0.0')
+    expect(first.sourceId).toBeDefined()
+    await app.adapterCandidates.register(
+      { ...jsonManifest, version: '1.0.1' },
+      jsonSamples(),
+    )
+
+    const originalUpdate = app.sources.update.bind(app.sources)
+    app.sources.update = (() => {
+      throw new Error('source store unavailable')
+    }) as typeof app.sources.update
+    await expect(
+      app.activateAdapterCandidate('demo-json', '1.0.1'),
+    ).rejects.toThrow(/已恢复到 1\.0\.0/)
+    app.sources.update = originalUpdate
+
+    expect(registry.get('demo-json')?.version).toBe('1.0.0')
+  })
 })

@@ -154,12 +154,29 @@ export interface SourceValidationInput {
   config: Record<string, unknown>
 }
 
+export type SourceConfigChangeType =
+  | 'created'
+  | 'updated'
+  | 'archived'
+  | 'restored'
+  | 'deleted'
+
+/** Lets the composition root keep operational state (sync jobs) in step. */
+export interface SourceConfigChange {
+  type: SourceConfigChangeType
+  sourceId: string
+  enabled: boolean
+  /** Previous enabled flag; only meaningful for 'updated'. */
+  previouslyEnabled?: boolean
+}
+
 export interface SourceConfigStoreOptions {
   db: DatabaseSync
   clock: Clock
   ids: IdGenerator
   /** Engine-specific schema and capability check; must not accept secrets. */
   validateSource?: (input: SourceValidationInput) => string | undefined
+  onChange?: (change: SourceConfigChange) => void
 }
 
 /** Operational source definitions; secrets never live in this table. */
@@ -168,12 +185,14 @@ export class SourceConfigStore implements SourceConfigStoreApi {
   readonly #clock: Clock
   readonly #ids: IdGenerator
   readonly #validateSource: SourceConfigStoreOptions['validateSource']
+  readonly #onChange: SourceConfigStoreOptions['onChange']
 
   constructor(options: SourceConfigStoreOptions) {
     this.#db = options.db
     this.#clock = options.clock
     this.#ids = options.ids
     this.#validateSource = options.validateSource
+    this.#onChange = options.onChange
   }
 
   #assertValid(input: SourceValidationInput): void {
@@ -229,7 +248,13 @@ export class SourceConfigStore implements SourceConfigStoreApi {
       }
       throw error
     }
-    return this.get(sourceId)!
+    const created = this.get(sourceId)!
+    this.#onChange?.({
+      type: 'created',
+      sourceId,
+      enabled: created.enabled,
+    })
+    return created
   }
 
   get(sourceId: string): SourceConfig | undefined {
@@ -304,7 +329,14 @@ export class SourceConfigStore implements SourceConfigStoreApi {
         now,
         sourceId,
       )
-    return this.get(sourceId)!
+    const updatedConfig = this.get(sourceId)!
+    this.#onChange?.({
+      type: 'updated',
+      sourceId,
+      enabled: updatedConfig.enabled,
+      previouslyEnabled: current.enabled,
+    })
+    return updatedConfig
   }
 
   archive(sourceId: string): SourceConfig {
@@ -318,7 +350,9 @@ export class SourceConfigStore implements SourceConfigStoreApi {
          WHERE source_id = ?`,
       )
       .run(now, sourceId)
-    return this.get(sourceId)!
+    const archived = this.get(sourceId)!
+    this.#onChange?.({ type: 'archived', sourceId, enabled: false })
+    return archived
   }
 
   restore(sourceId: string): SourceConfig {
@@ -333,7 +367,13 @@ export class SourceConfigStore implements SourceConfigStoreApi {
          WHERE source_id = ?`,
       )
       .run(now, sourceId)
-    return this.get(sourceId)!
+    const restored = this.get(sourceId)!
+    this.#onChange?.({
+      type: 'restored',
+      sourceId,
+      enabled: restored.enabled,
+    })
+    return restored
   }
 
   delete(sourceId: string): void {
@@ -342,6 +382,7 @@ export class SourceConfigStore implements SourceConfigStoreApi {
     this.#db
       .prepare('DELETE FROM academic_sources WHERE source_id = ?')
       .run(sourceId)
+    this.#onChange?.({ type: 'deleted', sourceId, enabled: false })
   }
 
   #toConfig(row: SourceRow): SourceConfig {
@@ -383,3 +424,9 @@ export {
   crawlSourcePages,
   type CrawlSourcePagesInput,
 } from './crawl.js'
+export {
+  buildCaptureSummary,
+  maskedUrl,
+  type BuildCaptureSummaryInput,
+  type CapturedSampleInput,
+} from './capture.js'
