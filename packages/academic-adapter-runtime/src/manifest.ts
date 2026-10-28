@@ -47,6 +47,11 @@ const requestSchema = z
       .optional(),
     offsetStart: z.number().int().min(0).max(1_000_000).optional(),
     offsetStep: z.number().int().min(1).max(10_000).optional(),
+    /**
+     * Only assignments: 'course' runs the request once per course (default),
+     * 'source' runs it once and relies on row courseExternalId.
+     */
+    scope: z.enum(['course', 'source']).optional(),
   })
   .refine(
     (value) =>
@@ -80,6 +85,21 @@ export const adapterManifestSchema = z.object({
   courses: requestSchema,
   assignments: requestSchema,
   detail: requestSchema.optional(),
+}).superRefine((value, ctx) => {
+  if (value.courses.scope !== undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['courses', 'scope'],
+      message: 'scope is only supported on assignments',
+    })
+  }
+  if (value.detail?.scope !== undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['detail', 'scope'],
+      message: 'scope is only supported on assignments',
+    })
+  }
 })
 
 export type AdapterManifest = z.infer<typeof adapterManifestSchema>

@@ -518,52 +518,31 @@ class ManifestAdapter implements AcademicSourceAdapter {
     const offset = this.#manifest.utcOffsetMinutes ?? 0
     let truncatedAssignments = false
 
-    for (const course of loadedCourses.courses) {
-      if (truncatedAssignments) break
-      await client.delay()
-      let assignments
-      try {
-        assignments = await client.loadRows(this.#manifest.assignments, {
-          course,
-        })
-      } catch (error) {
-        if (error instanceof AdapterAuthError) throw error
-        warnings.push(`课程「${course.title}」作业读取失败：${messageOf(error)}`)
-        partial = true
-        continue
-      }
-      if (!assignments.complete) {
-        warnings.push(`课程「${course.title}」作业分页达到上限`)
-        partial = true
-      }
-      warnings.push(
-        ...diagnosticWarnings(
-          `课程「${course.title}」作业列表`,
-          this.#manifest.assignments,
-          assignments.diagnostics,
-          assignments.rows.length,
-        ),
-      )
-      for (const assignment of assignments.rows) {
+    const appendItems = async (
+      rows: Row[],
+      course: (typeof loadedCourses.courses)[number] | undefined,
+    ): Promise<void> => {
+      for (const assignment of rows) {
         if (items.length >= maxAssignments) {
           truncatedAssignments = true
           partial = true
-          break
+          return
         }
+        const label = course ? `课程「${course.title}」` : '来源'
         const externalItemId = requiredText(assignment, 'externalItemId')
         const title = requiredText(assignment, 'title')
         if (!externalItemId || !title) {
-          warnings.push(`课程「${course.title}」跳过缺少作业 ID/名称的条目`)
+          warnings.push(`${label}跳过缺少作业 ID/名称的条目`)
           continue
         }
         let detail: Row = {}
         if (this.#manifest.detail) {
           await client.delay()
           try {
-            const loaded = await client.loadRows(this.#manifest.detail, {
-              course,
-              assignment,
-            })
+            const loaded = await client.loadRows(
+              this.#manifest.detail,
+              course ? { course, assignment } : { assignment },
+            )
             detail = loaded.rows[0] ?? {}
             if (!loaded.rows[0]) {
               warnings.push(`作业「${title}」详情为空`)
@@ -596,11 +575,12 @@ class ManifestAdapter implements AcademicSourceAdapter {
           ? absoluteUrl(sourceUrlValue, client.baseUrl)
           : undefined
         const description = text(merged.description)
+        const courseExternalId =
+          requiredText(merged, 'courseExternalId') ?? course?.externalCourseId
         const normalized: NormalizedAcademicItem = {
           sourceId: this.sourceId,
           externalItemId,
-          courseExternalId:
-            requiredText(merged, 'courseExternalId') ?? course.externalCourseId,
+          ...(courseExternalId ? { courseExternalId } : {}),
           kind,
           title: requiredText(merged, 'title') ?? title,
           ...(description ? { description } : {}),
@@ -612,12 +592,65 @@ class ManifestAdapter implements AcademicSourceAdapter {
                 title: requiredText(merged, 'title') ?? title,
                 description,
                 due,
-                courseExternalId: course.externalCourseId,
+                courseExternalId: courseExternalId ?? '',
               }),
             )
             .digest('hex'),
         }
         items.push(normalized)
+      }
+    }
+
+    if (this.#manifest.assignments.scope === 'source') {
+      await client.delay()
+      try {
+        const assignments = await client.loadRows(this.#manifest.assignments, {})
+        if (!assignments.complete) {
+          warnings.push('作业分页达到上限')
+          partial = true
+        }
+        warnings.push(
+          ...diagnosticWarnings(
+            '作业列表',
+            this.#manifest.assignments,
+            assignments.diagnostics,
+            assignments.rows.length,
+          ),
+        )
+        await appendItems(assignments.rows, undefined)
+      } catch (error) {
+        if (error instanceof AdapterAuthError) throw error
+        warnings.push(`作业读取失败：${messageOf(error)}`)
+        partial = true
+      }
+    } else {
+      for (const course of loadedCourses.courses) {
+        if (truncatedAssignments) break
+        await client.delay()
+        let assignments
+        try {
+          assignments = await client.loadRows(this.#manifest.assignments, {
+            course,
+          })
+        } catch (error) {
+          if (error instanceof AdapterAuthError) throw error
+          warnings.push(`课程「${course.title}」作业读取失败：${messageOf(error)}`)
+          partial = true
+          continue
+        }
+        if (!assignments.complete) {
+          warnings.push(`课程「${course.title}」作业分页达到上限`)
+          partial = true
+        }
+        warnings.push(
+          ...diagnosticWarnings(
+            `课程「${course.title}」作业列表`,
+            this.#manifest.assignments,
+            assignments.diagnostics,
+            assignments.rows.length,
+          ),
+        )
+        await appendItems(assignments.rows, course)
       }
     }
     if (truncatedAssignments) {
@@ -747,9 +780,22 @@ function validateManifestStatic(manifest: AdapterManifest): ManifestIssue[] {
     vars: string[]
   }> = [
     { name: 'courses', request: manifest.courses, vars: [] },
-    { name: 'assignments', request: manifest.assignments, vars: ['course'] },
+    {
+      name: 'assignments',
+      request: manifest.assignments,
+      vars: manifest.assignments.scope === 'source' ? [] : ['course'],
+    },
     ...(manifest.detail
-      ? [{ name: 'detail', request: manifest.detail, vars: ['course', 'assignment'] }]
+      ? [
+          {
+            name: 'detail',
+            request: manifest.detail,
+            vars:
+              manifest.assignments.scope === 'source'
+                ? ['assignment']
+                : ['course', 'assignment'],
+          },
+        ]
       : []),
   ]
   for (const { name, request, vars } of requests) {

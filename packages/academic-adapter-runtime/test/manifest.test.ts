@@ -9,6 +9,7 @@ import {
   readJsonPath,
   regexSafetyError,
   renderManifestUrl,
+  replayManifest,
   type AdapterManifest,
 } from '../src/index.js'
 
@@ -82,6 +83,25 @@ describe('declarative manifest', () => {
         },
       }),
     ).toThrow()
+  })
+
+  it('limits source scope to assignments and rejects course templates there', async () => {
+    expect(() =>
+      parseManifest({
+        ...htmlManifest,
+        courses: { ...htmlManifest.courses, scope: 'source' },
+      }),
+    ).toThrow(/only supported on assignments/)
+
+    const report = await replayManifest(
+      {
+        ...htmlManifest,
+        assignments: { ...htmlManifest.assignments, scope: 'source' },
+      },
+      [],
+    )
+    expect(report.ok).toBe(false)
+    expect(report.errors.join(' ')).toMatch(/模板变量/)
   })
 
   it('extracts HTML rows and relative next links', () => {

@@ -267,6 +267,63 @@ function jsonSamples() {
 }
 
 describe('declarative adapter runtime', () => {
+  it('fetches source-scoped assignments once for every course', async () => {
+    const calls: string[] = []
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = new URL(String(input))
+      calls.push(url.pathname)
+      const body =
+        url.pathname === '/api/courses'
+          ? JSON.stringify({
+              data: [
+                { id: 'C1', code: 'CS101', title: 'Data Structures', term: '2026FA' },
+                { id: 'C2', code: 'MA101', title: 'Calculus', term: '2026FA' },
+              ],
+            })
+          : url.pathname === '/api/all-assignments'
+            ? JSON.stringify({
+                data: [
+                  { id: 'A1', title: 'HW1', courseId: 'C1' },
+                  { id: 'A2', title: 'HW2', courseId: 'C2' },
+                ],
+              })
+            : undefined
+      return body
+        ? new Response(body, { headers: { 'content-type': 'application/json' } })
+        : new Response('not found', { status: 404 })
+    }
+    const manifest = {
+      ...jsonManifest,
+      adapterId: 'demo-source-scope',
+      assignments: {
+        url: '/api/all-assignments',
+        responseType: 'json',
+        scope: 'source',
+        items: 'data',
+        fields: {
+          externalItemId: { path: 'id' },
+          title: { path: 'title' },
+          courseExternalId: { path: 'courseId' },
+        },
+      },
+      detail: undefined,
+    }
+    const registry = new ManifestRegistry()
+    registry.register(manifest)
+    const engine = createDeclarativeEngine(registry, {
+      fetchImpl,
+      resolveHost: publicResolver,
+      now: () => '2026-10-28T00:00:00.000Z',
+    })
+    const result = await engine
+      .createAdapter!({ sourceId: 'decl', config: configFor('demo-source-scope') })
+      .fetch({ credentials })
+
+    expect(result.completeness).toBe('full')
+    expect(result.items.map((item) => item.courseExternalId)).toEqual(['C1', 'C2'])
+    expect(calls.filter((path) => path === '/api/all-assignments')).toHaveLength(1)
+  })
+
   it('reads JSON courses, paginates assignments and normalizes details', async () => {
     const state = router()
     const engine = engineFor(jsonManifest, state)
