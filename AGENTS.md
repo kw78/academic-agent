@@ -168,7 +168,7 @@ docs/adr/                      # 架构决策记录
 
 声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、常量/模板、类型转换/默认值/必需字段诊断、`next`/页码/offset 分页、字段映射、允许主机与路径、总请求/行/字节/时长上限、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选流水线已实现：Agent 可调用只读 `academic_probe_source` 获取带 SHA-256 摘要的脱敏证据，生成 Manifest 并用显式样本离线回放；验证按 schema、字段契约、访问范围、样本回放分阶段报告，候选摘要包含允许主机/路径/数据类型/字段；候选保存与启用分开，只有 validated 版本可启用，且启用/注册需要可信授权。UI“连接”页提供快速添加、探测、候选列表、验证报告、启用/回滚，并在启用后创建/更新可同步的 declarative 数据源；同站点已有会话会在 Host 内复制，不返回秘密。CLI `adapter validate/register/activate/rollback` 同样可用。尚未实现 Host 直接调用模型生成、多页自动采样、任意 JavaScript 生成与沙箱执行。
 
-MVP 后能力（2026-10-28）：Host 统一返回数据源阶段与唯一下一步，同步失败分类为认证/网络/权限/结构/质量并给出建议；课程优先级保存于 `user_preferences` 并作为任务优先级之后的计划排序依据；任务页提供按课程的复习清单与带上下文 Agent 提示；`academic_probe_source` 支持同一主机内的额外 URL，并返回同站脚本与候选接口线索；CLI 支持带完整性/投影校验的独立目录恢复；`npm run benchmark` 记录 1k/10k 事项基线。仍未验证：Desktop 文件级 HMR/真实 Session、真实 BB 考试样本、JW 会话过期后的重新登录、新 UI 面板的真实浏览器点验。原始样本捕获与自动多页采样仍未实现。
+MVP 后能力（2026-10-28）：Host 统一返回数据源阶段与唯一下一步，同步失败分类为认证/网络/权限/结构/质量并给出建议；课程优先级保存于 `user_preferences` 并作为任务优先级之后的计划排序依据；任务页提供按课程的复习清单与带上下文 Agent 提示；`academic_probe_source` 支持同一主机内的额外 URL、同站脚本与候选接口线索，`capture=true` 时原始响应只进入 Host 内存样本存储并返回 `sampleId`，验证可直接使用 `sampleIds`，不把原始 body 交给模型；CLI 支持带完整性/投影校验的独立目录恢复；`npm run benchmark` 记录 1k/10k 事项基线。仍未验证：Desktop 文件级 HMR/真实 Session、真实 BB 考试样本、JW 会话过期后的重新登录、新 UI 面板的真实浏览器点验。自动多页发现仍未实现。
 
 架构测试矩阵进度：
 

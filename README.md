@@ -28,7 +28,7 @@ GitHub: <https://github.com/kw78/academic-agent>
 - 数据源状态已拆分为配置、认证、同步健康与 Adapter 就绪度；表单只允许 engine 声明的 `authKind` / `loginMode`。
 - **Blackboard 只读 Adapter 已接入**：`engine=blackboard` 复用浏览器会话读取课程/作业，支持预览后确认同步；真实会话已在临时库验证（2 门课程、7 个作业），不提交作业。
 - **声明式 Adapter Runtime 已落地**：`engine=declarative` 通过版本化 Manifest 驱动 HTML/JSON 提取、字段类型转换/默认值、`next`/页码/offset 分页和字段映射，并受请求数、行数、字节与时长限制；新网站优先加 Manifest，不新增 engine。
-- **AI 候选 Adapter 流水线已落地**：AI 可生成 Manifest 并用显式页面样本做离线回放；验证按 schema、字段契约、访问范围、样本回放分阶段报告，候选列表展示允许主机/路径/数据类型/字段；保存后需校验通过、显式启用才进入同步，支持版本启用/回滚；Agent 校验只读，注册/启用需要可信授权。
+- **AI 候选 Adapter 流水线已落地**：AI 可生成 Manifest，并用真实页面样本或 Host 捕获的 `sampleId` 做离线回放；原始响应的 body 只留在宿主内存（15 分钟 TTL），不进入模型上下文；验证按 schema、字段契约、访问范围、样本回放分阶段报告，候选列表展示允许主机/路径/数据类型/字段；保存后需校验通过、显式启用才进入同步，支持版本启用/回滚；Agent 校验只读，注册/启用需要可信授权。
 - **接入状态可解释**：Host 统一返回“待登录/已登录未验证/待首次同步/已启用/部分同步/失败”等阶段与唯一“下一步”；同步失败按认证、网络、权限、结构、质量分类并给出修复建议。
 - **用户控制扩展**：课程优先级持久化并作为计划排序的第二依据；任务页提供按课程分组的复习清单与带上下文的 Agent 入口。
 - **运维可恢复**：`backup`/`restore` 支持独立目录恢复、完整性检查与投影一致性校验；`npm run benchmark` 记录 1k/10k 事项基线。
@@ -234,7 +234,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 - **Gate 0/2–6 已完成**：类型检查、171 项测试、构建、DSH selftest、DSH Web UI 独立库同步、真实 BB/JW 平台闭环均已实测；详见 [docs/mvp-verification.md](docs/mvp-verification.md)。
 - **Gate 1**：DSH Web 已验证 UI/Host/同步；用户已在 Desktop 当前构建手工检查基本流程，未报告问题；文件级 HMR/完整生命周期专项仍未验证。
 - 系统凭据库当前为 Windows DPAPI；Credential Manager/其他 OS vault 是后续可替换实现。
-- **接入流程**：给定 HTTPS 网址后可登录、验证、只读探测；探测支持同一来源主机内的额外 URL、同站脚本与候选接口线索，Agent 可据此生成声明式 Manifest 候选，用户在“连接”页验证、启用/回滚。仍未实现任意站点全自动生成、多页自动采样或任意 JavaScript。
+- **接入流程**：给定 HTTPS 网址后可登录、验证、只读探测；探测支持同一来源主机内的额外 URL、同站脚本与候选接口线索，`capture=true` 可把真实响应存入 Host 临时样本并返回 `sampleId`，Agent 用 `sampleIds` 直接验证 Manifest，无需你手工导出 DOM/Network。用户在“连接”页确认启用/回滚。仍未实现任意站点全自动多页发现或任意 JavaScript。
 - **偏好与复习**：课程优先级、可用时间与任务预计时长已持久化；复习清单只基于已保存事项与任务，不生成成绩趋势或能力评分。
 - 真实 Blackboard 只读同步已接入并验证课程/作业/文件夹；当前账号无测试项样本，考试/测验仍以 fixture 验证。
 - **第二平台**：USTC 综合教务系统用 Manifest 真实同步考试表（1 门课程/1 个考试，重复同步 no-op）；课表、成绩、作业未覆盖，平台无 ICS 订阅，Manifest 暂不支持 XML。
