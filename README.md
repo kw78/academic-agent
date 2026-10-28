@@ -21,7 +21,7 @@ GitHub: <https://github.com/kw78/academic-agent>
 - 新增凭据连接 MVP：连接元数据与秘密分离，Windows DPAPI 加密存储，CLI 隐藏输入，Agent 工具无法读取凭据；DPAPI 受保护凭据同步已通过 E2E。
 - 常规同步、去重、提醒、基础规划**不调用 LLM**；Agent 只通过受控工具读取事实或提交命令。
 - M1（事件溯源内核）与 M2（fixture 数据源 + 调度 + 规划）已完成；M3 的 Agent 工具已完成。
-- **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，16 个工具注册成功，并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
+- **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，17 个工具注册成功，并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
 - 前端 UI 已验证（`packages/academic-dsh-ui`）：见 [前端验证记录](docs/frontend-verification.md)。
 - 数据源状态已拆分为配置、认证、同步健康与 Adapter 就绪度；表单只允许 engine 声明的 `authKind` / `loginMode`。
 - **Blackboard 只读 Adapter 已接入**：`engine=blackboard` 复用浏览器会话读取课程/作业，支持预览后确认同步；真实会话已在临时库验证（2 门课程、7 个作业），不提交作业。
@@ -109,7 +109,7 @@ dsh academic --json "hello"
 ```text
 [academic-host] loaded db=D:/project/classhelper/.data/dsh-academic.db
 [academic-planner] capability registered
-[academic-tools] tools=16 registered=true
+[academic-tools] tools=17 registered=true
 [academic-tools] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 
@@ -225,11 +225,11 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 ## 已知限制与后续
 
 - **M0 剩余**：profile 级 HMR、真实 Session 生命周期、DSH 用户审批适配器（当前 Agent 写入保持拒绝）。
-- **R4 未完成**：真实 LMS Adapter 尚未实现；安全凭据连接与通用浏览器会话已具备。提供 ICS/API 或授权会话后可继续，详见 [docs/real-sources.md](docs/real-sources.md)。
+- **R4 未完成**：真实 DSH Session 生命周期与文件级 HMR 仍需在实际桌面进程手工验收；真实平台接入状态详见 [docs/real-sources.md](docs/real-sources.md)。
 - 系统凭据库当前为 Windows DPAPI；Credential Manager/其他 OS vault 是后续可替换实现。
-- **P1 未做**：给定 URL 自动探索、生成/安装 Adapter 插件（Intent 明确不属于 MVP）。
-- **M4**：性能基准（Spec §20）、迁移演练、故障注入扩展。
-- 真实 LMS 尚未接入；当前使用 `fixture-lms`。
+- **接入流程**：给定 HTTPS 网址后可登录、验证、只读探测；Agent 可基于探测证据生成声明式 Manifest 候选，用户在“连接”页验证、启用/回滚。仍未实现任意站点全自动生成或任意 JavaScript。
+- **M4 剩余**：真实 DSH Session 与文件级 HMR 手工验收；更完整的故障注入扩展。性能基线（1000 事项）与备份恢复演练已记录在 docs/operations.md。
+- 真实 Blackboard 只读同步已接入并验证课程/作业/文件夹；当前账号无测试项样本，考试/测验仍以 fixture 验证。其他平台使用 `fixture-lms` 或声明式 Manifest。
 - Desktop profile 已安装 `@academic/dsh-plugin` 与 `@academic/dsh-ui`；DSH `web` profile 未改动。
 - `node:sqlite` 为实验性 API，升级 Node/DSH 时需重新验证。
 
@@ -241,4 +241,4 @@ npm test
 npm run build:dsh
 ```
 
-共 145 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态、Blackboard 只读解析/同步、声明式 Adapter、AI 候选校验/启用、同步重试/并发与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。
+共 152 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态、Blackboard 只读解析/同步、声明式 Adapter、AI 候选校验/启用、同步重试/并发与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。

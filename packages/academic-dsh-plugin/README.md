@@ -74,7 +74,7 @@ dsh academic --json "hello"
 ```text
 [academic-host] loaded db=D:/project/classhelper/.data/dsh-academic.db
 [academic-planner] capability registered
-[academic-tools] tools=16 registered=true
+[academic-tools] tools=17 registered=true
 [academic-tools] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 

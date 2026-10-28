@@ -65,7 +65,40 @@ ACADEMIC_DB=.data/academic.db npm run demo -- adapter list
 - 日志/错误消息不得包含 Cookie、Token、Authorization 或带敏感查询参数的 URL；UI 与 Agent 工具已做 URL 脱敏。
 - 诊断文件与数据库保留在本地 `.data/` 或 profile 目录；当前没有自动日志轮转，按需清理，保留期限由用户决定。
 
-## 7. 升级检查清单
+## 7. 性能基线
+
+本机 Node `v22.23.2`、内存 SQLite、关闭 WAL 以外的额外调优，1000 个事项、单课程、完整快照：
+
+| 操作 | 结果 |
+|---|---|
+| 首次同步（创建 1000 项） | 225 ms |
+| 相同快照重复同步（no-op） | 220 ms |
+| 查询 500 项（实际单页上限 200） | 1 ms |
+| 重建核心投影 | 39 ms |
+
+数字用于发现数量级回归，不是发布 SLA；真实平台耗时主要受页面数量和 `delayMs` 限制。长分页由 `maxContentPages` / `maxAssignments` 截断并标记 `partial`。
+
+## 8. 诊断文件与保留策略
+
+- 诊断 HTML、探测输出和临时数据库只放在 `.data/` 或 profile 的 `academic-agent/` 下，不进入仓库。
+- 建议保留期限：探测/调试输出 7 天；备份 30 天；`sync_runs` 与事件数据长期保留（由用户主动删除）。
+- 当前不自动轮转。清理示例（先确认目录内容，再执行；不要删除 `*.db`）：
+
+```bash
+find .data -maxdepth 2 -type f \( -name '*.html' -o -name '*.log' -o -name '*.txt' \) -mtime +7 -print
+find .data -maxdepth 2 -type f \( -name '*.html' -o -name '*.log' -o -name '*.txt' \) -mtime +7 -delete
+```
+
+- 备份文件超过保留期后由用户确认删除；删除前确认至少有一份可恢复快照。
+
+## 9. 数据删除
+
+- 删除网站会话/连接凭据：只删除 DPAPI 中的秘密，不删除已同步的课程、事项、任务与计划。
+- 归档数据源：停止调度与同步，保留历史学业数据。
+- 删除全部本地数据：退出 Host/桌面端，备份后删除 `$DSH_HOME/academic-agent/academic.db` 与凭据目录 `%LOCALAPPDATA%\\AcademicAgent\\vault`；此操作不可恢复。
+- 删除单个事项/课程请通过领域命令或后续 UI 提供；不得直接改 SQLite 业务表。
+
+## 10. 升级检查清单
 
 1. 备份数据库与 profile 配置。
 2. 固定/核对 DSH 版本（当前验证 `0.2.1-rc.3`）。
@@ -74,10 +107,11 @@ ACADEMIC_DB=.data/academic.db npm run demo -- adapter list
 5. 用独立测试数据库运行 `ACADEMIC_AGENT_SELFTEST=1 dsh academic --json "hello"`，确认 17 个工具、只读查询与写入拒绝。
 6. 桌面端重启后检查“学业”入口、Host 状态、后台作业与最近同步。
 
-## 8. 已知限制
+## 11. 已知限制
 
-- DNS 在请求前解析并校验，但未固定解析结果；DNS rebinding 为已知残余风险。
-- Blackboard 只覆盖课程与作业区直接列出的作业；考试/测验、文件夹分页、附件、成绩未覆盖。
+- DNS 解析结果已固定到实际连接；仍不支持显式 HTTP（需 `allowHttp`）与跨域 SSO 的细粒度域名授权。
+- Blackboard 覆盖课程、作业、考试/测验与文件夹分页；当前账号没有真实测试项样本，考试/测验仍以 fixture 验证；附件、成绩、提交历史未覆盖。
 - 声明式 Runtime 只支持 GET、CSS/JSON path 与 regex/trim；XPath、复杂字段转换与任意脚本沙箱未实现。
-- DSH 尚无用户审批 UI；Agent 的写入/启用工具会被拒绝，需通过 CLI 或后续审批适配器授权。
+- 候选生成由 DSH Agent 完成，Host 不直接调用模型；样本需显式提供，未实现多页自动采样。
+- DSH 候选审批在“连接”页完成；Agent 的注册/启用工具仍需要可信宿主逐次授权，没有通用审批弹窗或文件级 HMR 验收。
 - 本机 Desktop 占用默认数据库时，不应再启动使用同一数据库的第二个 Host。

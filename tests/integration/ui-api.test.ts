@@ -413,6 +413,43 @@ describe('academic UI host API', () => {
         active: '1.0.0',
       })
     }
+
+    const itemsBefore = await app.store.queries.listAcademicItems({ status: 'all' })
+    const eventsBefore = (
+      app.store.database
+        .prepare('SELECT COUNT(*) AS count FROM domain_events')
+        .get() as { count: number }
+    ).count
+    const nextVersion = { ...manifest, version: '1.1.0' }
+    expect(
+      await api.registerAdapterCandidate({
+        manifest: nextVersion,
+        samples,
+      }),
+    ).toMatchObject({ ok: true })
+    expect(
+      await api.activateAdapterCandidate({
+        adapterId: 'auto-demo',
+        version: '1.1.0',
+      }),
+    ).toMatchObject({ ok: true })
+    const rolledBack = await api.rollbackAdapterCandidate({
+      adapterId: 'auto-demo',
+    })
+    expect(rolledBack).toMatchObject({ ok: true, value: { version: '1.0.0' } })
+    expect(app.sources.get('adapter-auto-demo')?.config).toMatchObject({
+      manifestVersion: '1.0.0',
+    })
+    expect(
+      (await app.store.queries.listAcademicItems({ status: 'all' })).items,
+    ).toEqual(itemsBefore.items)
+    expect(
+      (
+        app.store.database
+          .prepare('SELECT COUNT(*) AS count FROM domain_events')
+          .get() as { count: number }
+      ).count,
+    ).toBe(eventsBefore)
   })
 
   it('rejects malformed requests with a validation error, not a fake success', async () => {
