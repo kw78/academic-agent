@@ -3405,6 +3405,37 @@ function ConnectionsPage({ ctx, active }) {
     action.notice && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) }),
     !data && state.loading && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(LoadingLine, { children: "\u6B63\u5728\u8BFB\u53D6\u6570\u636E\u6E90\u2026" }),
     data && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        Section,
+        {
+          title: "\u6DFB\u52A0\u5E73\u53F0",
+          subtitle: "\u5148\u914D\u7F6E\u5E73\u53F0\u94FE\u63A5\u5E76\u5B8C\u6210\u767B\u5F55\uFF1B\u540E\u7EED\u9A8C\u8BC1\u3001\u9884\u89C8\u548C\u540C\u6B65\u90FD\u4EE5\u8FD9\u91CC\u4E3A\u5165\u53E3",
+          children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(QuickAdd, { ctx, data, onCreated: refresh })
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+        Section,
+        {
+          title: "\u6570\u636E\u6E90",
+          subtitle: "\u6570\u636E\u5E93\u4E2D\u7684 source \u914D\u7F6E + \u901A\u7528 engine\uFF1B\u51ED\u636E\u4E0E\u72B6\u6001\u5206\u5F00\u4FDD\u5B58",
+          children: [
+            data.sources.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u6570\u636E\u6E90", children: "\u5728\u4E0A\u65B9\u586B\u5199\u5E73\u53F0\u7F51\u5740\u6DFB\u52A0\u6570\u636E\u6E90\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-source-grid", children: data.sources.map((source) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              SourceCard,
+              {
+                ctx,
+                source,
+                timeZone,
+                refresh
+              },
+              source.sourceId
+            )) }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("details", { className: "ac-advanced", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("summary", { children: "\u9AD8\u7EA7\uFF1A\u624B\u52A8\u914D\u7F6E Engine \u4E0E JSON" }),
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(SourceForm, { ctx, data, onCreated: refresh })
+            ] })
+          ]
+        }
+      ),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Section, { title: "\u8BFE\u7A0B", subtitle: "\u8BFE\u7A0B\u8EAB\u4EFD\u4E0E\u5916\u90E8\u6765\u6E90\u5206\u5F00\u4FDD\u5B58", children: [
         /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
           "form",
@@ -3468,30 +3499,6 @@ function ConnectionsPage({ ctx, active }) {
           }
         )
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
-        Section,
-        {
-          title: "\u6570\u636E\u6E90",
-          subtitle: "\u6570\u636E\u5E93\u4E2D\u7684 source \u914D\u7F6E + \u901A\u7528 engine\uFF1B\u51ED\u636E\u4E0E\u72B6\u6001\u5206\u5F00\u4FDD\u5B58",
-          children: [
-            data.sources.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u6570\u636E\u6E90", children: "\u5728\u4E0B\u65B9\u9009\u62E9 engine \u5E76\u6DFB\u52A0\u6570\u636E\u6E90\u914D\u7F6E\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-source-grid", children: data.sources.map((source) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-              SourceCard,
-              {
-                ctx,
-                source,
-                timeZone,
-                refresh
-              },
-              source.sourceId
-            )) }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(QuickAdd, { ctx, data, onCreated: refresh }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("details", { className: "ac-advanced", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("summary", { children: "\u9AD8\u7EA7\uFF1A\u624B\u52A8\u914D\u7F6E Engine \u4E0E JSON" }),
-              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(SourceForm, { ctx, data, onCreated: refresh })
-            ] })
-          ]
-        }
-      ),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(CandidatePanel, { ctx, active, onChanged: refresh }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(WebSessionPanel, { ctx }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Section, { title: "\u540C\u6B65\u8BB0\u5F55", subtitle: "\u5931\u8D25\u4E0D\u4F1A\u6E05\u7A7A\u5DF2\u6709\u5B66\u4E1A\u6570\u636E", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(SyncRunTable, { runs: data.syncRuns, timeZone }) })
