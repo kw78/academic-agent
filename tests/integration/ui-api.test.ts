@@ -335,6 +335,10 @@ describe('academic UI host API', () => {
         ],
       }),
     )
+    await app.connections.verify(
+      sessionConnection.connectionId,
+      async () => ({ ok: true }),
+    )
 
     const manifest = {
       schemaVersion: 1,
@@ -403,6 +407,7 @@ describe('academic UI host API', () => {
       .list()
       .find((connection) => connection.sourceId === 'adapter-auto-demo')
     expect(copied?.hasCredential).toBe(true)
+    expect(copied?.status).toBe('connected')
     expect(JSON.stringify(activated.value)).not.toContain('copied-session')
 
     const listed = await api.adapterCandidates({})

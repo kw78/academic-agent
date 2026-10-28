@@ -777,6 +777,11 @@ export async function createAcademicApp(
         if (record.sourceId !== sourceId) {
           throw new Error('Connection does not belong to the requested source')
         }
+        if (source.authKind !== 'none' && record.status !== 'connected') {
+          throw new Error(
+            '请先验证连接；未验证会话不能进入正式同步',
+          )
+        }
         credentials = await connections.openCredential(connectionId, sourceId)
         connection = { connectionId, credentials: connections }
       } else if (source.authKind !== 'none') {

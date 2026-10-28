@@ -743,8 +743,7 @@ async function ensureCandidateSource(
           (connection) =>
             connection.sourceId === loginSource.sourceId &&
             connection.hasCredential &&
-            (connection.status === 'connected' ||
-              connection.status === 'configured'),
+            connection.status === 'connected',
         )
     : undefined
   if (loginSource && loginConnection) {
@@ -764,9 +763,13 @@ async function ensureCandidateSource(
           authKind: 'token',
         })
       await app.connections.setSecret(target.connectionId, secret)
+      // The source session was verified and the host scope already matched.
+      await app.connections.verify(target.connectionId, async () => ({ ok: true }))
     } catch {
       warning = '已有会话无法复制；请在该数据源上重新登录'
     }
+  } else if (loginSource && loginConnection === undefined) {
+    warning = '请先验证原会话，再启用候选'
   } else {
     warning = '请在该数据源上完成登录后再同步'
   }

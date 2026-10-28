@@ -378,6 +378,10 @@ describe('declarative adapter runtime', () => {
       connection.connectionId,
       await jwCredentials.getSecret(),
     )
+    await expect(
+      app.syncSource('jw', connection.connectionId),
+    ).rejects.toThrow(/验证连接/)
+    await app.connections.verify(connection.connectionId, async () => ({ ok: true }))
     const preview = await app.previewSourceSync('jw', connection.connectionId)
     expect(preview.counts.create).toBe(2)
     const first = await app.syncSource('jw', connection.connectionId)
@@ -424,6 +428,7 @@ describe('declarative adapter runtime', () => {
       authKind: 'token',
     })
     await app.connections.setSecret(connection.connectionId, await credentials.getSecret())
+    await app.connections.verify(connection.connectionId, async () => ({ ok: true }))
 
     const preview = await app.previewSourceSync('decl', connection.connectionId)
     expect(preview.counts.create).toBe(3)
@@ -481,6 +486,7 @@ describe('declarative adapter runtime', () => {
       authKind: 'token',
     })
     await app.connections.setSecret(connection.connectionId, await credentials.getSecret())
+    await app.connections.verify(connection.connectionId, async () => ({ ok: true }))
     const summary = await app.syncSource('decl', connection.connectionId)
     expect(summary.created).toBe(3)
   })

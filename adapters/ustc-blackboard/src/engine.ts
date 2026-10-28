@@ -413,7 +413,7 @@ export function createBlackboardEngine(
       id: 'blackboard',
       displayName: 'Blackboard Learn',
       description:
-        'Blackboard Learn 只读同步：复用浏览器会话，读取课程、作业、考试与测验；不提交作业，不读取附件与成绩。',
+        'Blackboard Learn 只读同步：读取课程、作业、考试与测验；不提交作业，不读取附件与成绩。考试/测验解析已用 fixture 验证，当前真实账号暂无测试项样本。',
       supportsSync: true,
       supportsLogin: true,
       supportsVerify: true,

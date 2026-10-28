@@ -123,6 +123,8 @@ function SourceCard({
   const connection = source.connection
   const browserLogin = source.canLogin && source.loginMode === 'browser'
   const manualCredential = source.authKind !== 'none' && !browserLogin
+  const needsVerification =
+    source.authKind !== 'none' && source.authentication !== 'verified'
   const nextStep = !browserLogin && manualCredential && !connection?.hasCredential
     ? '下一步：提交凭据'
     : connection === undefined && source.canLogin
@@ -392,10 +394,19 @@ function SourceCard({
         <button
           type="button"
           className="ac-button"
-          disabled={!source.syncAvailable || action.pending !== undefined}
+          disabled={
+            !source.syncAvailable ||
+            needsVerification ||
+            action.pending !== undefined
+          }
+          title={needsVerification ? '请先验证连接' : undefined}
           onClick={() => void action.run('sync', sync, '同步完成')}
         >
-          {action.pending === 'sync' ? '同步中…' : '立即同步'}
+          {action.pending === 'sync'
+            ? '同步中…'
+            : needsVerification
+              ? '先验证连接'
+              : '立即同步'}
         </button>
         {connection && source.canVerify && (
           <button

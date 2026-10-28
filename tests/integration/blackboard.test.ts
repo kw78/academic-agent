@@ -235,6 +235,7 @@ describe('Blackboard read-only engine', () => {
       authKind: 'token',
     })
     await app.connections.setSecret(connection.connectionId, await credentials.getSecret())
+    await app.connections.verify(connection.connectionId, async () => ({ ok: true }))
 
     const preview = await app.previewSourceSync('bb', connection.connectionId)
     expect(preview.counts).toEqual({

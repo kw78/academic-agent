@@ -63,6 +63,32 @@ describe('browser-session engine verification', () => {
     expect(result.message).toMatch(/登录页/)
   })
 
+  it('does not treat a login link in an authenticated page as expiry', async () => {
+    const engine = createBrowserSessionEngine({
+      fetchImpl: async () =>
+        new Response(
+          '<html><head><title>综合教务系统</title></head><body><a href="/login">退出</a><div>课程</div></body></html>',
+          { status: 200, headers: { 'content-type': 'text/html' } },
+        ),
+      resolveHost: publicResolver,
+    })
+    expect(await engine.verify!({ sourceId: 'source-1', config }, secret)).toEqual({
+      ok: true,
+    })
+
+    const loginPage = createBrowserSessionEngine({
+      fetchImpl: async () =>
+        new Response('<html><head><title>登录</title></head><body></body></html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        }),
+      resolveHost: publicResolver,
+    })
+    expect(
+      await loginPage.verify!({ sourceId: 'source-1', config }, secret),
+    ).toMatchObject({ ok: false })
+  })
+
   it('fails closed for legacy unscoped secrets and private DNS', async () => {
     const privateEngine = createBrowserSessionEngine({
       fetchImpl: async () => {

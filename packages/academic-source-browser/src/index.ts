@@ -180,9 +180,21 @@ async function verifySession(
       ...(resolveHost ? { resolveHost } : {}),
       ...(timeoutMs ? { timeoutMs } : {}),
     })
+    const title = (
+      /<title[^>]*>([\s\S]*?)<\/title>/i.exec(result.body)?.[1] ?? ''
+    )
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    const loginForm = /name=["']login["']|id=["']loginForm["']/i.test(
+      result.body.slice(0, 20_000),
+    )
     const loggedOut =
+      /\/login|\/signin|\/cas\/login/i.test(result.finalUrl) ||
+      /登录|sign in|log in/i.test(title) ||
       matchesAny(config.loggedOutPatterns ?? [], result.finalUrl) ||
-      matchesAny(config.loggedOutPatterns ?? [], result.body)
+      matchesAny(config.loggedOutPatterns ?? [], title) ||
+      loginForm
     return loggedOut
       ? { ok: false, message: '会话已失效或被重定向到登录页' }
       : { ok: true }
