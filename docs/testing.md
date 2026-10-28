@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**174 项测试通过**（35 个测试文件）。
+当前基线：**180 项测试通过**（35 个测试文件）。
 
 ## 分层
 
@@ -146,6 +146,13 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 - 真实验证：`jw.ustc.edu.cn` 使用应用登录会话完成候选注册→启用→自动建源→预览→同步→重复 no-op，写入 1 个真实考试；课表/成绩/作业未覆盖。
 - 会话闸门：`declarative.test.ts` 断言已保存但未验证的连接不能正式同步；`source-browser.test.ts` 断言已认证页面里的 `/login` 链接不会被误判为会话失效，真正的登录页仍被拒绝。
 
+## 个人数据编辑与恢复
+
+- `tests/integration/ui-api.test.ts`：课程编辑学期/代码/名称；删除课程后事项与关联任务归档；投影重建后 `deleted`/`archived` 状态等价；课程、事项、任务分别恢复；任务标题/截止/优先级/时长更新。
+- `tests/integration/ui-api.test.ts`：数据源编辑非敏感配置；归档后仍出现在连接列表并可恢复；彻底删除后 source/连接/凭据消失，已同步课程仍在。
+- `tests/integration/migrations.test.ts`：0013 迁移在保留旧课程数据的同时新增 `deleted` 列。
+- `tests/unit/ui-view.test.ts`：课程 `deleted`、任务 `archived` 字段的类型与视图映射。
+
 ## 稳定性与运维
 
 - `tests/integration/sync-concurrency.test.ts`：同一 source 并发同步被拒绝；课程发现瞬时失败有限重试。
@@ -159,8 +166,9 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 ## AI 候选 Adapter
 
 - `packages/academic-adapter-runtime/test/candidate.test.ts`：离线样本回放、无效样本失败、候选持久化、validated 才能启用、版本回滚、失败候选保持 inactive；不安全正则与 HTTP Manifest 在回放前拒绝。
-- `tests/integration/adapter-candidate-tools.test.ts`：Agent 校验只读；注册/启用无授权被拒；可信授权后注册并启用；网页提示注入不能授予权限。
-- `tests/integration/declarative.test.ts`：候选注册 → 启用 → declarative source 同步 3 条事项。
+- `tests/integration/adapter-candidate-tools.test.ts`：Agent 校验只读；无写权限可暂存候选但启用仍被拒；可信授权后启用；提供宿主激活回调时走统一路径；网页提示注入不能授予权限。
+- `tests/integration/declarative.test.ts`：候选注册 → 启用 → declarative source 同步 3 条事项；`assignments.scope=source` 只请求一次并保留行内课程归属；`scope` 用于 courses/detail 或 source 级 URL 引用 `{{course.*}}` 会被拒绝。
+- 证据分层：样本回放只证明给定样本可提取；真实预览、真实同步、重复 no-op 需要单独执行，不能互相替代。UI 的验证结果明确标注“未做真实同步”。
 - `tests/integration/ui-api.test.ts`：UI API 注册/验证候选并启用，自动创建 `adapter-<id>` declarative 数据源；同站点浏览器会话在 Host 内复制到新连接，响应不含会话秘密。
 
 ## 统一接入与探测
@@ -242,7 +250,7 @@ ACADEMIC_DB=.data/demo.db npm run demo
 ## 已知测试边界
 
 - DSH 已完成 bundle 加载、真实 ToolRegistry 工具注册与执行、带 DeepSeek 模型的工具调用；Cordis 文件级 HMR、真实 Session 生命周期与审批 UI 尚未验证。
-- 性能基线（Spec §20，例如 1000 事项 P95、10000 事件重建）尚未做正式基准。
+- 性能基线由 `npm run benchmark` 记录（1k/10k 事项的同步、查询与投影重建）；数字见 [operations.md](operations.md)，不是发布 SLA。
 - Blackboard 已有真实只读 Adapter 与真实会话同步记录（2 门课程/7 个作业），但考试、测验、文件夹分页、附件、成绩与限流未覆盖；其余平台只有 fixture 与声明式样本。详见 [real-sources.md](real-sources.md)。
 - 系统凭据库当前为 Windows DPAPI；Credential Manager 与其他 OS vault 作为后续 CredentialVault 实现。
 - `node:sqlite` 为实验性 API；若升级 Node 需要重新验证。

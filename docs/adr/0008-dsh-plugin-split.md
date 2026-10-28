@@ -14,7 +14,7 @@
   - `host` 创建 Event Store、Scheduler、Dispatcher、Notification、Connector，并在 `ctx.effect` 中启动/关闭。
   - host 不注册 Planner 能力；能力生命周期交给独立插件。
 - `planner` 插件注入 `academicApp`，在自身 effect 中注册/释放 Planner 能力。卸载后已有计划保持可查询，新规划请求不可用。
-- `tools` 插件注入 `academicApp` 与 `tools`，在自身 effect 中注册 6 个工具并返回 disposer。卸载即 Agent Bridge 卸载。
+- `tools` 插件注入 `academicApp` 与 `tools`，在自身 effect 中注册全部学术工具（当前 17 个）并返回 disposer。卸载即 Agent Bridge 卸载。
 - Cordis service 暴露 `appReady: Promise<AcademicApp>` 而不是通过代理调用带私有字段的方法，避免服务代理绑定问题。
 - bundle patch 插入三行：
   `academic-host` → `academic-planner` → `academic-tools`。
@@ -28,10 +28,10 @@
   - 重载 tools/planner 恢复；
   - host 卸载关闭 app。
 - 本机 DSH `0.2.1-rc.3` 实测输出：
-  `[academic-host] loaded`、`[academic-planner] capability registered`、`[academic-tools] tools=6 registered=true`，退出时 `capability released`。
+  `[academic-host] loaded`、`[academic-planner] capability registered`、`[academic-tools] tools=17 registered=true`，退出时 `capability released`。
 
 ## 代价与后续
 
-- profile 级 HMR/禁用行后的自动卸载尚未实测；目前通过独立 Cordis fiber 测试与重启验证。
+- profile 级禁用/启用已在 DSH Web 与 Desktop 实测（入口消失/恢复，后台作业继续）；文件级 HMR/真实 Session 生命周期仍未验证。
 - tools 与 planner 依赖 host 服务；host 卸载会级联卸载它们，这是预期行为。
 - 未来 Connector/Notification 也可按相同方式拆为独立 fiber，但普通 Adapter 不必成为 Cordis 插件。
