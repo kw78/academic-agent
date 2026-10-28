@@ -1971,6 +1971,14 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       return ok({
         availability: mapAvailability(availability),
         preferences: await buildPreferencesView(app),
+        capabilities: app.registry.list().map((entry) => ({
+          id: entry.id,
+          kind: entry.kind,
+          version: entry.version,
+          providerPlugin: entry.providerPlugin,
+          capabilities: [...entry.capabilities],
+          requiredPermissions: [...entry.requiredPermissions],
+        })),
         reminders,
         sync: {
           jobId: FIXTURE_SYNC_JOB_ID,

@@ -857,6 +857,11 @@ describe('generic DB-backed source login', () => {
     expect(before.ok).toBe(true)
     if (!before.ok) return
     expect(before.value.preferences.courses).toHaveLength(1)
+    expect(
+      before.value.capabilities.some(
+        (entry) => entry.id === 'academic.planner.basic',
+      ),
+    ).toBe(true)
     const courseId = before.value.preferences.courses[0]?.courseId
     expect(courseId).toBeTruthy()
     if (!courseId) return

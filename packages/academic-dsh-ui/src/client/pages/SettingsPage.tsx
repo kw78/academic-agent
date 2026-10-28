@@ -449,6 +449,34 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
             </div>
           </Section>
 
+          <Section
+            title="已加载能力"
+            subtitle="只读；启停由插件生命周期控制，停用后相关操作返回 CAPABILITY_UNAVAILABLE"
+          >
+            {data.capabilities.length === 0 ? (
+              <EmptyState title="没有已注册能力">检查 Host 插件是否加载。</EmptyState>
+            ) : (
+              <ul className="ac-list">
+                {data.capabilities.map((entry) => (
+                  <li key={entry.id} className="ac-list-row">
+                    <div>
+                      <strong>
+                        {entry.id} · {entry.version}
+                      </strong>
+                      <span className="ac-muted">
+                        {entry.kind} · 提供方 {entry.providerPlugin}
+                      </span>
+                      <span className="ac-muted">
+                        能力：{entry.capabilities.join('、') || '—'} · 权限：
+                        {entry.requiredPermissions.join('、') || '无'}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+
           <Section title="界面偏好" subtitle="只保存非敏感 UI 偏好">
             <p className="ac-muted">
               当前页面和筛选等纯界面偏好保存在本机浏览器；课程、任务、计划、可用时间与凭据不会保存在浏览器存储。

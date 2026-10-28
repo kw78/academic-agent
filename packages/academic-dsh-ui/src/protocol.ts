@@ -340,9 +340,19 @@ export interface UpdatePreferencesRequest {
   coursePriorities: Record<string, number>
 }
 
+export interface CapabilityView {
+  id: string
+  kind: string
+  version: string
+  providerPlugin: string
+  capabilities: string[]
+  requiredPermissions: string[]
+}
+
 export interface SettingsView {
   availability: AvailabilityView
   preferences: PreferencesView
+  capabilities: CapabilityView[]
   reminders: { enabled: boolean; thresholdsHours: number[]; updatedAt: string }
   sync: {
     jobId: string
