@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**108 项测试通过**（23 个测试文件）。
+当前基线：**117 项测试通过**（24 个测试文件）。
 
 ## 分层
 
@@ -101,6 +101,19 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 - `tests/integration/web-sessions.test.ts` 覆盖通用网站会话：Cookie 不进入 SQLite、仅同域 fetch、删除会话。
 - 真实网站登录需要人工完成登录与验证码，属于桌面手工验收，不在自动化测试中绕过验证码。
 - 测试不使用真实账号、密码或会话。
+
+## M0 会话抓取安全
+
+`tests/integration/web-sessions.test.ts` 覆盖：
+
+- Cookie 按 domain/path/secure/expiry 选择，跨站 Cookie 拒绝，CRLF 注入拒绝；
+- 每一跳重定向都重新校验主机，跨域跳转、HTTPS→HTTP 降级和超限重定向均失败；
+- 回环、私网、链路本地、云元数据地址和解析到私网的域名被阻断；
+- 流式响应字节上限、请求超时；登录 URL 查询参数不进入存储/列表，错误中的 URL 被脱敏。
+
+`tests/integration/source-browser.test.ts` 覆盖 browser-session 验证复用同一套安全抓取：按路径发送 Cookie、识别登录页跳转，旧格式未分域会话直接失败并要求重新登录。
+
+已知边界：DNS 在请求前解析并校验，但尚未通过自定义 dispatcher 固定解析结果，DNS rebinding 仍是后续加固项。
 
 ## DSH Desktop
 

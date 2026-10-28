@@ -212,6 +212,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 - 断开连接默认保留已同步数据；删除凭据不删除领域事件；认证失败停止同步并提示重新认证。
 - 外部网页/教学资料视为不可信输入；Agent 输出不会未经校验成为权威事实。
 - 备份使用 SQLite `VACUUM INTO` 生成一致性快照；恢复后校验事件位置并可按需重建投影。
+- 会话抓取按 Cookie 的 domain/path/secure/expiry 筛选，逐跳校验重定向，阻断回环、私网与云元数据地址，并限制超时、重定向次数和响应体字节数。
 - 默认不自动提交作业、不删除平台数据、不修改第三方账户。
 
 ## 已知限制与后续
@@ -233,4 +234,4 @@ npm test
 npm run build:dsh
 ```
 
-共 108 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。
+共 117 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。

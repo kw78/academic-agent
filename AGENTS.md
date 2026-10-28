@@ -175,7 +175,7 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（108 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（117 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 
@@ -185,7 +185,7 @@ P0 修复已验证：启动不覆盖调度配置；消费者重启续跑 checkpo
 
 凭据连接 MVP 已验证：连接元数据与秘密分离；Windows DPAPI 加密存储；fail-closed；验证/断开/删除凭据；认证失败停止同步并保留旧数据；source mismatch 拒绝；DB/事件/同步记录无明文；DPAPI 受保护凭据完成端到端同步。
 
-通用网站会话已实现：填写 URL 后宿主拉起 Edge/Chrome，用户点击页面右上角“完成登录”，应用只保存配置站点范围内的 Cookie 到 DPAPI；UI 的“网站登录”面板、CLI `web login/list/fetch/delete` 与 Agent 会话 fetch 工具已接入。存储/域名限制/不泄露 Cookie 有自动化测试；真实网站登录窗口仍需手工验收。
+通用网站会话已实现：填写 URL 后宿主拉起 Edge/Chrome，用户点击页面右上角“完成登录”，应用只保存配置站点范围内的 Cookie 到 DPAPI；UI 的“网站登录”面板、CLI `web login/list/fetch/delete` 与 Agent 会话 fetch 工具已接入。抓取按 Cookie 属性筛选、逐跳校验重定向、阻断私网/元数据地址，并限制超时、重定向次数和流式响应字节数；存储/域名限制/不泄露 Cookie 有自动化测试；真实网站登录窗口仍需手工验收。
 
 前端 UI 已验证（`packages/academic-dsh-ui`）：侧边栏“学业”入口、总览/任务/计划/连接/自动化/设置页面；任务完成、计划候选确认、锁定、可用时间保存、作业暂停/恢复、提醒已读均经 Host Remote API 生效；候选计划确认使用 Host 端 `previewId`，不信任客户端计划块；UI 不返回/保存 `credentialRef`，未实现真实 Adapter 时不显示认证表单。详细记录见 `docs/frontend-verification.md`。
 

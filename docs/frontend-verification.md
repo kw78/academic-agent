@@ -100,8 +100,9 @@ npm test
 - `tests/unit/ui-view.test.ts`：截止时间呈现、筛选、计划分组、状态映射、来源状态文案；
 - `tests/unit/ui-security.test.ts`：客户端源码不出现 `credentialRef`/`credential_ref`、`sessionStorage`、`indexedDB`、`fetch(`、`node:`；仅保存 UI tab 偏好；凭据状态在提交前清空；
 - `tests/integration/ui-api.test.ts`：Query API 读取、Command API 任务变更、候选/确认分离、防篡改确认、凭据引用不泄露、未支持 Adapter 拒绝认证、输入校验、作业暂停/恢复、可用时间与提醒设置、通知已读、同步结果。
+- `tests/integration/web-sessions.test.ts`、`source-browser.test.ts`：Cookie 作用域、逐跳重定向、SSRF、超时与流式响应上限。
 
-当前基线：108 项测试通过（23 个测试文件）。
+当前基线：117 项测试通过（24 个测试文件）。
 
 ## 未完成/未验证
 
