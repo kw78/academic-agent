@@ -14,6 +14,16 @@ export {
 export {
   createDeclarativeEngine,
   declarativeConfigSchema,
+  replayManifest,
   type DeclarativeConfig,
   type DeclarativeEngineOptions,
 } from './runtime.js'
+export {
+  ManifestStore,
+  type ManifestStoreOptions,
+  type StoredCandidate,
+} from './store.js'
+export {
+  AdapterCandidateService,
+  type AdapterCandidateServiceOptions,
+} from './candidate.js'

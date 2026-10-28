@@ -177,6 +177,23 @@ function engineFor(manifest: unknown, state: Router) {
   })
 }
 
+function jsonSamples() {
+  return [
+    { url: 'https://lms.example.edu/api/courses', body: fixture('courses-one.json') },
+    {
+      url: 'https://lms.example.edu/api/courses/C1/assignments',
+      body: fixture('assignments.json'),
+    },
+    {
+      url: 'https://lms.example.edu/api/courses/C1/assignments?page=2',
+      body: fixture('assignments-page2.json'),
+    },
+    { url: 'https://lms.example.edu/api/assignments/A1', body: fixture('detail-A1.json') },
+    { url: 'https://lms.example.edu/api/assignments/A2', body: fixture('detail-A2.json') },
+    { url: 'https://lms.example.edu/api/assignments/A3', body: fixture('detail-A3.json') },
+  ]
+}
+
 describe('declarative adapter runtime', () => {
   it('reads JSON courses, paginates assignments and normalizes details', async () => {
     const state = router()
@@ -282,5 +299,53 @@ describe('declarative adapter runtime', () => {
 
     const again = await app.previewSourceSync('decl', connection.connectionId)
     expect(again.counts.unchanged).toBe(3)
+  })
+
+  it('registers and activates an AI-style manifest candidate before syncing', async () => {
+    const state = router()
+    const registry = new ManifestRegistry()
+    const app = await createAcademicApp({
+      databasePath: ':memory:',
+      credentialVault: new InMemoryCredentialVault(),
+      manifestRegistry: registry,
+      sourceEngines: [
+        createDeclarativeEngine(registry, {
+          fetchImpl: state.fetchImpl,
+          resolveHost: publicResolver,
+          now: () => '2026-10-28T00:00:00.000Z',
+        }),
+      ],
+    })
+    cleanup.push(() => app.close())
+
+    const registered = await app.adapterCandidates.register(
+      jsonManifest,
+      jsonSamples(),
+    )
+    expect(registered.report.ok).toBe(true)
+    expect(registered.summary.status).toBe('validated')
+    expect(registry.get('demo-json')).toBeUndefined()
+
+    app.adapterCandidates.activate('demo-json', '1.0.0')
+    expect(registry.get('demo-json')?.version).toBe('1.0.0')
+
+    const config = configFor('demo-json')
+    app.sources.create({
+      sourceId: 'decl',
+      engine: 'declarative',
+      displayName: 'Declarative',
+      authKind: 'token',
+      loginMode: 'browser',
+      capabilities: ['academic.sync'],
+      config,
+    })
+    const connection = app.connections.create({
+      sourceId: 'decl',
+      displayName: 'Declarative',
+      authKind: 'token',
+    })
+    await app.connections.setSecret(connection.connectionId, await credentials.getSecret())
+    const summary = await app.syncSource('decl', connection.connectionId)
+    expect(summary.created).toBe(3)
   })
 })

@@ -5,8 +5,10 @@ import {
   AdapterTransientError,
   dueSchema,
   type AcademicSourceAdapter,
+  type AdapterCandidateReport,
   type AdapterFetchContext,
   type AdapterResult,
+  type AdapterSample,
   type CredentialAccess,
   type Due,
   type NormalizedAcademicItem,
@@ -30,6 +32,7 @@ import {
 import { extractPage, readJsonPath } from './extract.js'
 import {
   ManifestRegistry,
+  parseManifest,
   type AdapterManifest,
   type ManifestRequest,
 } from './manifest.js'
@@ -504,5 +507,180 @@ export function createDeclarativeEngine(
       if (!manifest) throw new Error(`Unknown manifest: ${config.manifestId}`)
       return new ManifestAdapter(manifest, context.sourceId, config, options)
     },
+  }
+}
+
+function hostAllowed(host: string, origins: string[]): boolean {
+  return origins.some((origin) => host === origin || host.endsWith(`.${origin}`))
+}
+
+function validateManifestStatic(manifest: AdapterManifest): string[] {
+  const errors: string[] = []
+  try {
+    const host = new URL(manifest.baseUrl).hostname
+    if (!hostAllowed(host, manifest.allowedOrigins)) {
+      errors.push(`baseUrl 主机不在 allowedOrigins：${host}`)
+    }
+  } catch {
+    errors.push('baseUrl 无效')
+  }
+
+  const requests: Array<{
+    name: string
+    request: ManifestRequest
+    vars: string[]
+  }> = [
+    { name: 'courses', request: manifest.courses, vars: [] },
+    { name: 'assignments', request: manifest.assignments, vars: ['course'] },
+    ...(manifest.detail
+      ? [{ name: 'detail', request: manifest.detail, vars: ['course', 'assignment'] }]
+      : []),
+  ]
+  for (const { name, request, vars } of requests) {
+    for (const match of request.url.matchAll(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g)) {
+      const root = match[1]?.split('.')[0]
+      if (!root || !vars.includes(root)) {
+        errors.push(`${name} URL 使用了不允许的模板变量：${match[1]}`)
+      }
+    }
+    try {
+      const resolved = new URL(request.url, manifest.baseUrl)
+      if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
+        errors.push(`${name} URL 只允许 http(s)`)
+      } else if (!allowHostInManifest(resolved.hostname, manifest)) {
+        errors.push(`${name} URL 主机不在 allowedOrigins：${resolved.hostname}`)
+      }
+    } catch {
+      errors.push(`${name} URL 无效`)
+    }
+    for (const [field, extractor] of Object.entries(request.fields)) {
+      if (request.responseType === 'html' && !extractor.selector) {
+        errors.push(`${name}.${field} 需要 selector`)
+      }
+      if (request.responseType === 'json' && !extractor.path) {
+        errors.push(`${name}.${field} 需要 path`)
+      }
+    }
+  }
+  return errors
+}
+
+function allowHostInManifest(host: string, manifest: AdapterManifest): boolean {
+  return hostAllowed(host, manifest.allowedOrigins)
+}
+
+function formatCandidateError(error: unknown): string {
+  if (error && typeof error === 'object' && 'issues' in error) {
+    const issues = (error as { issues?: Array<{ path: Array<string | number>; message: string }> })
+      .issues
+    if (Array.isArray(issues)) {
+      return issues
+        .map((issue) => `${issue.path.join('.') || 'manifest'}: ${issue.message}`)
+        .join('; ')
+    }
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Deterministic sample replay. Requires an explicit, fully covered sample set;
+ * it never hits the network and never executes generated code.
+ */
+export async function replayManifest(
+  input: unknown,
+  samples: AdapterSample[],
+  options: { now?: () => string; maxCourses?: number; maxAssignments?: number } = {},
+): Promise<AdapterCandidateReport> {
+  const testedAt = options.now?.() ?? new Date().toISOString()
+  let manifest: AdapterManifest
+  try {
+    manifest = parseManifest(input)
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [formatCandidateError(error)],
+      warnings: [],
+      courses: [],
+      items: [],
+      testedAt,
+    }
+  }
+
+  const errors = validateManifestStatic(manifest)
+  if (errors.length > 0) {
+    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt }
+  }
+
+  const sampleMap = new Map<string, AdapterSample>()
+  for (const sample of samples) {
+    try {
+      sampleMap.set(new URL(sample.url).toString(), sample)
+    } catch {
+      errors.push(`样本 URL 无效：${sample.url}`)
+    }
+  }
+  if (errors.length > 0) {
+    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt }
+  }
+
+  const fetchImpl: typeof fetch = async (request) => {
+    const key = new URL(String(request)).toString()
+    const sample = sampleMap.get(key)
+    if (!sample) return new Response('missing sample', { status: 404 })
+    const contentType =
+      sample.contentType ??
+      (sample.body.trimStart().startsWith('{') ||
+      sample.body.trimStart().startsWith('[')
+        ? 'application/json'
+        : 'text/html')
+    return new Response(sample.body, {
+      status: 200,
+      headers: { 'content-type': contentType },
+    })
+  }
+
+  const config: DeclarativeConfig = {
+    loginUrl: manifest.baseUrl,
+    authenticatedUrlPatterns: ['^https?://'],
+    cookieDomains: manifest.allowedOrigins,
+    manifestId: manifest.adapterId,
+    manifestVersion: manifest.version,
+    maxCourses: options.maxCourses ?? 50,
+    maxAssignments: options.maxAssignments ?? 200,
+    delayMs: 0,
+    timeoutMs: 5_000,
+  }
+
+  try {
+    const adapter = new ManifestAdapter(manifest, 'candidate', config, {
+      fetchImpl,
+      resolveHost: async () => [{ address: '93.184.216.34', family: 4 }],
+      ...(options.now ? { now: options.now } : {}),
+    })
+    const courses = await adapter.listCourses()
+    const result = await adapter.fetch()
+    if (courses.length === 0) {
+      errors.push('样本回放未识别到课程')
+    }
+    if (result.completeness !== 'full') {
+      errors.push('样本回放未完整覆盖所有请求；请补充样本')
+    }
+    return {
+      ok: errors.length === 0,
+      errors,
+      warnings: result.warnings,
+      courses,
+      items: result.items.map((item) => ({
+        ...(item.externalItemId ? { externalItemId: item.externalItemId } : {}),
+        title: item.title,
+        kind: item.kind,
+        due: item.due,
+        ...(item.sourceUrl ? { sourceUrl: item.sourceUrl } : {}),
+      })),
+      testedAt,
+    }
+  } catch (error) {
+    errors.push(`样本回放失败：${formatCandidateError(error)}`)
+    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt }
   }
 }

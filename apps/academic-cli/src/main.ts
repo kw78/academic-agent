@@ -1,7 +1,8 @@
 import { createInterface } from 'node:readline/promises'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import {
   newId,
+  type AdapterSample,
   type CommandResult,
   type ConnectionAuthKind,
   type ConnectionView,
@@ -695,6 +696,81 @@ async function runSourcePreview(app: AcademicApp, args: string[]): Promise<void>
   }
 }
 
+function readJsonFile(path: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as unknown
+  } catch (error) {
+    throw new Error(`无法读取 JSON ${path}：${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+function readSamples(path: string): AdapterSample[] {
+  const parsed = readJsonFile(path)
+  if (!Array.isArray(parsed)) throw new Error('样本文件必须是 JSON 数组')
+  return parsed as AdapterSample[]
+}
+
+async function runAdapterValidate(app: AcademicApp, args: string[]): Promise<void> {
+  const [manifestPath, samplesPath] = args
+  if (!manifestPath || !samplesPath) {
+    throw new Error('用法：adapter validate <manifest.json> <samples.json>')
+  }
+  const report = await app.adapterCandidates.validate(
+    readJsonFile(manifestPath),
+    readSamples(samplesPath),
+  )
+  console.log(
+    `候选校验：${report.ok ? '通过' : '失败'} · 课程 ${report.courses.length} · 事项 ${report.items.length}`,
+  )
+  for (const error of report.errors) console.log(`  ! ${error}`)
+  for (const warning of report.warnings) console.log(`  ~ ${warning}`)
+}
+
+async function runAdapterRegister(app: AcademicApp, args: string[]): Promise<void> {
+  const [manifestPath, samplesPath] = args
+  if (!manifestPath || !samplesPath) {
+    throw new Error('用法：adapter register <manifest.json> <samples.json>')
+  }
+  const result = await app.adapterCandidates.register(
+    readJsonFile(manifestPath),
+    readSamples(samplesPath),
+  )
+  console.log(
+    `候选已保存：${result.summary.adapterId}@${result.summary.version} · ${result.summary.status}`,
+  )
+  if (!result.report.ok) {
+    for (const error of result.report.errors) console.log(`  ! ${error}`)
+  }
+}
+
+function runAdapterList(app: AcademicApp): void {
+  const candidates = app.adapterCandidates.list()
+  console.log(`Adapter 候选（${candidates.length}）：`)
+  for (const candidate of candidates) {
+    const active =
+      app.manifestRegistry.get(candidate.adapterId)?.version === candidate.version
+    console.log(
+      `  [${candidate.adapterId}@${candidate.version}] ${candidate.displayName} · ${candidate.status}${
+        active ? ' · active' : ''
+      }`,
+    )
+  }
+}
+
+function runAdapterActivate(app: AcademicApp, args: string[]): void {
+  const [adapterId, version] = args
+  if (!adapterId || !version) throw new Error('用法：adapter activate <adapterId> <version>')
+  const candidate = app.adapterCandidates.activate(adapterId, version)
+  console.log(`已启用：${candidate.adapterId}@${candidate.version}`)
+}
+
+function runAdapterRollback(app: AcademicApp, args: string[]): void {
+  const [adapterId, version] = args
+  if (!adapterId) throw new Error('用法：adapter rollback <adapterId> [version]')
+  const candidate = app.adapterCandidates.rollback(adapterId, version)
+  console.log(`已回滚到：${candidate.adapterId}@${candidate.version}`)
+}
+
 async function runSourceSync(app: AcademicApp, args: string[]): Promise<void> {
   const { positional, flags } = parseArgs(args)
   const sourceId = positional[0]
@@ -878,6 +954,11 @@ function printHelp(): void {
   source login <sourceId>    使用 engine 登录流程，会话写入凭据库
   source preview <sourceId> [--connection ID]
   source sync <sourceId> [--connection ID]
+  adapter list
+  adapter validate <manifest.json> <samples.json>
+  adapter register <manifest.json> <samples.json>
+  adapter activate <adapterId> <version>
+  adapter rollback <adapterId> [version]
   source archive <sourceId>
   web login <url> [--label name]   打开浏览器登录并保存网站会话
   web list                         列出已保存的网站会话
@@ -976,6 +1057,17 @@ async function main(): Promise<void> {
         else if (subcommand === 'delete-credential') await runConnectionDeleteCredential(app, args[0])
         else if (subcommand === 'show') await runConnectionShow(app, args[0])
         else throw new Error('用法：connection list|add|connect|disconnect|delete-credential|show')
+        break
+      }
+
+      case 'adapter': {
+        const [subcommand, ...args] = rest
+        if (subcommand === 'list') runAdapterList(app)
+        else if (subcommand === 'validate') await runAdapterValidate(app, args)
+        else if (subcommand === 'register') await runAdapterRegister(app, args)
+        else if (subcommand === 'activate') runAdapterActivate(app, args)
+        else if (subcommand === 'rollback') runAdapterRollback(app, args)
+        else throw new Error('用法：adapter list|validate|register|activate|rollback')
         break
       }
 

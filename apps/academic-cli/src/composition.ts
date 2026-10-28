@@ -43,7 +43,9 @@ import {
 } from '@academic/adapter-fixture-lms'
 import { createBlackboardEngine } from '@academic/adapter-ustc-blackboard'
 import {
+  AdapterCandidateService,
   ManifestRegistry,
+  ManifestStore,
   createDeclarativeEngine,
 } from '@academic/adapter-runtime'
 import {
@@ -161,6 +163,8 @@ export interface AcademicApp {
   sources: SourceConfigStore
   sourceEngines: SourceEngineRegistry
   manifestRegistry: ManifestRegistry
+  manifestStore: ManifestStore
+  adapterCandidates: AdapterCandidateService
   connections: ConnectionManager
   webSessions: WebSessionStore
   replans: ReplanStore
@@ -328,6 +332,13 @@ export async function createAcademicApp(
   })
   const sourceEngines = new SourceEngineRegistry()
   const manifestRegistry = options.manifestRegistry ?? new ManifestRegistry()
+  const manifestStore = new ManifestStore({ db: store.database, clock })
+  const adapterCandidates = new AdapterCandidateService(
+    manifestStore,
+    manifestRegistry,
+    { now: () => clock.now() },
+  )
+  adapterCandidates.loadActive()
   const configuredEngines = options.sourceEngines ?? []
   const configuredIds = new Set(
     configuredEngines.map((engine) => engine.descriptor.id),
@@ -367,6 +378,7 @@ export async function createAcademicApp(
     sources,
     sourceEngines,
     webSessions,
+    adapterCandidates,
     allowWrites: options.agentWrites ?? false,
     ...(options.authorizeAgentWrite
       ? { authorizeWrite: options.authorizeAgentWrite }
@@ -591,6 +603,8 @@ export async function createAcademicApp(
     sources,
     sourceEngines,
     manifestRegistry,
+    manifestStore,
+    adapterCandidates,
     connections,
     webSessions,
     replans,

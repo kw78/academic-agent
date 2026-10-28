@@ -97,7 +97,7 @@ describe('R3 Cordis plugin lifecycle', () => {
       { logLoad: false, selfTest: false },
     )
     expect(app.registry.get(PLANNER_CAPABILITY_ID)).toBeDefined()
-    expect(fakeTools.definitions.size).toBe(12)
+    expect(fakeTools.definitions.size).toBe(16)
 
     await tools.dispose()
     expect(fakeTools.definitions.size).toBe(0)
@@ -117,7 +117,7 @@ describe('R3 Cordis plugin lifecycle', () => {
       { name: plannerName, inject: plannerInject, apply: applyPlanner },
       { log: false },
     )
-    expect(fakeTools.definitions.size).toBe(12)
+    expect(fakeTools.definitions.size).toBe(16)
     expect(app.registry.get(PLANNER_CAPABILITY_ID)).toBeDefined()
     await toolsReloaded.dispose()
     await plannerReloaded.dispose()
