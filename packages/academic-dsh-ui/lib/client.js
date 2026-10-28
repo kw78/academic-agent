@@ -2502,6 +2502,7 @@ function SourceCard({
   const connection = source.connection;
   const browserLogin = source.canLogin && source.loginMode === "browser";
   const manualCredential = source.authKind !== "none" && !browserLogin;
+  const needsVerification = source.authKind !== "none" && source.authentication !== "verified";
   const nextStep = !browserLogin && manualCredential && !connection?.hasCredential ? "\u4E0B\u4E00\u6B65\uFF1A\u63D0\u4EA4\u51ED\u636E" : connection === void 0 && source.canLogin ? "\u4E0B\u4E00\u6B65\uFF1A\u5B8C\u6210\u767B\u5F55" : source.authentication !== "verified" && source.authentication !== "not-required" && source.canVerify ? "\u4E0B\u4E00\u6B65\uFF1A\u9A8C\u8BC1\u8FDE\u63A5" : source.adapterReady ? "\u4E0B\u4E00\u6B65\uFF1A\u9884\u89C8\u540C\u6B65\u5E76\u786E\u8BA4\u5199\u5165" : "\u4E0B\u4E00\u6B65\uFF1A\u914D\u7F6E\u6216\u751F\u6210 Adapter\uFF08\u9AD8\u7EA7\u8BBE\u7F6E / Agent\uFF09";
   const runProbe = async () => {
     const result = await callApi(ctx, "probeSource", {
@@ -2759,9 +2760,10 @@ function SourceCard({
         {
           type: "button",
           className: "ac-button",
-          disabled: !source.syncAvailable || action.pending !== void 0,
+          disabled: !source.syncAvailable || needsVerification || action.pending !== void 0,
+          title: needsVerification ? "\u8BF7\u5148\u9A8C\u8BC1\u8FDE\u63A5" : void 0,
           onClick: () => void action.run("sync", sync, "\u540C\u6B65\u5B8C\u6210"),
-          children: action.pending === "sync" ? "\u540C\u6B65\u4E2D\u2026" : "\u7ACB\u5373\u540C\u6B65"
+          children: action.pending === "sync" ? "\u540C\u6B65\u4E2D\u2026" : needsVerification ? "\u5148\u9A8C\u8BC1\u8FDE\u63A5" : "\u7ACB\u5373\u540C\u6B65"
         }
       ),
       connection && source.canVerify && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(

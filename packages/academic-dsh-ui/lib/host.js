@@ -20764,7 +20764,7 @@ async function ensureCandidateSource(app, candidate) {
     (source) => source.sourceId !== sourceId && source.engine !== "fixture" && source.engine !== "declarative" && source.authKind !== "none" && configAllowsHost(source.config, host)
   );
   const loginConnection = loginSource ? app.connections.list().find(
-    (connection) => connection.sourceId === loginSource.sourceId && connection.hasCredential && (connection.status === "connected" || connection.status === "configured")
+    (connection) => connection.sourceId === loginSource.sourceId && connection.hasCredential && connection.status === "connected"
   ) : void 0;
   if (loginSource && loginConnection) {
     try {
@@ -20779,9 +20779,12 @@ async function ensureCandidateSource(app, candidate) {
         authKind: "token"
       });
       await app.connections.setSecret(target.connectionId, secret);
+      await app.connections.verify(target.connectionId, async () => ({ ok: true }));
     } catch {
       warning = "\u5DF2\u6709\u4F1A\u8BDD\u65E0\u6CD5\u590D\u5236\uFF1B\u8BF7\u5728\u8BE5\u6570\u636E\u6E90\u4E0A\u91CD\u65B0\u767B\u5F55";
     }
+  } else if (loginSource && loginConnection === void 0) {
+    warning = "\u8BF7\u5148\u9A8C\u8BC1\u539F\u4F1A\u8BDD\uFF0C\u518D\u542F\u7528\u5019\u9009";
   } else {
     warning = "\u8BF7\u5728\u8BE5\u6570\u636E\u6E90\u4E0A\u5B8C\u6210\u767B\u5F55\u540E\u518D\u540C\u6B65";
   }

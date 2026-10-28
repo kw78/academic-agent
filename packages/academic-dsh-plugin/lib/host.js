@@ -26898,7 +26898,11 @@ async function verifySession(config2, secret, fetchImpl, requestImpl, resolveHos
       ...resolveHost ? { resolveHost } : {},
       ...timeoutMs ? { timeoutMs } : {}
     });
-    const loggedOut = matchesAny(config2.loggedOutPatterns ?? [], result.finalUrl) || matchesAny(config2.loggedOutPatterns ?? [], result.body);
+    const title = (/<title[^>]*>([\s\S]*?)<\/title>/i.exec(result.body)?.[1] ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const loginForm = /name=["']login["']|id=["']loginForm["']/i.test(
+      result.body.slice(0, 2e4)
+    );
+    const loggedOut = /\/login|\/signin|\/cas\/login/i.test(result.finalUrl) || /登录|sign in|log in/i.test(title) || matchesAny(config2.loggedOutPatterns ?? [], result.finalUrl) || matchesAny(config2.loggedOutPatterns ?? [], title) || loginForm;
     return loggedOut ? { ok: false, message: "\u4F1A\u8BDD\u5DF2\u5931\u6548\u6216\u88AB\u91CD\u5B9A\u5411\u5230\u767B\u5F55\u9875" } : { ok: true };
   } catch (error62) {
     return {
@@ -27806,7 +27810,7 @@ function createBlackboardEngine(options = {}) {
     descriptor: {
       id: "blackboard",
       displayName: "Blackboard Learn",
-      description: "Blackboard Learn \u53EA\u8BFB\u540C\u6B65\uFF1A\u590D\u7528\u6D4F\u89C8\u5668\u4F1A\u8BDD\uFF0C\u8BFB\u53D6\u8BFE\u7A0B\u3001\u4F5C\u4E1A\u3001\u8003\u8BD5\u4E0E\u6D4B\u9A8C\uFF1B\u4E0D\u63D0\u4EA4\u4F5C\u4E1A\uFF0C\u4E0D\u8BFB\u53D6\u9644\u4EF6\u4E0E\u6210\u7EE9\u3002",
+      description: "Blackboard Learn \u53EA\u8BFB\u540C\u6B65\uFF1A\u8BFB\u53D6\u8BFE\u7A0B\u3001\u4F5C\u4E1A\u3001\u8003\u8BD5\u4E0E\u6D4B\u9A8C\uFF1B\u4E0D\u63D0\u4EA4\u4F5C\u4E1A\uFF0C\u4E0D\u8BFB\u53D6\u9644\u4EF6\u4E0E\u6210\u7EE9\u3002\u8003\u8BD5/\u6D4B\u9A8C\u89E3\u6790\u5DF2\u7528 fixture \u9A8C\u8BC1\uFF0C\u5F53\u524D\u771F\u5B9E\u8D26\u53F7\u6682\u65E0\u6D4B\u8BD5\u9879\u6837\u672C\u3002",
       supportsSync: true,
       supportsLogin: true,
       supportsVerify: true,
@@ -44047,6 +44051,11 @@ async function createAcademicApp(options) {
           if (!record2) throw new Error(`Connection not found: ${connectionId}`);
           if (record2.sourceId !== sourceId) {
             throw new Error("Connection does not belong to the requested source");
+          }
+          if (source.authKind !== "none" && record2.status !== "connected") {
+            throw new Error(
+              "\u8BF7\u5148\u9A8C\u8BC1\u8FDE\u63A5\uFF1B\u672A\u9A8C\u8BC1\u4F1A\u8BDD\u4E0D\u80FD\u8FDB\u5165\u6B63\u5F0F\u540C\u6B65"
+            );
           }
           credentials = await connections.openCredential(connectionId, sourceId);
           connection = { connectionId, credentials: connections };
