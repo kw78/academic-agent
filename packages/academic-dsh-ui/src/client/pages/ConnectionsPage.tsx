@@ -330,9 +330,6 @@ function SourceCard({
                 ))}
               </ul>
             )}
-            {probe.jsonPreview && (
-              <pre className="ac-config-details">{probe.jsonPreview}</pre>
-            )}
             {probe.warnings.map((warning) => (
               <p key={warning} className="ac-text-warn">
                 {warning}

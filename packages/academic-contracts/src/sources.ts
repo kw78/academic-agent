@@ -156,7 +156,6 @@ export interface SourceProbeEvidence {
   paginationLinks: SourceProbeLink[]
   formCount: number
   tableCount: number
-  jsonPreview?: string
   jsonShape?: string
   loginLike: boolean
   warnings: string[]

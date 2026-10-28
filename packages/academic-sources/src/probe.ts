@@ -164,11 +164,8 @@ function buildEvidence(
     paginationLinks,
     formCount: (result.body.match(/<form\b/gi) ?? []).length,
     tableCount: (result.body.match(/<table\b/gi) ?? []).length,
-    ...(contentType?.includes('json')
-      ? {
-          jsonPreview: result.body.slice(0, 2_000),
-          ...(jsonShapeText ? { jsonShape: jsonShapeText } : {}),
-        }
+    ...(contentType?.includes('json') && jsonShapeText
+      ? { jsonShape: jsonShapeText }
       : {}),
     loginLike: loginLikePage(result.finalUrl, result.body, patterns),
     warnings: result.truncated ? ['响应超过大小上限，仅分析前 512KB'] : [],

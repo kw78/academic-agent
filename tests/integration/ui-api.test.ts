@@ -457,6 +457,74 @@ describe('academic UI host API', () => {
     ).toBe(eventsBefore)
   })
 
+  it('probes JSON as structure only and never returns raw values', async () => {
+    const { app, api } = await setup({
+      probeResolveHost: async () => [
+        { address: '93.184.216.34', family: 4 },
+      ],
+      probeFetch: async () =>
+        new Response(
+          JSON.stringify({
+            student: {
+              name: '张三',
+              studentId: 'PB12345678',
+              email: 'zhangsan@example.edu',
+              access_token: 'secret-token-value',
+            },
+            courses: [{ code: 'CS101', title: 'Data Structures' }],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    })
+    app.sources.create({
+      sourceId: 'probe-json',
+      engine: 'browser-session',
+      displayName: 'Probe JSON',
+      authKind: 'token',
+      loginMode: 'manual',
+      config: {
+        loginUrl: 'https://lms.example.edu/login',
+        verifyUrl: 'https://lms.example.edu/api/me',
+        authenticatedUrlPatterns: ['^https://lms\\.example\\.edu/'],
+        cookieDomains: ['lms.example.edu'],
+      },
+    })
+    const connection = app.connections.create({
+      sourceId: 'probe-json',
+      displayName: 'Probe JSON',
+      authKind: 'token',
+    })
+    await app.connections.setSecret(
+      connection.connectionId,
+      JSON.stringify({
+        cookies: [
+          {
+            name: 'sid',
+            value: 'session-secret',
+            domain: 'lms.example.edu',
+            path: '/',
+          },
+        ],
+      }),
+    )
+    const probed = await api.probeSource({ sourceId: 'probe-json' })
+    expect(probed.ok).toBe(true)
+    if (!probed.ok) return
+    expect(probed.value.jsonShape).toContain('student:')
+    expect(probed.value.jsonShape).toContain('courses: array(1')
+    const serialized = JSON.stringify(probed.value)
+    for (const secret of [
+      '张三',
+      'PB12345678',
+      'zhangsan@example.edu',
+      'secret-token-value',
+      'Data Structures',
+    ]) {
+      expect(serialized).not.toContain(secret)
+    }
+    expect(serialized).not.toContain('jsonPreview')
+  })
+
   it('rejects malformed requests with a validation error, not a fake success', async () => {
     const { api } = await setup()
     const result = await api.createTask({})
