@@ -59,6 +59,7 @@ import type {
   PreviewPlanRequest,
   SettingsView,
   SourceIdRequest,
+  SourceDiagnosis,
   SourceProbeEvidence,
   SourceNextStep,
   SourceSecretRequest,
@@ -625,6 +626,79 @@ function sourceNextStep(source: SourceStatus): SourceNextStep {
   return { action: 'sync', label: '立即同步' }
 }
 
+function sourceDiagnosis(source: SourceStatus): SourceDiagnosis | undefined {
+  const run = source.lastSync
+  const message = [run?.errorMessage, source.connection?.lastError]
+    .filter((entry): entry is string => Boolean(entry))
+    .join('\n')
+  const haystack = `${message}\n${(run?.warnings ?? []).join('\n')}`
+
+  if (
+    run?.status === 'auth-required' ||
+    run?.errorCode === 'AUTH_REQUIRED' ||
+    source.authentication === 'expired' ||
+    source.authentication === 'rejected' ||
+    /会话.*(失效|过期)|重新登录|登录已失效/i.test(haystack)
+  ) {
+    return {
+      category: 'auth',
+      summary: '登录会话已失效或尚未验证',
+      suggestion: '重新登录并验证连接；已同步的学业数据会保留',
+    }
+  }
+  if (/分页|maxPages|最大页|达到上限|下一页/i.test(haystack)) {
+    return {
+      category: 'schema',
+      summary: '分页达到上限或分页链接异常',
+      suggestion: '检查分页规则和 maxPages；确认 partial 结果符合预期',
+    }
+  }
+  if (
+    /未授权|UNSAFE_|allowedOrigins|allowedPathPrefixes|主机|路径/i.test(haystack)
+  ) {
+    return {
+      category: 'permission',
+      summary: '请求超出已授权的主机或路径范围',
+      suggestion: '核对 Manifest 访问范围；不要为绕过错误而扩大权限',
+    }
+  }
+  if (
+    /页面结构|缺少必需字段|选择器|正则|解析|JSON|schema|模板/i.test(haystack)
+  ) {
+    return {
+      category: 'schema',
+      summary: '页面结构或字段映射可能已变化',
+      suggestion:
+        '让 Agent 用新样本生成修复候选；验证与预览通过后再启用',
+    }
+  }
+  if (
+    run?.errorCode === 'TRANSIENT' ||
+    /超时|timeout|429|限流|rate limit|HTTP 5\d\d|5xx/i.test(haystack)
+  ) {
+    return {
+      category: 'network',
+      summary: '网络超时、限流或平台暂时不可用',
+      suggestion: '稍后重试；检查网络和平台状态，旧数据已保留',
+    }
+  }
+  if (run?.status === 'partial') {
+    return {
+      category: 'quality',
+      summary: '部分数据未能抓取',
+      suggestion: '查看同步警告并重试；旧数据已保留',
+    }
+  }
+  if (run?.status === 'failed') {
+    return {
+      category: 'unknown',
+      summary: '同步失败',
+      suggestion: '查看错误信息后重试；必要时让 Agent 检查适配规则',
+    }
+  }
+  return undefined
+}
+
 function sourceDetail(source: SourceStatus): string {
   if (!source.engineKnown) return '当前版本未加载该数据源引擎'
   if (source.configuration === 'archived') return '数据源已归档'
@@ -737,6 +811,8 @@ function buildSources(
     source.state = sourceState(source)
     source.stage = sourceStage(source)
     source.nextStep = sourceNextStep(source)
+    const diagnosis = sourceDiagnosis(source)
+    if (diagnosis) source.diagnosis = diagnosis
     const detail = sourceDetail(source)
     if (detail) source.detail = detail
   }

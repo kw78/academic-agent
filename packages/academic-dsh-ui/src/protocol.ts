@@ -116,6 +116,20 @@ export interface SourceNextStep {
   reason?: string
 }
 
+export type SourceDiagnosisCategory =
+  | 'auth'
+  | 'network'
+  | 'permission'
+  | 'schema'
+  | 'quality'
+  | 'unknown'
+
+export interface SourceDiagnosis {
+  category: SourceDiagnosisCategory
+  summary: string
+  suggestion: string
+}
+
 export interface SourceStatus {
   sourceId: string
   displayName: string
@@ -146,6 +160,7 @@ export interface SourceStatus {
     | 'degraded'
   stage: SourceStage
   nextStep: SourceNextStep
+  diagnosis?: SourceDiagnosis
   connection?: ConnectionView
   lastSync?: SyncRunSummary
   detail?: string

@@ -805,6 +805,52 @@ describe('generic DB-backed source login', () => {
     expect(again.value.counts.unchanged).toBe(1)
   })
 
+  it('explains sync failures with a deterministic diagnosis', async () => {
+    const failingEngine: SourceEngine = {
+      descriptor: {
+        id: 'fake-broken',
+        displayName: 'Broken',
+        supportsSync: true,
+        supportsLogin: false,
+        supportsVerify: false,
+        authKinds: ['none'],
+      },
+      createAdapter(context) {
+        return {
+          id: 'fake-broken.readonly',
+          sourceId: context.sourceId,
+          async fetch() {
+            throw new Error('缺少必需字段 title；页面结构可能已变化')
+          },
+        }
+      },
+    }
+    const app = await createAcademicApp({
+      databasePath: ':memory:',
+      clock: fixedClock(),
+      sourceEngines: [failingEngine],
+    })
+    cleanup.push(() => app.close())
+    app.sources.create({
+      sourceId: 'broken-source',
+      engine: 'fake-broken',
+      displayName: 'Broken Source',
+      authKind: 'none',
+    })
+    const api = createAcademicUiApi(app)
+    await api.syncNow({ sourceId: 'broken-source' })
+
+    const listed = await api.connections({})
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    const source = listed.value.sources.find(
+      (entry) => entry.sourceId === 'broken-source',
+    )
+    expect(source?.stage).toBe('failed')
+    expect(source?.diagnosis?.category).toBe('schema')
+    expect(source?.diagnosis?.suggestion).toMatch(/修复候选/)
+  })
+
   it('rejects engine, auth and login combinations the engine does not support', async () => {
     const { api } = await setup()
 

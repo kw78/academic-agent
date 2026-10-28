@@ -198,6 +198,11 @@ function SourceCard({
           {source.canLogin && <Badge tone="info">登录可用</Badge>}
         </div>
         <p className="ac-muted">{source.detail}</p>
+        {source.diagnosis && (
+          <p className="ac-text-warn">
+            诊断：{source.diagnosis.summary} · 建议：{source.diagnosis.suggestion}
+          </p>
+        )}
         <p className="ac-muted">
           <strong>下一步：{source.nextStep.label}</strong>
           {source.nextStep.reason ? ` · ${source.nextStep.reason}` : ''}
