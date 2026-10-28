@@ -247,7 +247,7 @@ export function TasksPage({ ctx, active }: PageProps) {
   )
   const { state, refresh } = useLoad(load, active)
   const [filters, setFilters] = useState<TaskFilters>(DEFAULT_TASK_FILTERS)
-  const [pane, setPane] = useState<'tasks' | 'items'>('tasks')
+  const [pane, setPane] = useState<'tasks' | 'items' | 'review'>('tasks')
   const [creating, setCreating] = useState(false)
   const [title, setTitle] = useState('')
   const [estimate, setEstimate] = useState('60')
@@ -292,6 +292,67 @@ export function TasksPage({ ctx, active }: PageProps) {
         return left.item.title.localeCompare(right.item.title, 'zh-CN')
       })
   }, [data, filters, timeZone, now])
+
+  const reviewGroups = useMemo(() => {
+    if (!data) return []
+    const tasksByItem = new Map<string, TaskCard[]>()
+    for (const card of data.cards) {
+      if (!card.item) continue
+      const list = tasksByItem.get(card.item.itemId) ?? []
+      list.push(card)
+      tasksByItem.set(card.item.itemId, list)
+    }
+    const plannedTaskIds = new Set(data.planBlocks.map((block) => block.taskId))
+    const rank: Record<DueTone, number> = {
+      overdue: 0,
+      today: 1,
+      soon: 2,
+      later: 3,
+      unknown: 4,
+    }
+    const groups = new Map<
+      string,
+      {
+        key: string
+        label: string
+        entries: Array<{
+          card: ItemCard
+          tasks: TaskCard[]
+          planned: boolean
+        }>
+      }
+    >()
+    for (const card of data.items) {
+      if (card.item.archived) continue
+      if (card.item.kind !== 'exam' && card.item.kind !== 'quiz') continue
+      const key = card.item.courseId
+      const group = groups.get(key) ?? {
+        key,
+        label: card.course
+          ? `${card.course.code} ${card.course.title}`
+          : card.item.courseId,
+        entries: [],
+      }
+      const tasks = tasksByItem.get(card.item.itemId) ?? []
+      group.entries.push({
+        card,
+        tasks,
+        planned: tasks.some((task) => plannedTaskIds.has(task.task.taskId)),
+      })
+      groups.set(key, group)
+    }
+    return [...groups.values()]
+      .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
+      .map((group) => ({
+        ...group,
+        entries: group.entries.sort((left, right) => {
+          const leftTone = formatDue(left.card.item.due, timeZone, now).tone
+          const rightTone = formatDue(right.card.item.due, timeZone, now).tone
+          if (rank[leftTone] !== rank[rightTone]) return rank[leftTone] - rank[rightTone]
+          return left.card.item.title.localeCompare(right.card.item.title, 'zh-CN')
+        }),
+      }))
+  }, [data, timeZone, now])
 
   const taskCommand = (
     label: string,
@@ -367,6 +428,15 @@ export function TasksPage({ ctx, active }: PageProps) {
                 onClick={() => setPane('items')}
               >
                 来源事项
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={pane === 'review'}
+                className={pane === 'review' ? 'ac-toggle-active' : ''}
+                onClick={() => setPane('review')}
+              >
+                复习清单
               </button>
             </div>
             <button
@@ -593,6 +663,76 @@ export function TasksPage({ ctx, active }: PageProps) {
                     />
                   ))}
                 </ul>
+              )}
+            </Section>
+          )}
+          {pane === 'review' && (
+            <Section
+              title="复习清单"
+              subtitle="按课程整理考试/测验；只依据已保存事项、本地任务与当前计划"
+            >
+              <p className="ac-muted">
+                依据：来源事项、本地任务与当前计划。没有成绩、掌握度或课程材料数据，
+                因此不生成能力评分或复习效果预测。
+              </p>
+              {reviewGroups.length === 0 ? (
+                <EmptyState title="没有考试或测验数据">
+                  没有数据不代表没有考试；请检查数据源是否覆盖考试/测验。
+                </EmptyState>
+              ) : (
+                reviewGroups.map((group) => (
+                  <div key={group.key} className="ac-card">
+                    <h3>{group.label}</h3>
+                    <ul className="ac-item-list">
+                      {group.entries.map(({ card, tasks, planned }) => {
+                        const due = formatDue(card.item.due, timeZone, now)
+                        return (
+                          <li key={card.item.itemId} className="ac-item-row">
+                            <div>
+                              <div className="ac-task-title">
+                                <strong>{card.item.title}</strong>
+                                <Badge tone="info">{kindLabel(card.item.kind)}</Badge>
+                              </div>
+                              <div className="ac-task-meta">
+                                <span>
+                                  {tasks.length > 0
+                                    ? `本地任务：${tasks
+                                        .map(
+                                          (task) =>
+                                            `${task.task.title}（${formatMinutes(task.task.estimateMinutes)}）`,
+                                        )
+                                        .join('、')}`
+                                    : '尚未创建本地任务'}
+                                </span>
+                                <span>
+                                  {planned ? '已进入当前计划' : '尚未进入当前计划'}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="ac-item-due">
+                              <Badge tone={toneForDue(due.tone)}>{due.label}</Badge>
+                              {due.note && <span className="ac-muted">{due.note}</span>}
+                              <button
+                                type="button"
+                                className="ac-button"
+                                onClick={() => {
+                                  if (!askAgent(ctx, tutorPrompt(card, timeZone, now))) {
+                                    action.setNotice({
+                                      tone: 'info',
+                                      text: 'DSH 聊天入口当前不可用；请从会话页发起提问。',
+                                    })
+                                  }
+                                }}
+                              >
+                                请教复习建议
+                              </button>
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                ))
               )}
             </Section>
           )}
