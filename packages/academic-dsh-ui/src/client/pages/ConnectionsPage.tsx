@@ -111,14 +111,154 @@ function SourceCredentialForm({
   )
 }
 
+function SourceEditForm({
+  ctx,
+  source,
+  engine,
+  onDone,
+  onCancel,
+}: {
+  ctx: PageProps['ctx']
+  source: SourceStatus
+  engine: ConnectionsView['engines'][number] | undefined
+  onDone: () => Promise<unknown>
+  onCancel: () => void
+}) {
+  const [displayName, setDisplayName] = useState(source.displayName)
+  const [authKind, setAuthKind] = useState<string>(
+    source.authKind === 'unknown' ? 'token' : source.authKind,
+  )
+  const [loginMode, setLoginMode] = useState<string>(source.loginMode ?? 'browser')
+  const [capabilities, setCapabilities] = useState(source.capabilities.join(', '))
+  const [configJson, setConfigJson] = useState(JSON.stringify(source.config, null, 2))
+  const [pending, setPending] = useState(false)
+  const [message, setMessage] = useState<string>()
+
+  const authKinds = engine?.authKinds ?? ['none', 'password', 'token', 'oauth']
+  const loginModes = engine?.loginModes ?? ['browser', 'manual']
+
+  const submit = async () => {
+    let config: Record<string, unknown>
+    try {
+      const parsed = JSON.parse(configJson || '{}') as unknown
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('配置必须是 JSON 对象')
+      }
+      config = parsed as Record<string, unknown>
+    } catch (error) {
+      setMessage(`配置 JSON 无效：${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    setPending(true)
+    setMessage(undefined)
+    const result = await callApi<SourceStatus>(ctx, 'updateSource', {
+      sourceId: source.sourceId,
+      displayName: displayName.trim(),
+      authKind,
+      ...(authKind === 'none' ? {} : { loginMode }),
+      capabilities: capabilities
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean),
+      config,
+      expectedVersion: source.version,
+    })
+    setPending(false)
+    if (!result.ok) {
+      setMessage(result.error.message)
+      return
+    }
+    await onDone()
+    onCancel()
+  }
+
+  return (
+    <div className="ac-secret-form">
+      <div className="ac-form-grid">
+        <Field label="显示名称">
+          <input
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            required
+          />
+        </Field>
+        <Field label="认证方式">
+          <select
+            value={authKind}
+            onChange={(event) => {
+              const next = event.target.value
+              setAuthKind(next)
+              if (next === 'none') setLoginMode('none')
+              else if (loginMode === 'none') setLoginMode(loginModes[0] ?? 'browser')
+            }}
+          >
+            {authKinds.map((kind) => (
+              <option key={kind} value={kind}>
+                {kind}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="登录方式">
+          <select
+            value={authKind === 'none' ? 'none' : loginMode}
+            onChange={(event) => setLoginMode(event.target.value)}
+            disabled={authKind === 'none' || engine?.supportsLogin === false}
+          >
+            <option value="none">不登录</option>
+            {loginModes.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="能力（逗号分隔）">
+          <input
+            value={capabilities}
+            onChange={(event) => setCapabilities(event.target.value)}
+          />
+        </Field>
+      </div>
+      <Field
+        label="非敏感配置（JSON）"
+        hint="URL、选择器、规则等；禁止 password/token/cookie 字段"
+      >
+        <textarea
+          rows={8}
+          value={configJson}
+          onChange={(event) => setConfigJson(event.target.value)}
+          spellCheck={false}
+        />
+      </Field>
+      <div className="ac-form-actions">
+        <button
+          type="button"
+          className="ac-button ac-button-primary"
+          disabled={pending}
+          onClick={() => void submit()}
+        >
+          {pending ? '保存中…' : '保存配置'}
+        </button>
+        <button type="button" className="ac-button" disabled={pending} onClick={onCancel}>
+          取消
+        </button>
+      </div>
+      {message && <p className="ac-text-bad">{message}</p>}
+    </div>
+  )
+}
+
 function SourceCard({
   ctx,
   source,
+  engines,
   timeZone,
   refresh,
 }: {
   ctx: PageProps['ctx']
   source: SourceStatus
+  engines: ConnectionsView['engines']
   timeZone: string
   refresh: () => Promise<unknown>
 }) {
@@ -128,7 +268,10 @@ function SourceCard({
   const [preview, setPreview] = useState<SyncPreview>()
   const [probe, setProbe] = useState<SourceProbeEvidence>()
   const [agentNote, setAgentNote] = useState<string>()
+  const [editing, setEditing] = useState(false)
   const connection = source.connection
+  const archived = source.configuration === 'archived'
+  const engine = engines.find((entry) => entry.id === source.engine)
   const browserLogin = source.canLogin && source.loginMode === 'browser'
   const manualCredential = source.authKind !== 'none' && !browserLogin
   const syncAllowed = source.nextStep.action === 'sync'
@@ -428,122 +571,193 @@ function SourceCard({
           </details>
         )}
       </div>
-      <div className="ac-source-actions">
-        <button
-          type="button"
-          className="ac-button"
-          disabled={
-            !connection ||
-            source.authKind === 'none' ||
-            action.pending !== undefined
-          }
-          onClick={() => void action.run('probe', runProbe, '探测完成')}
-        >
-          {action.pending === 'probe' ? '探测中…' : '探测页面'}
-        </button>
-        {connection && source.authKind !== 'none' && !source.adapterReady && (
-          <button
-            type="button"
-            className="ac-button"
-            disabled={action.pending !== undefined}
-            onClick={askForAdapter}
-          >
-            让 Agent 生成候选
-          </button>
-        )}
-        <button
-          type="button"
-          className="ac-button"
-          disabled={!source.syncAvailable || action.pending !== undefined}
-          onClick={() => void action.run('preview', previewSync, '预览完成')}
-        >
-          {action.pending === 'preview' ? '读取中…' : '预览同步'}
-        </button>
-        <button
-          type="button"
-          className="ac-button"
-          disabled={
-            !source.syncAvailable ||
-            !syncAllowed ||
-            action.pending !== undefined
-          }
-          title={syncAllowed ? undefined : source.nextStep.label}
-          onClick={() => void action.run('sync', sync, '同步完成')}
-        >
-          {action.pending === 'sync'
-            ? '同步中…'
-            : syncAllowed
-              ? '立即同步'
-              : '先完成下一步'}
-        </button>
-        {connection && source.canVerify && (
-          <button
-            type="button"
-            className="ac-button"
-            disabled={action.pending !== undefined}
-            onClick={() =>
-              void action.run(
-                'verify',
-                () =>
-                  callApi<ConnectionView>(ctx, 'verifyConnection', {
-                    connectionId: connection.connectionId,
-                  }),
-                '连接已验证',
-              )
-            }
-          >
-            验证连接
-          </button>
-        )}
-        {connection && (
-          <ConfirmAction
-            label="断开连接"
-            confirmLabel="确认断开"
-            disabled={action.pending !== undefined}
-            onConfirm={() =>
-              void action.run(
-                'disconnect',
-                () =>
-                  callApi<ConnectionView>(ctx, 'disconnectConnection', {
-                    connectionId: connection.connectionId,
-                  }),
-                '连接已断开；已同步学业数据保留',
-              )
-            }
-          />
-        )}
-        {connection?.hasCredential && (
-          <ConfirmAction
-            label="删除凭据"
-            confirmLabel="确认删除凭据"
-            disabled={action.pending !== undefined}
-            onConfirm={() =>
-              void action.run(
-                'delete',
-                () =>
-                  callApi<ConnectionView>(ctx, 'deleteConnectionCredential', {
-                    connectionId: connection.connectionId,
-                  }),
-                '凭据已删除；学业事件未删除',
-              )
-            }
-          />
-        )}
-        <ConfirmAction
-          label="归档数据源"
-          confirmLabel="确认归档"
-          disabled={action.pending !== undefined}
-          onConfirm={() =>
-            void action.run(
-              'archive-source',
-              () =>
-                callApi<SourceStatus>(ctx, 'archiveSource', {
-                  sourceId: source.sourceId,
-                }),
-              '数据源已归档；历史学业数据保留',
-            )
-          }
+      {editing && !archived && (
+        <SourceEditForm
+          ctx={ctx}
+          source={source}
+          engine={engine}
+          onDone={refresh}
+          onCancel={() => setEditing(false)}
         />
+      )}
+      <div className="ac-source-actions">
+        {archived ? (
+          <>
+            <button
+              type="button"
+              className="ac-button ac-button-primary"
+              disabled={action.pending !== undefined}
+              onClick={() =>
+                void action.run(
+                  'restore-source',
+                  () =>
+                    callApi<SourceStatus>(ctx, 'restoreSource', {
+                      sourceId: source.sourceId,
+                    }),
+                  '数据源已恢复；请重新登录后再同步',
+                )
+              }
+            >
+              恢复数据源
+            </button>
+            <ConfirmAction
+              label="彻底删除"
+              confirmLabel="确认彻底删除"
+              disabled={action.pending !== undefined}
+              onConfirm={() =>
+                void action.run(
+                  'delete-source',
+                  () =>
+                    callApi<{ deleted: boolean }>(ctx, 'deleteSource', {
+                      sourceId: source.sourceId,
+                    }),
+                  '数据源与凭据已删除；已同步的学业数据保留',
+                )
+              }
+            />
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="ac-button"
+              disabled={action.pending !== undefined}
+              onClick={() => setEditing((value) => !value)}
+            >
+              {editing ? '收起编辑' : '编辑配置'}
+            </button>
+            <button
+              type="button"
+              className="ac-button"
+              disabled={
+                !connection ||
+                source.authKind === 'none' ||
+                action.pending !== undefined
+              }
+              onClick={() => void action.run('probe', runProbe, '探测完成')}
+            >
+              {action.pending === 'probe' ? '探测中…' : '探测页面'}
+            </button>
+            {connection && source.authKind !== 'none' && !source.adapterReady && (
+              <button
+                type="button"
+                className="ac-button"
+                disabled={action.pending !== undefined}
+                onClick={askForAdapter}
+              >
+                让 Agent 生成候选
+              </button>
+            )}
+            <button
+              type="button"
+              className="ac-button"
+              disabled={!source.syncAvailable || action.pending !== undefined}
+              onClick={() => void action.run('preview', previewSync, '预览完成')}
+            >
+              {action.pending === 'preview' ? '读取中…' : '预览同步'}
+            </button>
+            <button
+              type="button"
+              className="ac-button"
+              disabled={
+                !source.syncAvailable ||
+                !syncAllowed ||
+                action.pending !== undefined
+              }
+              title={syncAllowed ? undefined : source.nextStep.label}
+              onClick={() => void action.run('sync', sync, '同步完成')}
+            >
+              {action.pending === 'sync'
+                ? '同步中…'
+                : syncAllowed
+                  ? '立即同步'
+                  : '先完成下一步'}
+            </button>
+            {connection && source.canVerify && (
+              <button
+                type="button"
+                className="ac-button"
+                disabled={action.pending !== undefined}
+                onClick={() =>
+                  void action.run(
+                    'verify',
+                    () =>
+                      callApi<ConnectionView>(ctx, 'verifyConnection', {
+                        connectionId: connection.connectionId,
+                      }),
+                    '连接已验证',
+                  )
+                }
+              >
+                验证连接
+              </button>
+            )}
+            {connection && (
+              <ConfirmAction
+                label="断开连接"
+                confirmLabel="确认断开"
+                disabled={action.pending !== undefined}
+                onConfirm={() =>
+                  void action.run(
+                    'disconnect',
+                    () =>
+                      callApi<ConnectionView>(ctx, 'disconnectConnection', {
+                        connectionId: connection.connectionId,
+                      }),
+                    '连接已断开；已同步学业数据保留',
+                  )
+                }
+              />
+            )}
+            {connection?.hasCredential && (
+              <ConfirmAction
+                label="删除凭据"
+                confirmLabel="确认删除凭据"
+                disabled={action.pending !== undefined}
+                onConfirm={() =>
+                  void action.run(
+                    'delete',
+                    () =>
+                      callApi<ConnectionView>(ctx, 'deleteConnectionCredential', {
+                        connectionId: connection.connectionId,
+                      }),
+                    '凭据已删除；学业事件未删除',
+                  )
+                }
+              />
+            )}
+            <ConfirmAction
+              label="归档数据源"
+              confirmLabel="确认归档"
+              disabled={action.pending !== undefined}
+              onConfirm={() =>
+                void action.run(
+                  'archive-source',
+                  () =>
+                    callApi<SourceStatus>(ctx, 'archiveSource', {
+                      sourceId: source.sourceId,
+                    }),
+                  '数据源已归档；可在下方恢复或彻底删除',
+                )
+              }
+            />
+            <ConfirmAction
+              label="彻底删除"
+              confirmLabel="确认彻底删除"
+              disabled={action.pending !== undefined}
+              onConfirm={() =>
+                void action.run(
+                  'delete-source',
+                  () =>
+                    callApi<{ deleted: boolean }>(ctx, 'deleteSource', {
+                      sourceId: source.sourceId,
+                    }),
+                  '数据源与凭据已删除；已同步的学业数据保留',
+                )
+              }
+            />
+          </>
+        )}
       </div>
     </li>
   )
@@ -905,6 +1119,28 @@ const CANDIDATE_STATUS_LABELS: Record<string, string> = {
   revoked: '已撤销',
 }
 
+function CandidateFileInput({
+  label,
+  onLoad,
+}: {
+  label: string
+  onLoad: (text: string) => void
+}) {
+  return (
+    <Field label={label} hint="仅在本机读取，不上传">
+      <input
+        type="file"
+        accept=".json,application/json"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (!file) return
+          void file.text().then(onLoad)
+        }}
+      />
+    </Field>
+  )
+}
+
 function CandidatePanel({
   ctx,
   active,
@@ -1088,6 +1324,11 @@ function CandidatePanel({
 
       <details className="ac-advanced">
         <summary>导入候选（Manifest + 离线样本）</summary>
+        <p className="ac-muted">
+          离线验证只回放本地样本，不代表真实连接、启用或同步已经通过。
+        </p>
+        <CandidateFileInput label="从文件读取 Manifest" onLoad={setManifestJson} />
+        <CandidateFileInput label="从文件读取样本" onLoad={setSamplesJson} />
         <Field label="Manifest JSON">
           <textarea
             rows={8}
@@ -1131,8 +1372,8 @@ function CandidatePanel({
       {report && (
         <div className="ac-secret-form">
           <p className={report.ok ? 'ac-muted' : 'ac-text-bad'}>
-            验证{report.ok ? '通过' : '失败'}：课程 {report.courses.length} · 事项{' '}
-            {report.items.length}
+            样本回放{report.ok ? '通过' : '失败'}（未做真实同步）：课程{' '}
+            {report.courses.length} · 事项 {report.items.length}
           </p>
           {report.checks?.map((check) => (
             <p key={check.stage} className={check.ok ? 'ac-muted' : 'ac-text-bad'}>
@@ -1221,11 +1462,18 @@ export function ConnectionsPage({ ctx, active }: PageProps) {
               </EmptyState>
             ) : (
               <ul className="ac-source-grid">
-                {data.sources.map((source) => (
+                {[...data.sources]
+                  .sort(
+                    (left, right) =>
+                      Number(left.configuration === 'archived') -
+                      Number(right.configuration === 'archived'),
+                  )
+                  .map((source) => (
                   <SourceCard
                     key={source.sourceId}
                     ctx={ctx}
                     source={source}
+                    engines={data.engines}
                     timeZone={timeZone}
                     refresh={refresh}
                   />
@@ -1309,6 +1557,156 @@ export function ConnectionsPage({ ctx, active }: PageProps) {
   )
 }
 
+function CourseRow({
+  ctx,
+  course,
+  timeZone,
+  onChanged,
+}: {
+  ctx: PageProps['ctx']
+  course: CourseView
+  timeZone: string
+  onChanged: () => Promise<unknown>
+}) {
+  const action = useAction(async () => {
+    await onChanged()
+  })
+  const [editing, setEditing] = useState(false)
+  const [termId, setTermId] = useState(course.termId)
+  const [code, setCode] = useState(course.code)
+  const [title, setTitle] = useState(course.title)
+
+  const save = async (): Promise<UiResult<CommandReceipt>> => {
+    if (!termId.trim() || !code.trim() || !title.trim()) {
+      return {
+        ok: false,
+        error: { code: 'VALIDATION', message: '学期、课程代码和名称不能为空' },
+      }
+    }
+    return callApi<CommandReceipt>(ctx, 'updateCourse', {
+      id: course.courseId,
+      termId: termId.trim(),
+      code: code.trim(),
+      title: title.trim(),
+    })
+  }
+
+  return (
+    <li className="ac-list-row">
+      <div>
+        <div className="ac-task-title">
+          <strong>
+            {course.code} {course.title}
+          </strong>
+          {course.deleted ? (
+            <Badge tone="bad">已删除</Badge>
+          ) : course.archived ? (
+            <Badge tone="neutral">已归档</Badge>
+          ) : null}
+        </div>
+        <span className="ac-muted">
+          {course.termId} · 更新于 {formatDateTimeOrDash(course.updatedAt, timeZone)}
+        </span>
+        {editing && (
+          <div className="ac-form-grid">
+            <Field label="学期">
+              <input value={termId} onChange={(event) => setTermId(event.target.value)} />
+            </Field>
+            <Field label="课程代码">
+              <input value={code} onChange={(event) => setCode(event.target.value)} />
+            </Field>
+            <Field label="课程名称">
+              <input value={title} onChange={(event) => setTitle(event.target.value)} />
+            </Field>
+          </div>
+        )}
+      </div>
+      <div className="ac-source-actions">
+        {editing ? (
+          <>
+            <button
+              type="button"
+              className="ac-button ac-button-primary"
+              disabled={action.pending !== undefined}
+              onClick={() =>
+                void action.run('course-update', save, '课程信息已更新').then((ok) => {
+                  if (ok) setEditing(false)
+                })
+              }
+            >
+              保存
+            </button>
+            <button type="button" className="ac-button" onClick={() => setEditing(false)}>
+              取消
+            </button>
+          </>
+        ) : (
+          <>
+            {!course.deleted && !course.archived && (
+              <button type="button" className="ac-button" onClick={() => setEditing(true)}>
+                编辑
+              </button>
+            )}
+            {!course.deleted && !course.archived && (
+              <ConfirmAction
+                label="归档课程"
+                confirmLabel="确认归档"
+                disabled={action.pending !== undefined}
+                onConfirm={() =>
+                  void action.run(
+                    'course-archive',
+                    () =>
+                      callApi<CommandReceipt>(ctx, 'archiveCourse', {
+                        id: course.courseId,
+                      }),
+                    '课程已归档；可随时恢复',
+                  )
+                }
+              />
+            )}
+            {!course.deleted && (
+              <ConfirmAction
+                label="删除课程"
+                confirmLabel="确认删除课程"
+                disabled={action.pending !== undefined}
+                onConfirm={() =>
+                  void action.run(
+                    'course-delete',
+                    () =>
+                      callApi<CommandReceipt>(ctx, 'deleteCourse', {
+                        id: course.courseId,
+                      }),
+                    '课程已删除；关联事项与任务已归档，可分别恢复',
+                  )
+                }
+              />
+            )}
+            {(course.archived || course.deleted) && (
+              <button
+                type="button"
+                className="ac-button"
+                disabled={action.pending !== undefined}
+                onClick={() =>
+                  void action.run(
+                    'course-restore',
+                    () =>
+                      callApi<CommandReceipt>(ctx, 'restoreCourse', {
+                        id: course.courseId,
+                      }),
+                    '课程已恢复；已归档的事项和任务需要单独恢复',
+                  )
+                }
+              >
+                恢复课程
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </li>
+  )
+}
+
 function CourseTable({
   ctx,
   courses,
@@ -1320,40 +1718,17 @@ function CourseTable({
   timeZone: string
   onChanged: () => Promise<unknown>
 }) {
-  const action = useAction(async () => {
-    await onChanged()
-  })
   if (courses.length === 0) return null
   return (
     <ul className="ac-list">
       {courses.map((course) => (
-        <li key={course.courseId} className="ac-list-row">
-          <div>
-            <strong>
-              {course.code} {course.title}
-            </strong>
-            <span className="ac-muted">
-              {course.termId} · 更新于 {formatDateTimeOrDash(course.updatedAt, timeZone)}
-            </span>
-          </div>
-          {!course.archived && (
-            <ConfirmAction
-              label="归档课程"
-              confirmLabel="确认归档"
-              disabled={action.pending !== undefined}
-              onConfirm={() =>
-                void action.run(
-                  'course-archive',
-                  () =>
-                    callApi<CommandReceipt>(ctx, 'archiveCourse', {
-                      id: course.courseId,
-                    }),
-                  '课程已归档',
-                )
-              }
-            />
-          )}
-        </li>
+        <CourseRow
+          key={course.courseId}
+          ctx={ctx}
+          course={course}
+          timeZone={timeZone}
+          onChanged={onChanged}
+        />
       ))}
     </ul>
   )
