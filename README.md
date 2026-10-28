@@ -65,7 +65,13 @@ dsh plugin --profile academic-web add \
 
 Agent 默认只读；修改任务、导入/删除资料等写入必须由可信宿主逐次批准。当前没有接入 DSH 审批弹窗时，Agent 写入会被拒绝，CLI/UI 操作不受影响。
 
-DSH 没有官方中央市场；插件 Discover 读取用户配置的索引。Academic Agent 索引见 [market/README.md](market/README.md)。
+DSH 没有官方中央市场；插件 Discover 读取用户配置的索引。Academic Agent 索引：
+
+```text
+https://kw78.github.io/academic-agent/market/index.json
+```
+
+添加方式见 [market/README.md](market/README.md)。
 
 安装细节：[插件 README](packages/academic-dsh-plugin/README.md)、[UI README](packages/academic-dsh-ui/README.md)。
 

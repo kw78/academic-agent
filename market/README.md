@@ -2,13 +2,19 @@
 
 DSH 目前**没有官方中央市场**。它的插件市场（Plugins → Discover）读取用户自己添加的索引 URL；本目录就是 Academic Agent 的格式 1 索引。
 
-索引地址（main 分支）：
+索引地址（GitHub Pages，已验证 HTTP 200、无重定向）：
+
+```text
+https://kw78.github.io/academic-agent/market/index.json
+```
+
+图标使用同目录的相对路径，DSH 会基于索引 URL 解析。
+
+备用地址（当前网络对 raw.githubusercontent.com 不稳定，不推荐）：
 
 ```text
 https://raw.githubusercontent.com/kw78/academic-agent/main/market/index.json
 ```
-
-图标使用同目录的相对路径，DSH 会基于索引 URL 解析。
 
 ## 在 DSH 中显示
 
@@ -42,4 +48,4 @@ dsh plugin --profile desktop add @deepseek-ai/dsh-experimental-plugin-market-bun
 https://raw.githubusercontent.com/kw78/academic-agent/main/market/icon.svg
 ```
 
-如果 DSH 无法访问 `raw.githubusercontent.com`，可以把 `index.json` 和 `icon.svg` 放到任意 HTTPS 静态主机，保持相对路径不变，并在 Discover 中填写新地址。
+如果 DSH 无法访问 GitHub Pages，可以把 `index.json` 和 `icon.svg` 放到任意 HTTPS 静态主机，保持相对路径不变，并在 Discover 中填写新地址。

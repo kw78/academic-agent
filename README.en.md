@@ -65,7 +65,13 @@ The UI includes: Overview, Tasks, Plan, Connections, Materials, Automation and S
 
 The Agent is read-only by default. Writes such as changing tasks or importing/deleting materials require per-call approval from the trusted host. Without a DSH approval UI, Agent writes are rejected; CLI and direct UI actions still work.
 
-DSH has no official central market; its Discover page reads index URLs configured by the user. The Academic Agent index is in [market/README.md](market/README.md).
+DSH has no official central market; its Discover page reads index URLs configured by the user. The Academic Agent index is:
+
+```text
+https://kw78.github.io/academic-agent/market/index.json
+```
+
+See [market/README.md](market/README.md) for setup.
 
 Install details: [plugin README](packages/academic-dsh-plugin/README.md), [UI README](packages/academic-dsh-ui/README.md).
 
