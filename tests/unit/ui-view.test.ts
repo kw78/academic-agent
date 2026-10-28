@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AcademicItemView, CourseView } from '@academic/contracts'
 import type { TaskCard } from '../../packages/academic-dsh-ui/src/protocol.js'
 import {
+  DEFAULT_TASK_FILTERS,
   filterTaskCards,
   formatDue,
   groupBlocksByDate,
@@ -122,6 +123,14 @@ describe('task filtering', () => {
     ).toHaveLength(0)
     expect(
       filterTaskCards([base], { courseId: 'all', kind: 'all', due: 'all', status: 'completed' }, ZONE, NOW),
+    ).toHaveLength(0)
+  })
+
+  it('filters by task or source title', () => {
+    const filters = { ...DEFAULT_TASK_FILTERS, search: 'problem' }
+    expect(filterTaskCards([base], filters, ZONE, NOW)).toHaveLength(1)
+    expect(
+      filterTaskCards([base], { ...DEFAULT_TASK_FILTERS, search: 'lecture' }, ZONE, NOW),
     ).toHaveLength(0)
   })
 
