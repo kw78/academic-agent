@@ -19,7 +19,7 @@ import {
   type SyncPreview,
   type SyncRunSummary,
 } from '@academic/contracts'
-import type { AcademicApp } from '@academic/cli'
+import type { AcademicApp } from '@academic/application'
 import type { NotificationView } from '@academic/notifications'
 import { loginWebSession, safeUrlForDisplay } from '@academic/web-sessions'
 import { zonedDateTimeToUtc, type PlanSuggestion } from '@academic/planner-basic'
@@ -607,28 +607,6 @@ function syncHealthState(
   const finished = lastSync.finishedAt ?? lastSync.startedAt
   if (Date.parse(now) - Date.parse(finished) > SYNC_STALE_AFTER_MS) return 'stale'
   return 'healthy'
-}
-
-function validateSourceCapabilities(
-  descriptor: {
-    supportsLogin: boolean
-    authKinds?: readonly string[]
-    loginModes?: readonly string[]
-  },
-  authKind: string,
-  loginMode: string | undefined,
-): string | undefined {
-  if (descriptor.authKinds && !descriptor.authKinds.includes(authKind)) {
-    return `该引擎不支持认证方式 ${authKind}`
-  }
-  if (loginMode) {
-    if (authKind === 'none') return '认证方式为 none 时不应配置登录方式'
-    if (!descriptor.supportsLogin) return '该引擎不支持登录流程'
-    if (descriptor.loginModes && !descriptor.loginModes.includes(loginMode)) {
-      return `该引擎不支持登录方式 ${loginMode}`
-    }
-  }
-  return undefined
 }
 
 function sourceState(source: SourceStatus): SourceStatus['state'] {
@@ -1651,20 +1629,8 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       const parsed = parse(createConnectionSchema, request)
       if (!parsed.ok) return parsed
       const body: CreateConnectionRequest = parsed.value
-      const sources = buildSources(app, app.connections.list(), [])
-      const source = sources.find((candidate) => candidate.sourceId === body.sourceId)
-      if (!source || !source.adapterAvailable) {
-        return failure('CAPABILITY_UNAVAILABLE', '当前版本不支持该数据源')
-      }
-      if (source.authKind !== 'unknown' && source.authKind !== body.authKind) {
-        return failure('VALIDATION', '认证方式与数据源能力不匹配')
-      }
-      const existing = app.connections
-        .list()
-        .find((entry) => entry.sourceId === body.sourceId)
-      if (existing) return ok(existing)
       try {
-        return ok(app.connections.create(body))
+        return ok(app.ensureConnection(body))
       } catch (error) {
         return fromError(error)
       }
@@ -1674,37 +1640,8 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       const parsed = parse(createSourceSchema, request)
       if (!parsed.ok) return parsed
       const body: CreateSourceRequest = parsed.value
-      const configJson = JSON.stringify(body.config ?? {})
-      const existing = app.sources
-        .list()
-        .find(
-          (entry) =>
-            entry.engine === body.engine &&
-            entry.displayName === body.displayName &&
-            JSON.stringify(entry.config) === configJson,
-        )
-      if (existing) {
-        const source = sourceStatusFor(app, existing.sourceId)
-        return source
-          ? ok(source)
-          : failure('NOT_FOUND', '数据源存在但未能读取')
-      }
-      const engine = app.sourceEngines.get(body.engine)
-      if (!engine) {
-        return failure('CAPABILITY_UNAVAILABLE', '该数据源引擎尚未加载')
-      }
-      const invalid = validateSourceCapabilities(
-        engine.descriptor,
-        body.authKind,
-        body.loginMode,
-      )
-      if (invalid) return failure('VALIDATION', invalid)
-      const invalidConfig = engine.descriptor.validateConfig?.(body.config ?? {})
-      if (invalidConfig) {
-        return failure('VALIDATION', `配置无效：${invalidConfig}`)
-      }
       try {
-        const created = app.sources.create(body)
+        const created = app.createSource(body)
         const source = sourceStatusFor(app, created.sourceId)
         return source
           ? ok(source)
@@ -1718,26 +1655,8 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       const parsed = parse(updateSourceSchema, request)
       if (!parsed.ok) return parsed
       const body: UpdateSourceRequest = parsed.value
-      const current = app.sources.get(body.sourceId)
-      if (!current) return failure('NOT_FOUND', '数据源不存在')
-      const engine = app.sourceEngines.get(current.engine)
-      if (!engine) {
-        return failure('CAPABILITY_UNAVAILABLE', '该数据源引擎尚未加载')
-      }
-      const invalid = validateSourceCapabilities(
-        engine.descriptor,
-        body.authKind ?? current.authKind,
-        body.loginMode ?? current.loginMode,
-      )
-      if (invalid) return failure('VALIDATION', invalid)
-      const invalidConfig = engine.descriptor.validateConfig?.(
-        body.config ?? current.config,
-      )
-      if (invalidConfig) {
-        return failure('VALIDATION', `配置无效：${invalidConfig}`)
-      }
       try {
-        app.sources.update(body.sourceId, body, body.expectedVersion)
+        app.updateSource(body.sourceId, body, body.expectedVersion)
         const source = sourceStatusFor(app, body.sourceId)
         return source ? ok(source) : failure('NOT_FOUND', '数据源不存在')
       } catch (error) {
@@ -1750,7 +1669,7 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       if (!parsed.ok) return parsed
       const body: SourceIdRequest = parsed.value
       try {
-        app.sources.archive(body.sourceId)
+        app.archiveSource(body.sourceId)
         const source = sourceStatusFor(app, body.sourceId)
         return source ? ok(source) : failure('NOT_FOUND', '数据源不存在')
       } catch (error) {
@@ -1763,7 +1682,7 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       if (!parsed.ok) return parsed
       const body: SourceIdRequest = parsed.value
       try {
-        app.sources.restore(body.sourceId)
+        app.restoreSource(body.sourceId)
         const source = sourceStatusFor(app, body.sourceId)
         return source ? ok(source) : failure('NOT_FOUND', '数据源不存在')
       } catch (error) {
@@ -1775,11 +1694,8 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       const parsed = parse(sourceIdSchema, request)
       if (!parsed.ok) return parsed
       const body: SourceIdRequest = parsed.value
-      const source = app.sources.get(body.sourceId)
-      if (!source) return failure('NOT_FOUND', '数据源不存在')
       try {
-        await app.connections.deleteBySource(body.sourceId)
-        app.sources.delete(body.sourceId)
+        await app.deleteSource(body.sourceId)
         return ok({ deleted: true })
       } catch (error) {
         return fromError(error)
@@ -1790,40 +1706,12 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       const parsed = parse(sourceIdSchema, request)
       if (!parsed.ok) return parsed
       const body: SourceIdRequest = parsed.value
-      const source = app.sources.get(body.sourceId)
-      if (!source) return failure('NOT_FOUND', '数据源不存在')
-      if (!source.enabled || source.archived) {
-        return failure('CAPABILITY_UNAVAILABLE', '数据源未启用')
-      }
-      const engine = app.sourceEngines.get(source.engine)
-      if (!engine?.login) {
-        return failure('CAPABILITY_UNAVAILABLE', '该数据源没有可用的登录流程')
-      }
-      const context = { sourceId: source.sourceId, config: source.config }
       try {
-        const login = await engine.login(context)
-        const connection =
-          app.connections.list().find((entry) => entry.sourceId === source.sourceId) ??
-          app.connections.create({
-            sourceId: source.sourceId,
-            displayName: source.displayName,
-            authKind: source.authKind,
-            scopes: source.capabilities,
-            ...(login.accountLabel ? { accountLabel: login.accountLabel } : {}),
-          })
-        if (connection.authKind === 'none') return ok(connection)
-        await app.connections.setSecret(connection.connectionId, login.secret)
-        const verified = await app.connections.verify(
-          connection.connectionId,
-          async (secret) =>
-            engine.verify
-              ? engine.verify(context, secret)
-              : { ok: true, ...(login.accountLabel ? { accountLabel: login.accountLabel } : {}) },
-        )
-        if (verified.status === 'auth-required') {
-          return failure('AUTH_REQUIRED', verified.lastError ?? '登录会话验证失败')
+        const connection = await app.loginSource(body.sourceId)
+        if (connection.status === 'auth-required') {
+          return failure('AUTH_REQUIRED', connection.lastError ?? '登录会话验证失败')
         }
-        return ok(verified)
+        return ok(connection)
       } catch (error) {
         return fromError(error)
       }
@@ -2175,21 +2063,8 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       }
       try {
         if (!sourceId) {
-          const candidates = app.sources
-            .list()
-            .filter(
-              (source) =>
-                source.enabled &&
-                app.sourceEngines.get(source.engine)?.createAdapter,
-            )
-          let last: SyncRunSummary | undefined
-          for (const source of candidates) {
-            const connection = app.connections
-              .list()
-              .find((entry) => entry.sourceId === source.sourceId)
-            if (source.authKind !== 'none' && !connection) continue
-            last = await app.syncSource(source.sourceId, connection?.connectionId)
-          }
+          const summaries = await app.syncAllSources()
+          const last = summaries[summaries.length - 1]
           if (!last) {
             return failure('CAPABILITY_UNAVAILABLE', '没有可同步的数据源')
           }

@@ -13,8 +13,12 @@ import {
 } from '@academic/contracts'
 import type { WeeklySlot } from '@academic/planner-basic'
 import { loginWebSession, safeUrlForDisplay } from '@academic/web-sessions'
-import { createAcademicApp, type AcademicApp } from './composition.js'
-import { restoreApplication, restoreDatabase } from './backup.js'
+import {
+  createAcademicApp,
+  restoreApplication,
+  restoreDatabase,
+  type AcademicApp,
+} from '@academic/application'
 
 const DATABASE_PATH = process.env.ACADEMIC_DB ?? '.data/academic.db'
 
@@ -629,7 +633,6 @@ async function runSourceAdd(app: AcademicApp, args: string[]): Promise<void> {
   }
   const engineId = stringFlag(flags, 'engine')
   if (!engineId) throw new Error('缺少 --engine')
-  if (!app.sourceEngines.get(engineId)) throw new Error(`未知 engine：${engineId}`)
   const configValue = stringFlag(flags, 'config') ?? '{}'
   let config: Record<string, unknown>
   try {
@@ -656,7 +659,7 @@ async function runSourceAdd(app: AcademicApp, args: string[]): Promise<void> {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
-  const source = app.sources.create({
+  const source = app.createSource({
     sourceId,
     engine: engineId,
     displayName,
@@ -673,37 +676,11 @@ async function runSourceLogin(
   sourceId: string | undefined,
 ): Promise<void> {
   if (!sourceId) throw new Error('用法：source login <sourceId>')
-  const source = app.sources.get(sourceId)
-  if (!source) throw new Error(`数据源不存在：${sourceId}`)
-  const engine = app.sourceEngines.get(source.engine)
-  if (!engine?.login) throw new Error(`数据源没有登录流程：${sourceId}`)
-  const context = { sourceId, config: source.config }
-  const login = await engine.login(context)
-  const connection =
-    app.connections.list().find((entry) => entry.sourceId === sourceId) ??
-    app.connections.create({
-      sourceId,
-      displayName: source.displayName,
-      authKind: source.authKind,
-      scopes: source.capabilities,
-      ...(login.accountLabel ? { accountLabel: login.accountLabel } : {}),
-    })
-  if (connection.authKind !== 'none') {
-    await app.connections.setSecret(connection.connectionId, login.secret)
-    const verified = await app.connections.verify(
-      connection.connectionId,
-      async (secret) =>
-        engine.verify
-          ? engine.verify(context, secret)
-          : { ok: true, ...(login.accountLabel ? { accountLabel: login.accountLabel } : {}) },
-    )
-    printConnection(verified)
-    if (verified.status === 'auth-required') {
-      throw new Error(verified.lastError ?? '登录会话验证失败')
-    }
-    return
-  }
+  const connection = await app.loginSource(sourceId)
   printConnection(connection)
+  if (connection.status === 'auth-required') {
+    throw new Error(connection.lastError ?? '登录会话验证失败')
+  }
 }
 
 async function runSourcePreview(app: AcademicApp, args: string[]): Promise<void> {
@@ -832,7 +809,7 @@ async function runSourceArchive(
   sourceId: string | undefined,
 ): Promise<void> {
   if (!sourceId) throw new Error('用法：source archive <sourceId>')
-  printSource(app, app.sources.archive(sourceId))
+  printSource(app, app.archiveSource(sourceId))
 }
 
 async function runWebLogin(app: AcademicApp, args: string[]): Promise<void> {

@@ -12,7 +12,10 @@ import {
   type QueryApi,
   type ReplanReason,
   type ReplanRequestPort,
+  type SourceConfig,
+  type SourceConfigInput,
   type SourceConfigStoreApi,
+  type SourceConfigUpdate,
   type SourceEngineRegistryApi,
   type SourceCaptureSummary,
   type SourceCrawlOptions,
@@ -68,6 +71,13 @@ export interface AcademicToolDependencies {
   /** Per-operation trusted approval. Without it, agent writes are rejected. */
   authorizeWrite?: AgentWriteAuthorizer
   sources?: SourceConfigStoreApi
+  /** Application-layer writes; preferred over the raw store when provided. */
+  createSource?: (input: SourceConfigInput) => SourceConfig
+  updateSource?: (
+    sourceId: string,
+    update: SourceConfigUpdate,
+    expectedVersion?: number,
+  ) => SourceConfig
   sourceEngines?: SourceEngineRegistryApi
   webSessions?: WebSessionStore
   materials?: MaterialToolPort
@@ -648,10 +658,12 @@ export function createAcademicTools(
                 { ...input },
               )
               if (rejection) return rejection
-              if (!dependencies.sourceEngines!.get(input.engine)) {
+              if (!dependencies.createSource && !dependencies.sourceEngines!.get(input.engine)) {
                 return failure('CAPABILITY_UNAVAILABLE', `Unknown source engine: ${input.engine}`)
               }
-              const source = dependencies.sources!.create(input)
+              const source = dependencies.createSource
+                ? dependencies.createSource(input)
+                : dependencies.sources!.create(input)
               return success({ source })
             },
           ),
@@ -665,11 +677,9 @@ export function createAcademicTools(
                 ...input,
               })
               if (rejection) return rejection
-              const source = dependencies.sources!.update(
-                input.sourceId,
-                input,
-                input.expectedVersion,
-              )
+              const source = dependencies.updateSource
+                ? dependencies.updateSource(input.sourceId, input, input.expectedVersion)
+                : dependencies.sources!.update(input.sourceId, input, input.expectedVersion)
               return success({ source })
             },
           ),

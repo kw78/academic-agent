@@ -56,12 +56,13 @@ packages/
   academic-source-browser/     # 通用浏览器会话登录 engine
   academic-web-sessions/       # 通用网站登录、DPAPI 会话 Cookie、带会话 fetch
   academic-materials/          # 课程资料库：文件元数据、文本抽取/分块、FTS5 检索
+  academic-application/        # 宿主无关应用服务：装配、来源/课程/候选用例、备份
   academic-dsh-plugin/         # DSH bundle：host / planner / tools 独立插件
   academic-dsh-ui/             # DSH 客户端 UI 插件 + Host Typert Remote API 适配
 adapters/
   fixture-lms/                 # MVP 受控测试数据源
 apps/
-  academic-cli/                # 组合根、最小 CLI/demo、备份恢复
+  academic-cli/                # CLI 入口：参数解析、输出与 demo
 migrations/                    # 数据库迁移 SQL（权威位置）
 fixtures/                      # HTML / API / 历史事件样本
 tests/                         # unit / integration / replay / e2e
@@ -182,7 +183,7 @@ docs/adr/                      # 架构决策记录
 - `academic-dsh-ui` 是 Desktop / Web 共用的唯一客户端 UI 插件，通过 `sidebar.panellist` + `main` keyed slot 注册；Host 使用 `AcademicUiService extends TypertRemoteService`（namespace `academic`）及 Gateway SRC fallback。UI 不访问 SQLite/Event Store/Projection/Scheduler 表/Vault。
 - Desktop 默认数据库为 `$DSH_HOME/academic-agent/academic.db`；占用期间不得启动第二个使用同一数据库的 Academic Host。并行验证显式设置独立 `ACADEMIC_AGENT_DB`，测试数据放在工作区 `.data/`，不操作用户正在使用的库。
 - `dsh --profile desktop --dump-config` 会被 Electron 拒绝，Desktop 配置需通过桌面进程验证。安装、修改 profile 等工作区外写入不属于默认执行范围，须有用户明确授权。
-- 组合根 `apps/academic-cli` 负责能力装配、后台作业与通知 Reaction，不承载领域规则、不绕过 Command API。
+- 组合根 `@academic/application` 负责能力装配、后台作业与通知 Reaction，不承载领域规则、不绕过 Command API；CLI、DSH Host、UI API 与 Agent 工具都只做输入校验、授权和展示，业务写入统一走应用服务方法（ADR 0020）。
 - 生命周期验证覆盖 inject、Service/Tool 注册与撤销、HMR/重启、依赖卸载后的资源释放。历史 Web 验证不能替代 Desktop 文件级 HMR、真实 Session 生命周期或审批 UI 的专项验收；未验证项必须保留说明。
 
 ## 9. 文档分工与状态维护

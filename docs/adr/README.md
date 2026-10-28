@@ -21,5 +21,6 @@
 | [0017](0017-per-source-sync-jobs.md) | 每个真实来源的持久同步作业与生命周期联动 | 已接受 |
 | [0018](0018-application-backup.md) | 数据库 + 资料 + SHA-256 清单的完整应用备份包 | 已接受 |
 | [0019](0019-multi-step-failure-semantics.md) | 课程删除重读重试、候选启用失败回滚 | 已接受 |
+| [0020](0020-application-service-layer.md) | 宿主无关应用服务层与来源写入规则收口 | 已接受 |
 
 新增决策时按 `NNNN-kebab-title.md` 命名，并更新本索引。已接受决策的契约不得静默修改；需要变更时新增 ADR 并说明迁移方案。

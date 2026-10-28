@@ -20297,8 +20297,10 @@ var userPreferencesSchema = external_exports.object({
 });
 
 // packages/academic-dsh-ui/src/api.ts
-var MAX_TASKS = 500;
 var MAX_ITEMS = 200;
+var MAX_ITEM_SCAN_PAGES = 25;
+var DEFAULT_TASK_PAGE = 200;
+var MAX_TASK_PAGE = 500;
 var PREVIEW_TTL_MS = 10 * 6e4;
 var PREVIEW_LIMIT = 20;
 var FIXTURE_SYNC_JOB_ID = "fixture-lms-sync";
@@ -20313,7 +20315,13 @@ var itemsSchema = external_exports.object({
 });
 var tasksSchema = external_exports.object({
   status: external_exports.enum(["active", "completed", "all"]).optional(),
-  includeArchived: external_exports.boolean().optional()
+  includeArchived: external_exports.boolean().optional(),
+  courseId: external_exports.string().min(1).max(200).optional(),
+  kind: external_exports.enum(["all", "assignment", "exam", "quiz"]).optional(),
+  due: external_exports.enum(["all", "today", "week", "overdue", "unknown", "unscheduled"]).optional(),
+  search: external_exports.string().max(200).optional(),
+  limit: external_exports.number().int().min(1).max(MAX_TASK_PAGE).optional(),
+  offset: external_exports.number().int().min(0).max(1e6).optional()
 });
 var previewSchema = external_exports.object({
   start: external_exports.string().min(1),
@@ -20640,9 +20648,6 @@ function dueSoon(due, now, zone, days) {
       return false;
   }
 }
-function addMinutes(iso, minutes) {
-  return new Date(Date.parse(iso) + minutes * 6e4).toISOString();
-}
 function mapAvailability(settings) {
   return {
     timeZone: settings.timeZone,
@@ -20722,19 +20727,6 @@ function syncHealthState(lastSync, now) {
   const finished = lastSync.finishedAt ?? lastSync.startedAt;
   if (Date.parse(now) - Date.parse(finished) > SYNC_STALE_AFTER_MS) return "stale";
   return "healthy";
-}
-function validateSourceCapabilities(descriptor, authKind, loginMode) {
-  if (descriptor.authKinds && !descriptor.authKinds.includes(authKind)) {
-    return `\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u8BA4\u8BC1\u65B9\u5F0F ${authKind}`;
-  }
-  if (loginMode) {
-    if (authKind === "none") return "\u8BA4\u8BC1\u65B9\u5F0F\u4E3A none \u65F6\u4E0D\u5E94\u914D\u7F6E\u767B\u5F55\u65B9\u5F0F";
-    if (!descriptor.supportsLogin) return "\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u767B\u5F55\u6D41\u7A0B";
-    if (descriptor.loginModes && !descriptor.loginModes.includes(loginMode)) {
-      return `\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u767B\u5F55\u65B9\u5F0F ${loginMode}`;
-    }
-  }
-  return void 0;
 }
 function sourceState(source) {
   if (!source.adapterAvailable) return "unavailable";
@@ -20981,6 +20973,10 @@ function buildSources(app, connections, syncRuns) {
   for (const source of catalog.values()) {
     const run = syncRuns.find((candidate) => candidate.sourceId === source.sourceId);
     if (run) source.lastSync = run;
+    const successful = syncRuns.find(
+      (candidate) => candidate.sourceId === source.sourceId && (candidate.status === "success" || candidate.status === "partial")
+    );
+    if (successful) source.lastSuccessfulSync = successful;
     source.authentication = authenticationState(source);
     source.syncHealth = syncHealthState(source.lastSync, now);
     source.state = sourceState(source);
@@ -21007,13 +21003,25 @@ function syncHealth(lastSync, now, staleAfterMs) {
   if (Date.parse(now) - Date.parse(finished) > staleAfterMs) return "stale";
   return "ok";
 }
-async function loadTasks(app, options = {}) {
+async function loadAllItems(app) {
+  const items = [];
+  let cursor;
+  for (let page = 0; page < MAX_ITEM_SCAN_PAGES; page += 1) {
+    const result = await app.store.queries.listAcademicItems({
+      status: "all",
+      limit: MAX_ITEMS,
+      ...cursor ? { cursor } : {}
+    });
+    items.push(...result.items);
+    if (!result.nextCursor) return { items, complete: true };
+    cursor = result.nextCursor;
+  }
+  return { items, complete: false };
+}
+async function loadWorkspace(app) {
   const [taskPage, itemPage, coursePage, plan] = await Promise.all([
-    app.store.queries.listStudyTasks({
-      ...options.status ? { status: options.status } : {},
-      ...options.includeArchived ? { includeArchived: true } : {}
-    }),
-    app.store.queries.listAcademicItems({ status: "all", limit: MAX_ITEMS }),
+    app.store.queries.listStudyTasks({ status: "all", includeArchived: true }),
+    loadAllItems(app),
     app.store.queries.listCourses(),
     app.getLatestPlan()
   ]);
@@ -21024,12 +21032,14 @@ async function loadTasks(app, options = {}) {
     ...courseById.get(item.courseId) ? { course: courseById.get(item.courseId) } : {}
   }));
   const itemById = new Map(itemPage.items.map((item) => [item.itemId, item]));
-  const planned = new Set(
-    plan?.status === "active" ? plan.blocks.map((block) => block.taskId) : []
-  );
+  const planBlocks = plan?.status === "active" ? plan.blocks : [];
+  const planned = new Set(planBlocks.map((block) => block.taskId));
   const timeZone = app.availability.get().timeZone;
-  const truncated = taskPage.items.length > MAX_TASKS;
-  const cards = taskPage.items.slice(0, MAX_TASKS).map((task) => {
+  const todayRange = dayRange(timeZone, app.clock.now());
+  const plannedToday = new Set(
+    planBlocks.filter((block) => overlapsRange(block, todayRange)).map((block) => block.taskId)
+  );
+  const cards = taskPage.items.map((task) => {
     const item = task.itemId ? itemById.get(task.itemId) : void 0;
     const due = task.dueAt ? instantDue(task.dueAt, timeZone) : item?.due;
     const course = item ? courseById.get(item.courseId) : void 0;
@@ -21039,15 +21049,79 @@ async function loadTasks(app, options = {}) {
       ...course ? { course } : {},
       ...due ? { effectiveDue: due } : {},
       dueSource: task.dueAt ? "task" : item ? "item" : "none",
-      planned: planned.has(task.taskId)
+      planned: planned.has(task.taskId),
+      plannedToday: plannedToday.has(task.taskId)
     };
   });
   return {
     cards,
     courses,
     items,
-    truncated,
+    itemsComplete: itemPage.complete,
     ...plan ? { plan } : {}
+  };
+}
+function isArchivedTask(card) {
+  return card.task.archived;
+}
+function sortTaskCards(cards) {
+  return [...cards].sort((left, right) => {
+    const leftKey = left.effectiveDue ? dueSortKey(left.effectiveDue) : "";
+    const rightKey = right.effectiveDue ? dueSortKey(right.effectiveDue) : "";
+    if (leftKey !== rightKey) return leftKey.localeCompare(rightKey);
+    return left.task.title.localeCompare(right.task.title, "zh-CN");
+  });
+}
+function cardMatchesScope(card, scope, timeZone, now) {
+  if (scope === "all") return true;
+  if (scope === "unscheduled") return !card.planned;
+  if (!card.effectiveDue) return scope === "unknown";
+  const due = card.effectiveDue;
+  if (scope === "unknown") return due.kind === "unknown";
+  if (scope === "overdue") return dueBeforeNow(due, now, timeZone);
+  if (scope === "today") {
+    return Boolean(card.plannedToday) || dueWithin(due, dayRange(timeZone, now), timeZone);
+  }
+  return dueSoon(due, now, timeZone, 7);
+}
+function filterWorkspaceCards(cards, filters, timeZone, now) {
+  const status = filters.status ?? "all";
+  const includeArchived = filters.includeArchived ?? false;
+  const dueScope = filters.due ?? "all";
+  const search = filters.search?.trim().toLocaleLowerCase("zh-CN");
+  return sortTaskCards(
+    cards.filter((card) => {
+      if (!includeArchived && isArchivedTask(card)) return false;
+      if (status !== "all" && card.task.status !== status) return false;
+      if (filters.courseId && filters.courseId !== "all") {
+        if (card.item?.courseId !== filters.courseId) return false;
+      }
+      if (filters.kind && filters.kind !== "all") {
+        if (card.item?.kind !== filters.kind) return false;
+      }
+      if (search) {
+        const haystack = `${card.task.title}
+${card.item?.title ?? ""}`.toLocaleLowerCase(
+          "zh-CN"
+        );
+        if (!haystack.includes(search)) return false;
+      }
+      return cardMatchesScope(card, dueScope, timeZone, now);
+    })
+  );
+}
+function taskViewCounts(workspace, timeZone, now) {
+  const visible = workspace.cards.filter((card) => !isArchivedTask(card));
+  const active = visible.filter((card) => card.task.status === "active");
+  return {
+    active: active.length,
+    completed: visible.filter((card) => card.task.status === "completed").length,
+    archived: workspace.cards.length - visible.length,
+    overdue: active.filter((card) => dueBeforeNow(card.effectiveDue, now, timeZone)).length,
+    today: active.filter(
+      (card) => Boolean(card.plannedToday) || dueWithin(card.effectiveDue, dayRange(timeZone, now), timeZone)
+    ).length,
+    unscheduled: active.filter((card) => !card.planned).length
   };
 }
 function createAcademicUiApi(app) {
@@ -21085,26 +21159,46 @@ function createAcademicUiApi(app) {
         version: "0.1.1",
         generatedAt: app.clock.now(),
         plannerAvailable: app.registry.get("academic.planner.basic") !== void 0,
-        notificationAvailable: app.registry.list("notification").length > 0
+        notificationAvailable: app.registry.list("notification").length > 0,
+        unreadNotifications: app.notifications.unreadCount()
       });
     },
     async dashboard() {
       const now = app.clock.now();
       const availability = app.availability.get();
       const range = dayRange(availability.timeZone, now);
-      const loaded = await loadTasks(app, { status: "active" });
-      const plan = loaded.plan?.status === "active" ? loaded.plan : void 0;
-      const todayBlocks = (plan?.blocks ?? []).filter((block) => overlapsRange(block, range)).map((block) => {
-        const task = loaded.cards.find((card) => card.task.taskId === block.taskId)?.task;
+      const workspace = await loadWorkspace(app);
+      const plan = workspace.plan?.status === "active" ? workspace.plan : void 0;
+      const blocksToday = (plan?.blocks ?? []).filter(
+        (block) => overlapsRange(block, range)
+      );
+      const plannedToday = new Set(blocksToday.map((block) => block.taskId));
+      const todayBlocks = [...blocksToday].sort((left, right) => left.start.localeCompare(right.start)).map((block) => {
+        const task = workspace.cards.find(
+          (card) => card.task.taskId === block.taskId
+        )?.task;
         return { block, ...task ? { task } : {} };
       });
-      const todayTasks = loaded.cards.filter(
-        (card) => dueWithin(card.effectiveDue, range, availability.timeZone) || (plan?.blocks ?? []).some(
-          (block) => block.taskId === card.task.taskId && overlapsRange(block, range)
+      const activeCards = workspace.cards.filter(
+        (card) => !isArchivedTask(card) && card.task.status === "active"
+      );
+      const todayTasks = sortTaskCards(
+        activeCards.filter(
+          (card) => dueWithin(card.effectiveDue, range, availability.timeZone) || plannedToday.has(card.task.taskId)
         )
       );
-      const upcoming = loaded.items.filter((card) => dueSoon(card.item.due, now, availability.timeZone, 7)).sort((left, right) => dueSortKey(left.item.due).localeCompare(dueSortKey(right.item.due))).slice(0, 20);
-      const recentChanges = [...loaded.items].sort((left, right) => right.item.updatedAt.localeCompare(left.item.updatedAt)).slice(0, 5);
+      const overdueTasks = sortTaskCards(
+        activeCards.filter(
+          (card) => dueBeforeNow(card.effectiveDue, now, availability.timeZone)
+        )
+      );
+      const dueSoonItems = workspace.items.filter(
+        (card) => !card.item.archived && dueSoon(card.item.due, now, availability.timeZone, 7)
+      ).sort(
+        (left, right) => dueSortKey(left.item.due).localeCompare(dueSortKey(right.item.due))
+      );
+      const upcoming = dueSoonItems.slice(0, 20);
+      const recentChanges = [...workspace.items].sort((left, right) => right.item.updatedAt.localeCompare(left.item.updatedAt)).slice(0, 5);
       const connections = app.connections.list();
       const syncRuns = (await app.store.queries.listSyncRuns(void 0, 20)).items;
       const lastSync = syncRuns[0];
@@ -21118,22 +21212,33 @@ function createAcademicUiApi(app) {
         range,
         timeZone: availability.timeZone,
         counts: {
-          activeTasks: loaded.cards.length,
-          overdueTasks: loaded.cards.filter(
-            (card) => dueBeforeNow(card.effectiveDue, now, availability.timeZone)
+          activeTasks: activeCards.length,
+          completedTasks: workspace.cards.filter(
+            (card) => !isArchivedTask(card) && card.task.status === "completed"
           ).length,
+          overdueTasks: overdueTasks.length,
+          todayTasks: todayTasks.length,
           unreadNotifications: app.notifications.unreadCount(),
-          unscheduledTasks: loaded.cards.filter((card) => !card.planned).length,
-          itemsDueSoon: upcoming.length
+          unscheduledTasks: activeCards.filter((card) => !card.planned).length,
+          itemsDueSoon: dueSoonItems.length,
+          complete: workspace.itemsComplete,
+          generatedAt: now
         },
-        todayTasks,
+        todayTasks: todayTasks.slice(0, 20),
+        todayTasksTotal: todayTasks.length,
+        overdueTasks: overdueTasks.slice(0, 10),
         upcoming,
+        upcomingTotal: dueSoonItems.length,
         recentChanges,
         todayBlocks,
         ...plan ? { plan } : {},
         unread,
         connections,
         sources: buildSources(app, connections, syncRuns),
+        coursesCount: workspace.courses.filter(
+          (course) => !course.archived && !course.deleted
+        ).length,
+        availabilityConfigured: availability.weeklySlots.length > 0,
         ...lastSync ? { lastSync } : {},
         ...lastSuccessfulSync ? { lastSuccessfulSync } : {},
         syncHealth: syncHealth(
@@ -21146,13 +21251,52 @@ function createAcademicUiApi(app) {
       });
     },
     async courses() {
-      const [courses, items] = await Promise.all([
+      const [courses, workspace, syncRuns] = await Promise.all([
         app.store.queries.listCourses(),
-        loadTasks(app, { status: "all" })
+        loadWorkspace(app),
+        app.store.queries.listSyncRuns(void 0, 30)
       ]);
+      const connections = app.connections.list();
+      const sources = buildSources(app, connections, syncRuns.items);
+      const materialCounts = /* @__PURE__ */ new Map();
+      for (const material of app.materials.list()) {
+        materialCounts.set(
+          material.courseId,
+          (materialCounts.get(material.courseId) ?? 0) + 1
+        );
+      }
+      const summaries = courses.items.map((course) => {
+        const tasks = workspace.cards.filter(
+          (card) => !isArchivedTask(card) && card.item?.courseId === course.courseId
+        );
+        const active = tasks.filter((card) => card.task.status === "active");
+        const sourceIds = /* @__PURE__ */ new Set();
+        if (course.source) sourceIds.add(course.source.sourceId);
+        for (const card of workspace.items) {
+          if (card.item.courseId === course.courseId) {
+            sourceIds.add(card.item.source.sourceId);
+          }
+        }
+        return {
+          courseId: course.courseId,
+          activeTasks: active.length,
+          completedTasks: tasks.filter(
+            (card) => card.task.status === "completed"
+          ).length,
+          activeItems: workspace.items.filter(
+            (card) => !card.item.archived && card.item.courseId === course.courseId
+          ).length,
+          plannedTasks: active.filter((card) => card.planned).length,
+          materialCount: materialCounts.get(course.courseId) ?? 0,
+          sourceIds: [...sourceIds]
+        };
+      });
       return ok({
         courses: courses.items,
-        items: items.items,
+        items: workspace.items,
+        summaries,
+        sources,
+        generatedAt: app.clock.now(),
         projection: courses.meta
       });
     },
@@ -21181,27 +21325,43 @@ function createAcademicUiApi(app) {
     async tasks(request) {
       const parsed = parse3(tasksSchema, request);
       if (!parsed.ok) return parsed;
-      const loaded = await loadTasks(app, parsed.value);
+      const body = parsed.value;
+      const now = app.clock.now();
+      const timeZone = app.availability.get().timeZone;
+      const workspace = await loadWorkspace(app);
+      const matched = filterWorkspaceCards(workspace.cards, body, timeZone, now);
+      const offset = body.offset ?? 0;
+      const limit = body.limit ?? DEFAULT_TASK_PAGE;
+      const page = matched.slice(offset, offset + limit);
       return ok({
-        cards: loaded.cards,
-        courses: loaded.courses,
-        items: loaded.items,
-        planBlocks: loaded.plan?.blocks ?? [],
-        truncated: loaded.truncated,
-        timeZone: app.availability.get().timeZone,
-        generatedAt: app.clock.now()
+        cards: page,
+        total: matched.length,
+        offset,
+        hasMore: offset + page.length < matched.length,
+        counts: taskViewCounts(workspace, timeZone, now),
+        courses: workspace.courses,
+        items: workspace.items,
+        planBlocks: workspace.plan?.status === "active" ? workspace.plan.blocks : [],
+        truncated: offset + page.length < matched.length,
+        itemsComplete: workspace.itemsComplete,
+        timeZone,
+        generatedAt: now
       });
     },
     async plan() {
-      const [plan, loaded] = await Promise.all([
+      const [plan, workspace] = await Promise.all([
         app.getLatestPlan(),
-        loadTasks(app, { status: "active" })
+        loadWorkspace(app)
       ]);
       return ok({
         ...plan ? { plan } : {},
         plannerAvailable: app.registry.get("academic.planner.basic") !== void 0,
         availability: mapAvailability(app.availability.get()),
-        tasks: loaded.cards,
+        tasks: sortTaskCards(
+          workspace.cards.filter(
+            (card) => !isArchivedTask(card) && card.task.status === "active"
+          )
+        ),
         generatedAt: app.clock.now()
       });
     },
@@ -21311,7 +21471,6 @@ function createAcademicUiApi(app) {
       const result = await app.archivePlan();
       const receipt = commandReceipt(result);
       if (!receipt.ok) return receipt;
-      previews.clear();
       return ok({ receipt: receipt.value });
     },
     async availability() {
@@ -21341,6 +21500,7 @@ function createAcademicUiApi(app) {
         engines: app.sourceEngines.list().map((engine) => engine.descriptor),
         courses: courses.items,
         syncRuns: syncRuns.items,
+        agentAdapterAutomation: app.preferences.get().agentAdapterAutomation,
         generatedAt: app.clock.now()
       });
     },
@@ -21348,18 +21508,8 @@ function createAcademicUiApi(app) {
       const parsed = parse3(createConnectionSchema, request);
       if (!parsed.ok) return parsed;
       const body = parsed.value;
-      const sources = buildSources(app, app.connections.list(), []);
-      const source = sources.find((candidate) => candidate.sourceId === body.sourceId);
-      if (!source || !source.adapterAvailable) {
-        return failure2("CAPABILITY_UNAVAILABLE", "\u5F53\u524D\u7248\u672C\u4E0D\u652F\u6301\u8BE5\u6570\u636E\u6E90");
-      }
-      if (source.authKind !== "unknown" && source.authKind !== body.authKind) {
-        return failure2("VALIDATION", "\u8BA4\u8BC1\u65B9\u5F0F\u4E0E\u6570\u636E\u6E90\u80FD\u529B\u4E0D\u5339\u914D");
-      }
-      const existing = app.connections.list().find((entry) => entry.sourceId === body.sourceId);
-      if (existing) return ok(existing);
       try {
-        return ok(app.connections.create(body));
+        return ok(app.ensureConnection(body));
       } catch (error62) {
         return fromError(error62);
       }
@@ -21368,30 +21518,8 @@ function createAcademicUiApi(app) {
       const parsed = parse3(createSourceSchema, request);
       if (!parsed.ok) return parsed;
       const body = parsed.value;
-      const configJson = JSON.stringify(body.config ?? {});
-      const existing = app.sources.list().find(
-        (entry) => entry.engine === body.engine && entry.displayName === body.displayName && JSON.stringify(entry.config) === configJson
-      );
-      if (existing) {
-        const source = sourceStatusFor(app, existing.sourceId);
-        return source ? ok(source) : failure2("NOT_FOUND", "\u6570\u636E\u6E90\u5B58\u5728\u4F46\u672A\u80FD\u8BFB\u53D6");
-      }
-      const engine = app.sourceEngines.get(body.engine);
-      if (!engine) {
-        return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u5F15\u64CE\u5C1A\u672A\u52A0\u8F7D");
-      }
-      const invalid = validateSourceCapabilities(
-        engine.descriptor,
-        body.authKind,
-        body.loginMode
-      );
-      if (invalid) return failure2("VALIDATION", invalid);
-      const invalidConfig = engine.descriptor.validateConfig?.(body.config ?? {});
-      if (invalidConfig) {
-        return failure2("VALIDATION", `\u914D\u7F6E\u65E0\u6548\uFF1A${invalidConfig}`);
-      }
       try {
-        const created = app.sources.create(body);
+        const created = app.createSource(body);
         const source = sourceStatusFor(app, created.sourceId);
         return source ? ok(source) : failure2("NOT_FOUND", "\u6570\u636E\u6E90\u5DF2\u521B\u5EFA\u4F46\u672A\u80FD\u8BFB\u53D6");
       } catch (error62) {
@@ -21402,26 +21530,8 @@ function createAcademicUiApi(app) {
       const parsed = parse3(updateSourceSchema, request);
       if (!parsed.ok) return parsed;
       const body = parsed.value;
-      const current = app.sources.get(body.sourceId);
-      if (!current) return failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
-      const engine = app.sourceEngines.get(current.engine);
-      if (!engine) {
-        return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u5F15\u64CE\u5C1A\u672A\u52A0\u8F7D");
-      }
-      const invalid = validateSourceCapabilities(
-        engine.descriptor,
-        body.authKind ?? current.authKind,
-        body.loginMode ?? current.loginMode
-      );
-      if (invalid) return failure2("VALIDATION", invalid);
-      const invalidConfig = engine.descriptor.validateConfig?.(
-        body.config ?? current.config
-      );
-      if (invalidConfig) {
-        return failure2("VALIDATION", `\u914D\u7F6E\u65E0\u6548\uFF1A${invalidConfig}`);
-      }
       try {
-        app.sources.update(body.sourceId, body, body.expectedVersion);
+        app.updateSource(body.sourceId, body, body.expectedVersion);
         const source = sourceStatusFor(app, body.sourceId);
         return source ? ok(source) : failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
       } catch (error62) {
@@ -21433,7 +21543,7 @@ function createAcademicUiApi(app) {
       if (!parsed.ok) return parsed;
       const body = parsed.value;
       try {
-        app.sources.archive(body.sourceId);
+        app.archiveSource(body.sourceId);
         const source = sourceStatusFor(app, body.sourceId);
         return source ? ok(source) : failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
       } catch (error62) {
@@ -21445,7 +21555,7 @@ function createAcademicUiApi(app) {
       if (!parsed.ok) return parsed;
       const body = parsed.value;
       try {
-        app.sources.restore(body.sourceId);
+        app.restoreSource(body.sourceId);
         const source = sourceStatusFor(app, body.sourceId);
         return source ? ok(source) : failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
       } catch (error62) {
@@ -21456,11 +21566,8 @@ function createAcademicUiApi(app) {
       const parsed = parse3(sourceIdSchema, request);
       if (!parsed.ok) return parsed;
       const body = parsed.value;
-      const source = app.sources.get(body.sourceId);
-      if (!source) return failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
       try {
-        await app.connections.deleteBySource(body.sourceId);
-        app.sources.delete(body.sourceId);
+        await app.deleteSource(body.sourceId);
         return ok({ deleted: true });
       } catch (error62) {
         return fromError(error62);
@@ -21470,35 +21577,12 @@ function createAcademicUiApi(app) {
       const parsed = parse3(sourceIdSchema, request);
       if (!parsed.ok) return parsed;
       const body = parsed.value;
-      const source = app.sources.get(body.sourceId);
-      if (!source) return failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
-      if (!source.enabled || source.archived) {
-        return failure2("CAPABILITY_UNAVAILABLE", "\u6570\u636E\u6E90\u672A\u542F\u7528");
-      }
-      const engine = app.sourceEngines.get(source.engine);
-      if (!engine?.login) {
-        return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u6CA1\u6709\u53EF\u7528\u7684\u767B\u5F55\u6D41\u7A0B");
-      }
-      const context = { sourceId: source.sourceId, config: source.config };
       try {
-        const login = await engine.login(context);
-        const connection = app.connections.list().find((entry) => entry.sourceId === source.sourceId) ?? app.connections.create({
-          sourceId: source.sourceId,
-          displayName: source.displayName,
-          authKind: source.authKind,
-          scopes: source.capabilities,
-          ...login.accountLabel ? { accountLabel: login.accountLabel } : {}
-        });
-        if (connection.authKind === "none") return ok(connection);
-        await app.connections.setSecret(connection.connectionId, login.secret);
-        const verified = await app.connections.verify(
-          connection.connectionId,
-          async (secret) => engine.verify ? engine.verify(context, secret) : { ok: true, ...login.accountLabel ? { accountLabel: login.accountLabel } : {} }
-        );
-        if (verified.status === "auth-required") {
-          return failure2("AUTH_REQUIRED", verified.lastError ?? "\u767B\u5F55\u4F1A\u8BDD\u9A8C\u8BC1\u5931\u8D25");
+        const connection = await app.loginSource(body.sourceId);
+        if (connection.status === "auth-required") {
+          return failure2("AUTH_REQUIRED", connection.lastError ?? "\u767B\u5F55\u4F1A\u8BDD\u9A8C\u8BC1\u5931\u8D25");
         }
-        return ok(verified);
+        return ok(connection);
       } catch (error62) {
         return fromError(error62);
       }
@@ -21789,19 +21873,8 @@ function createAcademicUiApi(app) {
       const parsed = parse3(syncScheduleSchema, request);
       if (!parsed.ok) return parsed;
       const body = parsed.value;
-      const job = app.scheduler.getJob(FIXTURE_SYNC_JOB_ID);
-      if (!job) return failure2("NOT_FOUND", "\u540C\u6B65\u4EFB\u52A1\u5C1A\u672A\u521D\u59CB\u5316");
-      const updated = app.scheduler.schedule({
-        jobId: job.jobId,
-        kind: job.kind,
-        payload: job.payload,
-        enabled: job.enabled,
-        nextRunAt: addMinutes(app.clock.now(), body.intervalMinutes),
-        policy: {
-          ...job.policy,
-          intervalMs: body.intervalMinutes * 6e4
-        }
-      });
+      const updated = app.applySyncInterval(body.intervalMinutes);
+      if (!updated) return failure2("NOT_FOUND", "\u540C\u6B65\u4EFB\u52A1\u5C1A\u672A\u521D\u59CB\u5316");
       return ok(mapJob(updated));
     },
     async previewSourceSync(request) {
@@ -21833,15 +21906,8 @@ function createAcademicUiApi(app) {
       }
       try {
         if (!sourceId) {
-          const candidates = app.sources.list().filter(
-            (source) => source.enabled && app.sourceEngines.get(source.engine)?.createAdapter
-          );
-          let last;
-          for (const source of candidates) {
-            const connection = app.connections.list().find((entry) => entry.sourceId === source.sourceId);
-            if (source.authKind !== "none" && !connection) continue;
-            last = await app.syncSource(source.sourceId, connection?.connectionId);
-          }
+          const summaries = await app.syncAllSources();
+          const last = summaries[summaries.length - 1];
           if (!last) {
             return failure2("CAPABILITY_UNAVAILABLE", "\u6CA1\u6709\u53EF\u540C\u6B65\u7684\u6570\u636E\u6E90");
           }
@@ -21892,6 +21958,9 @@ function createAcademicUiApi(app) {
         plannerAvailable: app.registry.get("academic.planner.basic") !== void 0,
         generatedAt: app.clock.now()
       });
+    },
+    async preferences() {
+      return ok(await buildPreferencesView(app));
     },
     async updatePreferences(request) {
       const parsed = parse3(updatePreferencesSchema, request);
@@ -22234,6 +22303,7 @@ var REMOTE_METHODS = [
   "markNotificationRead",
   "markAllNotificationsRead",
   "settings",
+  "preferences",
   "updateReminderSettings",
   "addCourse",
   "updateCourse",
@@ -22422,6 +22492,9 @@ var AcademicUiService = class extends TypertRemoteService {
   }
   async settings(request) {
     return (await this.apiReady).settings(request);
+  }
+  async preferences(request) {
+    return (await this.apiReady).preferences(request);
   }
   async updateReminderSettings(request) {
     return (await this.apiReady).updateReminderSettings(

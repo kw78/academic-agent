@@ -5190,15 +5190,15 @@ var require_canvas = __commonJS({
 
 // packages/academic-dsh-plugin/src/host.ts
 import { homedir as homedir2 } from "node:os";
-import { join as join5 } from "node:path";
+import { join as join6 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { Service } from "@deepseek-ai/cordis";
 
-// apps/academic-cli/src/composition.ts
-import { createHash as createHash12, randomUUID as randomUUID4 } from "node:crypto";
+// packages/academic-application/src/app.ts
+import { createHash as createHash13, randomUUID as randomUUID4 } from "node:crypto";
 import { mkdirSync as mkdirSync4, rmSync as rmSync4 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname as dirname2, join as join4 } from "node:path";
+import { dirname as dirname2, join as join5 } from "node:path";
 
 // node_modules/zod/v4/classic/external.js
 var external_exports = {};
@@ -27799,11 +27799,13 @@ var SourceConfigStore = class {
   #clock;
   #ids;
   #validateSource;
+  #onChange;
   constructor(options) {
     this.#db = options.db;
     this.#clock = options.clock;
     this.#ids = options.ids;
     this.#validateSource = options.validateSource;
+    this.#onChange = options.onChange;
   }
   #assertValid(input2) {
     const error62 = this.#validateSource?.(input2);
@@ -27854,7 +27856,13 @@ var SourceConfigStore = class {
       }
       throw error62;
     }
-    return this.get(sourceId);
+    const created = this.get(sourceId);
+    this.#onChange?.({
+      type: "created",
+      sourceId,
+      enabled: created.enabled
+    });
+    return created;
   }
   get(sourceId) {
     const row = this.#db.prepare("SELECT * FROM academic_sources WHERE source_id = ?").get(sourceId);
@@ -27910,7 +27918,14 @@ var SourceConfigStore = class {
       now,
       sourceId
     );
-    return this.get(sourceId);
+    const updatedConfig = this.get(sourceId);
+    this.#onChange?.({
+      type: "updated",
+      sourceId,
+      enabled: updatedConfig.enabled,
+      previouslyEnabled: current.enabled
+    });
+    return updatedConfig;
   }
   archive(sourceId) {
     const current = this.get(sourceId);
@@ -27921,7 +27936,9 @@ var SourceConfigStore = class {
            archived = 1, enabled = 0, version = version + 1, updated_at = ?
          WHERE source_id = ?`
     ).run(now, sourceId);
-    return this.get(sourceId);
+    const archived = this.get(sourceId);
+    this.#onChange?.({ type: "archived", sourceId, enabled: false });
+    return archived;
   }
   restore(sourceId) {
     const current = this.get(sourceId);
@@ -27933,12 +27950,19 @@ var SourceConfigStore = class {
            archived = 0, enabled = 1, version = version + 1, updated_at = ?
          WHERE source_id = ?`
     ).run(now, sourceId);
-    return this.get(sourceId);
+    const restored = this.get(sourceId);
+    this.#onChange?.({
+      type: "restored",
+      sourceId,
+      enabled: restored.enabled
+    });
+    return restored;
   }
   delete(sourceId) {
     const current = this.get(sourceId);
     if (!current) throw new SourceNotFoundError(sourceId);
     this.#db.prepare("DELETE FROM academic_sources WHERE source_id = ?").run(sourceId);
+    this.#onChange?.({ type: "deleted", sourceId, enabled: false });
   }
   #toConfig(row) {
     return {
@@ -32868,10 +32892,10 @@ function compareDocumentPosition(nodeA, nodeB) {
 function uniqueSort(nodes) {
   nodes = nodes.filter((node2, i, arr) => !arr.includes(node2, i + 1));
   nodes.sort((a, b) => {
-    const relative2 = compareDocumentPosition(a, b);
-    if (relative2 & DocumentPosition.PRECEDING) {
+    const relative3 = compareDocumentPosition(a, b);
+    if (relative3 & DocumentPosition.PRECEDING) {
       return -1;
-    } else if (relative2 & DocumentPosition.FOLLOWING) {
+    } else if (relative3 & DocumentPosition.FOLLOWING) {
       return 1;
     }
     return 0;
@@ -35317,11 +35341,11 @@ function compareDocumentPosition2(nodeA, nodeB) {
 function uniqueSort2(nodes) {
   nodes = nodes.filter((node2, index, array2) => !array2.includes(node2, index + 1));
   nodes.sort((a, b) => {
-    const relative2 = compareDocumentPosition2(a, b);
-    if (relative2 & DocumentPosition2.PRECEDING) {
+    const relative3 = compareDocumentPosition2(a, b);
+    if (relative3 & DocumentPosition2.PRECEDING) {
       return -1;
     }
-    if (relative2 & DocumentPosition2.FOLLOWING) {
+    if (relative3 & DocumentPosition2.FOLLOWING) {
       return 1;
     }
     return 0;
@@ -43693,10 +43717,10 @@ function createAcademicTools(dependencies) {
             { ...input2 }
           );
           if (rejection) return rejection;
-          if (!dependencies.sourceEngines.get(input2.engine)) {
+          if (!dependencies.createSource && !dependencies.sourceEngines.get(input2.engine)) {
             return failure2("CAPABILITY_UNAVAILABLE", `Unknown source engine: ${input2.engine}`);
           }
-          const source = dependencies.sources.create(input2);
+          const source = dependencies.createSource ? dependencies.createSource(input2) : dependencies.sources.create(input2);
           return success2({ source });
         }
       ),
@@ -43709,11 +43733,7 @@ function createAcademicTools(dependencies) {
             ...input2
           });
           if (rejection) return rejection;
-          const source = dependencies.sources.update(
-            input2.sourceId,
-            input2,
-            input2.expectedVersion
-          );
+          const source = dependencies.updateSource ? dependencies.updateSource(input2.sourceId, input2, input2.expectedVersion) : dependencies.sources.update(input2.sourceId, input2, input2.expectedVersion);
           return success2({ source });
         }
       )
@@ -44645,6 +44665,11 @@ var EventDispatcher = class {
     for (const entry of this.#consumers.values()) entry.disposed = true;
     this.#consumers.clear();
   }
+  /** Resolves once queued and in-flight dispatch work has settled. */
+  async waitForIdle() {
+    await this.#queued;
+    if (this.#processing) await this.#processing;
+  }
   wake() {
     if (!this.#running) return;
     this.#queued = this.#queued.then(() => this.processOnce()).catch(() => void 0);
@@ -44694,6 +44719,7 @@ var EventDispatcher = class {
       entry.status.lastRunAt = now;
       const events = await this.#events.readAll(checkpoint.lastPosition, this.#batchSize);
       for (const event of events) {
+        if (entry.disposed) break;
         summary2.scanned += 1;
         if (!this.#matches(entry.config.eventTypes, event.type)) {
           await this.#advance(entry, event.globalPosition);
@@ -46172,6 +46198,10 @@ var Scheduler = class {
     this.stop();
     this.#handlers.clear();
   }
+  /** Resolves once the in-flight pass (if any) has finished. */
+  async waitForIdle() {
+    if (this.#pass) await this.#pass;
+  }
   async #runDueJobsInternal(now, limit) {
     const due = this.#db.prepare(
       `SELECT * FROM scheduled_jobs
@@ -46327,6 +46357,16 @@ var Scheduler = class {
         JSON.stringify(result.outcome?.summary ?? {}),
         runId
       );
+      const currentRow = this.#db.prepare("SELECT * FROM scheduled_jobs WHERE job_id = ?").get(job.jobId);
+      if (currentRow) {
+        const current = this.#toJob(currentRow);
+        if (current.revision !== job.revision) {
+          jobEnabled = current.enabled;
+          nextRunAt = current.nextRunAt;
+        } else if (current.enabled !== job.enabled) {
+          jobEnabled = current.enabled;
+        }
+      }
       this.#db.prepare(
         `UPDATE scheduled_jobs SET
              enabled = ?, next_run_at = ?, consecutive_failures = ?, updated_at = ?
@@ -48055,9 +48095,19 @@ function createAcademicStore(options) {
   };
 }
 
-// apps/academic-cli/src/backup.ts
-import { copyFileSync, existsSync as existsSync3, mkdirSync as mkdirSync3, rmSync as rmSync3 } from "node:fs";
-import { dirname } from "node:path";
+// packages/academic-application/src/backup.ts
+import { createHash as createHash12 } from "node:crypto";
+import {
+  copyFileSync,
+  existsSync as existsSync3,
+  mkdirSync as mkdirSync3,
+  readFileSync as readFileSync5,
+  readdirSync as readdirSync2,
+  rmSync as rmSync3,
+  statSync,
+  writeFileSync as writeFileSync3
+} from "node:fs";
+import { dirname, join as join4, relative as relative2 } from "node:path";
 function backupDatabase(store, targetPath) {
   if (targetPath === ":memory:") throw new Error("Cannot back up to :memory:");
   if (existsSync3(targetPath)) {
@@ -48066,8 +48116,97 @@ function backupDatabase(store, targetPath) {
   mkdirSync3(dirname(targetPath), { recursive: true });
   store.database.prepare("VACUUM INTO ?").run(targetPath);
 }
+function sha256File(path) {
+  return createHash12("sha256").update(readFileSync5(path)).digest("hex");
+}
+function describeFile(path) {
+  return { sha256: sha256File(path), bytes: statSync(path).size };
+}
+function listFiles(root) {
+  const found = [];
+  const walk = (directory) => {
+    for (const entry of readdirSync2(directory, { withFileTypes: true })) {
+      const full = join4(directory, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile()) found.push(relative2(root, full));
+    }
+  };
+  walk(root);
+  return found.sort();
+}
+function backupApplication(options) {
+  const { store, materialsDir, targetDir } = options;
+  if (existsSync3(targetDir)) {
+    throw new Error(`Backup target already exists: ${targetDir}`);
+  }
+  mkdirSync3(targetDir, { recursive: true });
+  try {
+    const databasePath = join4(targetDir, "academic.db");
+    backupDatabase(store, databasePath);
+    const database = {
+      path: "academic.db",
+      ...describeFile(databasePath)
+    };
+    const materials = [];
+    if (existsSync3(materialsDir)) {
+      for (const file2 of listFiles(materialsDir)) {
+        const target = join4(targetDir, "materials", file2);
+        mkdirSync3(dirname(target), { recursive: true });
+        copyFileSync(join4(materialsDir, file2), target);
+        materials.push({
+          path: `materials/${file2.replace(/\\/g, "/")}`,
+          ...describeFile(target)
+        });
+      }
+    }
+    const manifest = {
+      formatVersion: 1,
+      createdAt: options.createdAt ?? (/* @__PURE__ */ new Date()).toISOString(),
+      database,
+      materials
+    };
+    writeFileSync3(join4(targetDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}
+`);
+    return manifest;
+  } catch (error62) {
+    rmSync3(targetDir, { recursive: true, force: true });
+    throw error62;
+  }
+}
 
-// apps/academic-cli/src/composition.ts
+// packages/academic-application/src/app.ts
+var FIXTURE_SYNC_JOB_ID = "fixture-lms-sync";
+var SOURCE_SYNC_JOB_KIND = "connector.sync.source";
+var DEFAULT_SYNC_INTERVAL_MS = 60 * 6e4;
+function sourceSyncJobId(sourceId) {
+  return `source.sync.${sourceId}`;
+}
+var SourceValidationError = class extends Error {
+  code = "VALIDATION";
+  constructor(message) {
+    super(message);
+    this.name = "SourceValidationError";
+  }
+};
+function sourceCapabilityError(engine, input2) {
+  if (!engine) return `\u672A\u77E5 engine\uFF1A${input2.engine}`;
+  const descriptor = engine.descriptor;
+  if (descriptor.authKinds && !descriptor.authKinds.includes(input2.authKind)) {
+    return `\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u8BA4\u8BC1\u65B9\u5F0F ${input2.authKind}`;
+  }
+  if (input2.loginMode) {
+    if (input2.authKind === "none") return "\u8BA4\u8BC1\u65B9\u5F0F\u4E3A none \u65F6\u4E0D\u5E94\u914D\u7F6E\u767B\u5F55\u65B9\u5F0F";
+    if (!descriptor.supportsLogin) return "\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u767B\u5F55\u6D41\u7A0B";
+    if (descriptor.loginModes && !descriptor.loginModes.includes(input2.loginMode)) {
+      return `\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u767B\u5F55\u65B9\u5F0F ${input2.loginMode}`;
+    }
+  }
+  return void 0;
+}
+function sourceConfigError(engine, config2) {
+  const error62 = engine?.descriptor.validateConfig?.(config2);
+  return error62 ? `\u914D\u7F6E\u65E0\u6548\uFF1A${error62}` : void 0;
+}
 var ModelUsageMeter = class {
   #calls = 0;
   recordCall() {
@@ -48127,6 +48266,7 @@ async function createAcademicApp(options) {
   }
   const clock = options.clock ?? systemClock;
   const ids = options.ids ?? { next: () => randomUUID4() };
+  let sourceJobsReady = false;
   const store = createAcademicStore({
     databasePath: options.databasePath,
     ...options.migrationsDir ? { migrationsDir: options.migrationsDir } : {},
@@ -48246,20 +48386,16 @@ async function createAcademicApp(options) {
     clock,
     ids,
     validateSource(input2) {
-      const registered = sourceEngines.get(input2.engine);
-      if (!registered) return `\u672A\u77E5 engine\uFF1A${input2.engine}`;
-      const descriptor = registered.descriptor;
-      if (descriptor.authKinds && !descriptor.authKinds.includes(input2.authKind)) {
-        return `\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u8BA4\u8BC1\u65B9\u5F0F ${input2.authKind}`;
-      }
-      if (input2.loginMode) {
-        if (input2.authKind === "none") return "\u8BA4\u8BC1\u65B9\u5F0F\u4E3A none \u65F6\u4E0D\u5E94\u914D\u7F6E\u767B\u5F55\u65B9\u5F0F";
-        if (!descriptor.supportsLogin) return "\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u767B\u5F55\u6D41\u7A0B";
-        if (descriptor.loginModes && !descriptor.loginModes.includes(input2.loginMode)) {
-          return `\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u767B\u5F55\u65B9\u5F0F ${input2.loginMode}`;
-        }
-      }
-      return descriptor.validateConfig?.(input2.config);
+      const engine = sourceEngines.get(input2.engine);
+      return sourceCapabilityError(engine, input2) ?? engine?.descriptor.validateConfig?.(input2.config);
+    },
+    onChange(change) {
+      if (!sourceJobsReady) return;
+      reconcileSourceSyncJobs({
+        resume: change.type === "created" || change.type === "restored" || // Only a real disabled -> enabled transition resumes the job; an
+        // unrelated edit must not override a manual pause.
+        change.type === "updated" && change.enabled && change.previouslyEnabled === false
+      });
     }
   });
   sources.ensure({
@@ -48281,7 +48417,7 @@ async function createAcademicApp(options) {
     }
   }
   const ephemeralMaterials = options.databasePath === ":memory:" && options.materialsDir === void 0;
-  const materialRoot = options.materialsDir ?? (options.databasePath === ":memory:" ? join4(tmpdir(), `academic-materials-${randomUUID4()}`) : join4(dirname2(options.databasePath), "materials"));
+  const materialRoot = options.materialsDir ?? (options.databasePath === ":memory:" ? join5(tmpdir(), `academic-materials-${randomUUID4()}`) : join5(dirname2(options.databasePath), "materials"));
   const toMaterialResource = (result) => ({
     status: result.status,
     finalUrl: result.finalUrl,
@@ -48535,9 +48671,13 @@ async function createAcademicApp(options) {
   };
   const ensureCandidateSource = async (candidate) => {
     const manifest = manifestRegistry.get(candidate.adapterId, candidate.version);
-    if (!manifest) return { warning: "Manifest \u672A\u6CE8\u518C\uFF0C\u65E0\u6CD5\u521B\u5EFA\u540C\u6B65\u6570\u636E\u6E90" };
+    if (!manifest) {
+      throw new CapabilityUnavailableError(
+        `manifest.${candidate.adapterId}@${candidate.version}`
+      );
+    }
     if (!sourceEngines.get("declarative")) {
-      return { warning: "declarative engine \u672A\u52A0\u8F7D\uFF0C\u65E0\u6CD5\u521B\u5EFA\u540C\u6B65\u6570\u636E\u6E90" };
+      throw new CapabilityUnavailableError("source.engine.declarative");
     }
     const syncDisplayName = manifest.displayName.endsWith("\uFF08\u540C\u6B65\uFF09") ? manifest.displayName : `${manifest.displayName}\uFF08\u540C\u6B65\uFF09`;
     const base = new URL(manifest.baseUrl);
@@ -48608,9 +48748,25 @@ async function createAcademicApp(options) {
     return { sourceId, ...warning ? { warning } : {} };
   };
   const activateCandidate = async (adapterId, version2) => {
+    const previousActiveVersion = manifestRegistry.get(adapterId)?.version;
     const candidate = adapterCandidates.activate(adapterId, version2);
-    const activation = await ensureCandidateSource(candidate);
-    return { candidate, ...activation };
+    try {
+      const activation = await ensureCandidateSource(candidate);
+      return { candidate, ...activation };
+    } catch (error62) {
+      if (previousActiveVersion) {
+        try {
+          adapterCandidates.rollback(adapterId, previousActiveVersion);
+        } catch {
+        }
+        throw new Error(
+          `\u542F\u7528\u5019\u9009\u5931\u8D25\uFF0C\u5DF2\u6062\u590D\u5230 ${previousActiveVersion}\uFF1A${errorMessage3(error62)}`
+        );
+      }
+      throw new Error(
+        `\u542F\u7528\u5019\u9009\u5931\u8D25\uFF0C\u4E14\u6CA1\u6709\u53EF\u6062\u590D\u7684\u65E7\u7248\u672C\uFF1B\u8BF7\u91CD\u8BD5\u542F\u7528\uFF1A${errorMessage3(error62)}`
+      );
+    }
   };
   const rollbackCandidate = async (adapterId, version2) => {
     const candidate = adapterCandidates.rollback(adapterId, version2);
@@ -48651,6 +48807,8 @@ async function createAcademicApp(options) {
     ids,
     sources,
     sourceEngines,
+    createSource: (input2) => requireApp().createSource(input2),
+    updateSource: (sourceId, update2, expectedVersion) => requireApp().updateSource(sourceId, update2, expectedVersion),
     webSessions,
     materials,
     adapterCandidates,
@@ -48721,7 +48879,7 @@ async function createAcademicApp(options) {
       async handler(event) {
         if (event.type !== EVENT.AcademicItemDiscovered) return;
         const itemId = event.streamId.slice(event.streamId.indexOf("/") + 1);
-        const taskId = `task-default-${createHash12("sha256").update(itemId).digest("hex").slice(0, 32)}`;
+        const taskId = `task-default-${createHash13("sha256").update(itemId).digest("hex").slice(0, 32)}`;
         const result = await store.commands.execute(
           parseCommand({
             commandId: `default-task:${event.eventId}`,
@@ -48802,6 +48960,38 @@ async function createAcademicApp(options) {
   scheduler.registerHandler("notifications.scan-deadlines", async () => ({
     summary: await scanReminders()
   }));
+  scheduler.registerHandler(SOURCE_SYNC_JOB_KIND, async ({ payload }) => {
+    const sourceId = typeof payload?.sourceId === "string" ? payload.sourceId : void 0;
+    if (!sourceId) throw new Error("source sync job is missing sourceId");
+    const source = sources.get(sourceId);
+    if (!source || !sourceHasSyncJob(source)) {
+      throw new SchedulerPauseError(`Source is not syncable: ${sourceId}`);
+    }
+    let connectionId;
+    if (source.authKind !== "none") {
+      const connection = connections.list().find(
+        (entry) => entry.sourceId === sourceId && entry.status === "connected"
+      );
+      if (!connection) return { summary: { sourceId, skipped: "auth-required" } };
+      connectionId = connection.connectionId;
+    }
+    try {
+      return { summary: await runSourceSync(sourceId, connectionId) };
+    } catch (error62) {
+      if (error62 instanceof SourceConflictError) {
+        return { summary: { sourceId, skipped: "busy" } };
+      }
+      if (error62 instanceof AdapterAuthError) {
+        return { summary: { sourceId, skipped: "auth-required" } };
+      }
+      if (error62 instanceof CapabilityUnavailableError) {
+        throw new SchedulerPauseError(error62.message);
+      }
+      throw error62;
+    }
+  });
+  reconcileSourceSyncJobs();
+  sourceJobsReady = true;
   const userActor = { kind: "user", id: "local-user" };
   async function taskCommand(taskId, type, payload) {
     const task = await store.queries.getStudyTask(taskId);
@@ -48842,7 +49032,125 @@ async function createAcademicApp(options) {
   }
   let started = false;
   let closed = false;
+  let closing;
   const syncInFlight = /* @__PURE__ */ new Set();
+  const runSourceSync = async (sourceId, connectionId) => {
+    if (syncInFlight.has(sourceId)) {
+      throw new SourceConflictError(`Sync already running: ${sourceId}`);
+    }
+    syncInFlight.add(sourceId);
+    try {
+      const source = sources.get(sourceId);
+      if (!source || !source.enabled || source.archived) {
+        throw new CapabilityUnavailableError(`source.${sourceId}`);
+      }
+      const engine = sourceEngines.get(source.engine);
+      if (!engine?.createAdapter) {
+        throw new CapabilityUnavailableError(`source.engine.${source.engine}`);
+      }
+      const context2 = { sourceId, config: source.config };
+      let credentials;
+      let connection;
+      if (connectionId) {
+        const record2 = connections.get(connectionId);
+        if (!record2) throw new Error(`Connection not found: ${connectionId}`);
+        if (record2.sourceId !== sourceId) {
+          throw new Error("Connection does not belong to the requested source");
+        }
+        if (source.authKind !== "none" && record2.status !== "connected") {
+          throw new Error("\u8BF7\u5148\u9A8C\u8BC1\u8FDE\u63A5\uFF1B\u672A\u9A8C\u8BC1\u4F1A\u8BDD\u4E0D\u80FD\u8FDB\u5165\u6B63\u5F0F\u540C\u6B65");
+        }
+        credentials = await connections.openCredential(connectionId, sourceId);
+        connection = { connectionId, credentials: connections };
+      } else if (source.authKind !== "none") {
+        throw new CapabilityUnavailableError(`source.credentials.${sourceId}`);
+      }
+      let courses;
+      if (engine.listCourses) {
+        try {
+          courses = await retryTransient(
+            () => engine.listCourses(context2, credentials)
+          );
+          for (const course2 of courses) {
+            await connectors.registerCourse({ ...course2, sourceId });
+          }
+        } catch (error62) {
+          if (connectionId && error62 instanceof AdapterAuthError) {
+            await connections.markAuthRequired(connectionId, error62.message);
+          }
+          throw error62;
+        }
+      }
+      const summary2 = await connectors.sync(engine.createAdapter(context2), {
+        ...connection ? { connection } : {},
+        // The engine only covers these courses (for example after termFilter),
+        // so items of other courses must not look "missing".
+        ...courses ? {
+          scopeCourseExternalIds: courses.map(
+            (course2) => course2.externalCourseId
+          )
+        } : {}
+      });
+      await dispatcher.processOnce();
+      return summary2;
+    } finally {
+      syncInFlight.delete(sourceId);
+    }
+  };
+  function currentSyncIntervalMs() {
+    return scheduler.getJob(FIXTURE_SYNC_JOB_ID)?.policy.intervalMs ?? DEFAULT_SYNC_INTERVAL_MS;
+  }
+  function sourceHasSyncJob(source) {
+    if (source.engine === "fixture") return false;
+    if (!source.enabled || source.archived) return false;
+    return Boolean(sourceEngines.get(source.engine)?.createAdapter);
+  }
+  function reconcileSourceSyncJobs(options2 = {}) {
+    const intervalMs = currentSyncIntervalMs();
+    for (const source of sources.list()) {
+      if (!sourceHasSyncJob(source)) continue;
+      const jobId = sourceSyncJobId(source.sourceId);
+      const existing = scheduler.getJob(jobId);
+      if (!existing) {
+        scheduler.ensureJob({
+          jobId,
+          kind: SOURCE_SYNC_JOB_KIND,
+          payload: { sourceId: source.sourceId },
+          nextRunAt: addMilliseconds2(clock.now(), intervalMs),
+          policy: { intervalMs, timeoutMs: 18e4 }
+        });
+      } else if (options2.resume && !existing.enabled) {
+        scheduler.resume(jobId);
+      }
+    }
+    for (const job of scheduler.listJobs()) {
+      if (job.kind !== SOURCE_SYNC_JOB_KIND) continue;
+      const sourceId = job.payload.sourceId;
+      const source = typeof sourceId === "string" ? sources.get(sourceId) : void 0;
+      if (source && sourceHasSyncJob(source)) continue;
+      if (job.enabled) scheduler.pause(job.jobId);
+    }
+  }
+  function applySyncInterval(intervalMinutes) {
+    const intervalMs = Math.max(6e4, Math.trunc(intervalMinutes) * 6e4);
+    const now = clock.now();
+    let fixtureJob;
+    for (const job of scheduler.listJobs()) {
+      if (job.jobId !== FIXTURE_SYNC_JOB_ID && job.kind !== SOURCE_SYNC_JOB_KIND) {
+        continue;
+      }
+      const updated = scheduler.schedule({
+        jobId: job.jobId,
+        kind: job.kind,
+        payload: job.payload,
+        enabled: job.enabled,
+        nextRunAt: addMilliseconds2(now, intervalMs),
+        policy: { ...job.policy, intervalMs }
+      });
+      if (job.jobId === FIXTURE_SYNC_JOB_ID) fixtureJob = updated;
+    }
+    return fixtureJob;
+  }
   const app = {
     store,
     clock,
@@ -48920,73 +49228,118 @@ async function createAcademicApp(options) {
         throw error62;
       }
     },
-    async syncSource(sourceId, connectionId) {
-      if (syncInFlight.has(sourceId)) {
-        throw new SourceConflictError(`Sync already running: ${sourceId}`);
+    syncSource: runSourceSync,
+    createSource(input2) {
+      const engine = sourceEngines.get(input2.engine);
+      if (!engine) {
+        throw new CapabilityUnavailableError(`source.engine.${input2.engine}`);
       }
-      syncInFlight.add(sourceId);
-      try {
-        const source = sources.get(sourceId);
-        if (!source || !source.enabled || source.archived) {
-          throw new CapabilityUnavailableError(`source.${sourceId}`);
-        }
-        const engine = sourceEngines.get(source.engine);
-        if (!engine?.createAdapter) {
-          throw new CapabilityUnavailableError(`source.engine.${source.engine}`);
-        }
-        const context2 = { sourceId, config: source.config };
-        let credentials;
-        let connection;
-        if (connectionId) {
-          const record2 = connections.get(connectionId);
-          if (!record2) throw new Error(`Connection not found: ${connectionId}`);
-          if (record2.sourceId !== sourceId) {
-            throw new Error("Connection does not belong to the requested source");
-          }
-          if (source.authKind !== "none" && record2.status !== "connected") {
-            throw new Error(
-              "\u8BF7\u5148\u9A8C\u8BC1\u8FDE\u63A5\uFF1B\u672A\u9A8C\u8BC1\u4F1A\u8BDD\u4E0D\u80FD\u8FDB\u5165\u6B63\u5F0F\u540C\u6B65"
-            );
-          }
-          credentials = await connections.openCredential(connectionId, sourceId);
-          connection = { connectionId, credentials: connections };
-        } else if (source.authKind !== "none") {
-          throw new CapabilityUnavailableError(`source.credentials.${sourceId}`);
-        }
-        let courses;
-        if (engine.listCourses) {
-          try {
-            courses = await retryTransient(
-              () => engine.listCourses(context2, credentials)
-            );
-            for (const course2 of courses) {
-              await connectors.registerCourse({ ...course2, sourceId });
-            }
-          } catch (error62) {
-            if (connectionId && error62 instanceof AdapterAuthError) {
-              await connections.markAuthRequired(connectionId, error62.message);
-            }
-            throw error62;
-          }
-        }
-        const summary2 = await connectors.sync(
-          engine.createAdapter(context2),
-          {
-            ...connection ? { connection } : {},
-            // The engine only covers these courses (for example after termFilter),
-            // so items of other courses must not look "missing".
-            ...courses ? {
-              scopeCourseExternalIds: courses.map(
-                (course2) => course2.externalCourseId
-              )
-            } : {}
-          }
+      const capabilityError = sourceCapabilityError(engine, {
+        engine: input2.engine,
+        authKind: input2.authKind,
+        ...input2.loginMode ? { loginMode: input2.loginMode } : {}
+      });
+      if (capabilityError) throw new SourceValidationError(capabilityError);
+      const configError = sourceConfigError(engine, input2.config ?? {});
+      if (configError) throw new SourceValidationError(configError);
+      if (!input2.sourceId) {
+        const configJson = JSON.stringify(input2.config ?? {});
+        const existing = sources.list().find(
+          (entry) => entry.engine === input2.engine && entry.displayName === input2.displayName && JSON.stringify(entry.config) === configJson
         );
-        await dispatcher.processOnce();
-        return summary2;
-      } finally {
-        syncInFlight.delete(sourceId);
+        if (existing) return existing;
       }
+      return sources.create(input2);
+    },
+    updateSource(sourceId, update2, expectedVersion) {
+      const current = sources.get(sourceId);
+      if (!current) throw new SourceNotFoundError(sourceId);
+      if (current.archived) {
+        throw new SourceConflictError("Archived source cannot be updated");
+      }
+      const engine = sourceEngines.get(current.engine);
+      if (!engine) {
+        throw new CapabilityUnavailableError(`source.engine.${current.engine}`);
+      }
+      const loginMode = update2.loginMode ?? current.loginMode;
+      const capabilityError = sourceCapabilityError(engine, {
+        engine: current.engine,
+        authKind: update2.authKind ?? current.authKind,
+        ...loginMode ? { loginMode } : {}
+      });
+      if (capabilityError) throw new SourceValidationError(capabilityError);
+      const configError = sourceConfigError(engine, update2.config ?? current.config);
+      if (configError) throw new SourceValidationError(configError);
+      return sources.update(sourceId, update2, expectedVersion);
+    },
+    archiveSource(sourceId) {
+      if (!sources.get(sourceId)) throw new SourceNotFoundError(sourceId);
+      return sources.archive(sourceId);
+    },
+    restoreSource(sourceId) {
+      if (!sources.get(sourceId)) throw new SourceNotFoundError(sourceId);
+      return sources.restore(sourceId);
+    },
+    async deleteSource(sourceId) {
+      if (!sources.get(sourceId)) throw new SourceNotFoundError(sourceId);
+      await connections.deleteBySource(sourceId);
+      sources.delete(sourceId);
+    },
+    async loginSource(sourceId) {
+      const source = sources.get(sourceId);
+      if (!source) throw new SourceNotFoundError(sourceId);
+      if (!source.enabled || source.archived) {
+        throw new CapabilityUnavailableError(`source.${sourceId}`);
+      }
+      const engine = sourceEngines.get(source.engine);
+      if (!engine?.login) {
+        throw new CapabilityUnavailableError(`source.login.${source.engine}`);
+      }
+      const context2 = { sourceId, config: source.config };
+      const login = await engine.login(context2);
+      const connection = connections.list().find((entry) => entry.sourceId === sourceId) ?? connections.create({
+        sourceId,
+        displayName: source.displayName,
+        authKind: source.authKind,
+        scopes: source.capabilities,
+        ...login.accountLabel ? { accountLabel: login.accountLabel } : {}
+      });
+      if (connection.authKind === "none") return connection;
+      await connections.setSecret(connection.connectionId, login.secret);
+      return connections.verify(
+        connection.connectionId,
+        async (secret) => engine.verify ? engine.verify(context2, secret) : {
+          ok: true,
+          ...login.accountLabel ? { accountLabel: login.accountLabel } : {}
+        }
+      );
+    },
+    ensureConnection(input2) {
+      const source = sources.get(input2.sourceId);
+      if (!source) throw new SourceNotFoundError(input2.sourceId);
+      if (!sourceEngines.get(source.engine)?.createAdapter) {
+        throw new CapabilityUnavailableError(`source.engine.${source.engine}`);
+      }
+      if (source.authKind !== input2.authKind) {
+        throw new SourceValidationError("\u8BA4\u8BC1\u65B9\u5F0F\u4E0E\u6570\u636E\u6E90\u80FD\u529B\u4E0D\u5339\u914D");
+      }
+      const existing = connections.list().find((entry) => entry.sourceId === input2.sourceId);
+      return existing ?? connections.create(input2);
+    },
+    async syncAllSources() {
+      const summaries = [];
+      for (const source of sources.list()) {
+        if (!source.enabled) continue;
+        if (!sourceEngines.get(source.engine)?.createAdapter) continue;
+        const connection = connections.list().find((entry) => entry.sourceId === source.sourceId);
+        if (source.authKind !== "none" && connection?.status !== "connected") {
+          continue;
+        }
+        summaries.push(
+          await runSourceSync(source.sourceId, connection?.connectionId)
+        );
+      }
+      return summaries;
     },
     async previewPlan(range, previewOptions = {}) {
       return planner.preview({ range, ...previewOptions });
@@ -49225,18 +49578,39 @@ async function createAcademicApp(options) {
       const itemIds = new Set(items.map((item) => item.itemId));
       for (const item of items) {
         if (item.archived) continue;
-        const result = await store.commands.execute(
-          parseCommand({
-            commandId: ids.next(),
-            type: COMMAND.AcademicItemArchive,
-            aggregateId: item.itemId,
-            expectedVersion: item.version,
-            actor: userActor,
-            correlationId: `course-delete/${courseId}`,
-            payload: { reason: "course deleted" }
-          })
-        );
-        if (!result.ok && result.code !== "CONFLICT") return result;
+        let version2 = item.version;
+        let archived = false;
+        for (let attempt = 1; attempt <= 3 && !archived; attempt += 1) {
+          const result = await store.commands.execute(
+            parseCommand({
+              commandId: ids.next(),
+              type: COMMAND.AcademicItemArchive,
+              aggregateId: item.itemId,
+              expectedVersion: version2,
+              actor: userActor,
+              correlationId: `course-delete/${courseId}`,
+              payload: { reason: "course deleted" }
+            })
+          );
+          if (result.ok) {
+            archived = true;
+            break;
+          }
+          if (result.code !== "CONFLICT") return result;
+          const current = await store.queries.getAcademicItem(item.itemId);
+          if (!current || current.archived) {
+            archived = true;
+            break;
+          }
+          version2 = current.version;
+        }
+        if (!archived) {
+          return {
+            ok: false,
+            code: "CONFLICT",
+            message: `\u5F52\u6863\u4E8B\u9879\u5E76\u53D1\u51B2\u7A81\uFF0C\u8BFE\u7A0B\u672A\u5220\u9664\uFF0C\u53EF\u91CD\u8BD5\uFF1A${item.itemId}`
+          };
+        }
       }
       const tasks = (await store.queries.listStudyTasks({
         status: "all",
@@ -49244,30 +49618,71 @@ async function createAcademicApp(options) {
       })).items;
       for (const task of tasks) {
         if (task.archived || !task.itemId || !itemIds.has(task.itemId)) continue;
+        let version2 = task.version;
+        let archived = false;
+        for (let attempt = 1; attempt <= 3 && !archived; attempt += 1) {
+          const result = await store.commands.execute(
+            parseCommand({
+              commandId: ids.next(),
+              type: COMMAND.StudyTaskArchive,
+              aggregateId: task.taskId,
+              expectedVersion: version2,
+              actor: userActor,
+              correlationId: `course-delete/${courseId}`,
+              payload: { reason: "course deleted" }
+            })
+          );
+          if (result.ok) {
+            archived = true;
+            break;
+          }
+          if (result.code !== "CONFLICT") return result;
+          const current = await store.queries.getStudyTask(task.taskId);
+          if (!current || current.archived) {
+            archived = true;
+            break;
+          }
+          version2 = current.version;
+        }
+        if (!archived) {
+          return {
+            ok: false,
+            code: "CONFLICT",
+            message: `\u5F52\u6863\u4EFB\u52A1\u5E76\u53D1\u51B2\u7A81\uFF0C\u8BFE\u7A0B\u672A\u5220\u9664\uFF0C\u53EF\u91CD\u8BD5\uFF1A${task.taskId}`
+          };
+        }
+      }
+      let courseVersion = course2.version;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
         const result = await store.commands.execute(
           parseCommand({
             commandId: ids.next(),
-            type: COMMAND.StudyTaskArchive,
-            aggregateId: task.taskId,
-            expectedVersion: task.version,
+            type: COMMAND.CourseDelete,
+            aggregateId: courseId,
+            expectedVersion: courseVersion,
             actor: userActor,
-            correlationId: `course-delete/${courseId}`,
-            payload: { reason: "course deleted" }
+            correlationId: `course/${courseId}`,
+            payload: {}
           })
         );
-        if (!result.ok && result.code !== "CONFLICT") return result;
+        if (result.ok) return result;
+        if (result.code !== "CONFLICT") return result;
+        const current = await store.queries.getCourse(courseId);
+        if (!current || current.deleted) {
+          return {
+            ok: true,
+            aggregateId: courseId,
+            version: courseVersion,
+            eventIds: []
+          };
+        }
+        courseVersion = current.version;
       }
-      return store.commands.execute(
-        parseCommand({
-          commandId: ids.next(),
-          type: COMMAND.CourseDelete,
-          aggregateId: courseId,
-          expectedVersion: course2.version,
-          actor: userActor,
-          correlationId: `course/${courseId}`,
-          payload: {}
-        })
-      );
+      return {
+        ok: false,
+        code: "CONFLICT",
+        message: "\u5220\u9664\u8BFE\u7A0B\u5E76\u53D1\u51B2\u7A81\uFF0C\u4E8B\u9879\u4E0E\u4EFB\u52A1\u5DF2\u5F52\u6863\uFF0C\u53EF\u91CD\u8BD5\u5220\u9664\u8BFE\u7A0B"
+      };
     },
     async archiveItem(itemId) {
       const item = await store.queries.getAcademicItem(itemId);
@@ -49434,8 +49849,18 @@ async function createAcademicApp(options) {
         unreadNotifications: notifications.unreadCount()
       };
     },
+    reconcileSourceSyncJobs,
+    applySyncInterval,
     backup(targetPath) {
       backupDatabase(store, targetPath);
+    },
+    backupApplication(targetDir) {
+      return backupApplication({
+        store,
+        materialsDir: materialRoot,
+        targetDir,
+        createdAt: clock.now()
+      });
     },
     start() {
       if (started || closed) return;
@@ -49450,16 +49875,22 @@ async function createAcademicApp(options) {
       started = false;
     },
     close() {
-      if (closed) return;
+      if (closing) return closing;
       closed = true;
-      unsubscribe();
-      for (const disposable of disposables.splice(0)) disposable.dispose();
-      scheduler.close();
-      dispatcher.close();
-      store.close();
-      if (ephemeralMaterials) {
-        rmSync4(materialRoot, { recursive: true, force: true });
-      }
+      closing = (async () => {
+        unsubscribe();
+        scheduler.stop();
+        dispatcher.stop();
+        await Promise.all([scheduler.waitForIdle(), dispatcher.waitForIdle()]);
+        for (const disposable of disposables.splice(0)) disposable.dispose();
+        scheduler.close();
+        dispatcher.close();
+        store.close();
+        if (ephemeralMaterials) {
+          rmSync4(materialRoot, { recursive: true, force: true });
+        }
+      })();
+      return closing;
     }
   };
   appRef = app;
@@ -49469,8 +49900,8 @@ async function createAcademicApp(options) {
 // packages/academic-dsh-plugin/src/host.ts
 var DEFAULT_MIGRATIONS_DIR = fileURLToPath3(new URL("../migrations/", import.meta.url));
 function defaultDatabasePath() {
-  const home = process.env.DSH_HOME ?? join5(homedir2(), ".dsh");
-  return join5(home, "academic-agent", "academic.db");
+  const home = process.env.DSH_HOME ?? join6(homedir2(), ".dsh");
+  return join6(home, "academic-agent", "academic.db");
 }
 var AcademicAppService = class extends Service {
   appReady;

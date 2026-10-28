@@ -1,2 +1,1 @@
-export * from './composition.js'
-export * from './backup.js'
+export * from '@academic/application'

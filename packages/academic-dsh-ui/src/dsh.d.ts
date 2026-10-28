@@ -1,4 +1,4 @@
-import type { AcademicApp } from '@academic/cli'
+import type { AcademicApp } from '@academic/application'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

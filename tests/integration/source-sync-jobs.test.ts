@@ -73,7 +73,7 @@ function addSource(
   sourceId: string,
   authKind: 'none' | 'token' = 'none',
 ) {
-  return app.sources.create({
+  return app.createSource({
     sourceId,
     engine: 'fake-http',
     displayName: sourceId,
@@ -188,6 +188,55 @@ describe('per-source sync jobs', () => {
 
     app.applySyncInterval(15)
     expect(app.scheduler.getJob('source.sync.source-a')?.enabled).toBe(false)
+  })
+
+  it('owns quick-add dedupe and validation in the application layer', async () => {
+    const { app } = await setup()
+    const first = app.createSource({
+      engine: 'fake-http',
+      displayName: 'Same source',
+      authKind: 'none',
+      config: {},
+    })
+    const again = app.createSource({
+      engine: 'fake-http',
+      displayName: 'Same source',
+      authKind: 'none',
+      config: {},
+    })
+    expect(again.sourceId).toBe(first.sourceId)
+
+    expect(() =>
+      app.createSource({
+        engine: 'missing-engine',
+        displayName: 'Unknown',
+        authKind: 'none',
+      }),
+    ).toThrow(/source\.engine/)
+
+    try {
+      app.createSource({
+        engine: 'fake-http',
+        displayName: 'Bad login mode',
+        authKind: 'token',
+        loginMode: 'browser',
+      })
+      throw new Error('expected validation failure')
+    } catch (error) {
+      expect((error as { code?: string }).code).toBe('VALIDATION')
+    }
+  })
+
+  it('syncs only the sources that are ready when syncing all', async () => {
+    const { app } = await setup()
+    addSource(app, 'source-ready')
+    addSource(app, 'source-waiting', 'token')
+
+    const summaries = await app.syncAllSources()
+    expect(summaries.map((summary) => summary.sourceId)).toContain('source-ready')
+    expect(summaries.map((summary) => summary.sourceId)).not.toContain(
+      'source-waiting',
+    )
   })
 
   it('keeps a manual pause when the source is edited for another reason', async () => {

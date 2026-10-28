@@ -12,6 +12,7 @@ import {
   EVENT,
   SourceConflictError,
   SourceEngineRegistry,
+  SourceNotFoundError,
   parseCommand,
   systemClock,
   timeBlockSchema,
@@ -21,6 +22,7 @@ import {
   type Clock,
   type CommandResult,
   type ConnectionSyncBinding,
+  type ConnectionView,
   type CourseView,
   type CredentialAccess,
   type DisposableRegistration,
@@ -36,6 +38,8 @@ import {
   type SourceCaptureOptions,
   type SourceCaptureSummary,
   type SourceConfig,
+  type SourceConfigInput,
+  type SourceConfigUpdate,
   type SourceProbeEvidence,
   type StudyPlanView,
   type SyncPreview,
@@ -44,6 +48,7 @@ import {
 import {
   ConnectionManager,
   createDefaultCredentialVault,
+  type CreateConnectionInput,
   type CredentialVault,
 } from '@academic/connections'
 import {
@@ -131,6 +136,53 @@ const DEFAULT_SYNC_INTERVAL_MS = 60 * 60_000
 /** Stable per-source job id, so restarts and re-enables target the same row. */
 function sourceSyncJobId(sourceId: string): string {
   return `source.sync.${sourceId}`
+}
+
+export class SourceValidationError extends Error {
+  readonly code = 'VALIDATION'
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'SourceValidationError'
+  }
+}
+
+/**
+ * One rule set for CLI, UI and agent writes. The store also runs these checks;
+ * the application layer calls them first so callers get a VALIDATION result
+ * instead of a generic conflict.
+ */
+function sourceCapabilityError(
+  engine: SourceEngine | undefined,
+  input: { engine: string; authKind: string; loginMode?: string },
+): string | undefined {
+  if (!engine) return `未知 engine：${input.engine}`
+  const descriptor = engine.descriptor
+  if (
+    descriptor.authKinds &&
+    !(descriptor.authKinds as readonly string[]).includes(input.authKind)
+  ) {
+    return `该引擎不支持认证方式 ${input.authKind}`
+  }
+  if (input.loginMode) {
+    if (input.authKind === 'none') return '认证方式为 none 时不应配置登录方式'
+    if (!descriptor.supportsLogin) return '该引擎不支持登录流程'
+    if (
+      descriptor.loginModes &&
+      !(descriptor.loginModes as readonly string[]).includes(input.loginMode)
+    ) {
+      return `该引擎不支持登录方式 ${input.loginMode}`
+    }
+  }
+  return undefined
+}
+
+function sourceConfigError(
+  engine: SourceEngine | undefined,
+  config: Record<string, unknown>,
+): string | undefined {
+  const error = engine?.descriptor.validateConfig?.(config)
+  return error ? `配置无效：${error}` : undefined
 }
 
 export class ModelUsageMeter {
@@ -324,6 +376,20 @@ export interface AcademicApp {
   latestCapture(sourceId: string): SourceCaptureSummary | undefined
   previewSourceSync(sourceId: string, connectionId?: string): Promise<SyncPreview>
   syncSource(sourceId: string, connectionId?: string): Promise<SyncRunSummary>
+  /** Owns source-write rules so every entry point behaves the same. */
+  createSource(input: SourceConfigInput): SourceConfig
+  updateSource(
+    sourceId: string,
+    update: SourceConfigUpdate,
+    expectedVersion?: number,
+  ): SourceConfig
+  archiveSource(sourceId: string): SourceConfig
+  restoreSource(sourceId: string): SourceConfig
+  deleteSource(sourceId: string): Promise<void>
+  loginSource(sourceId: string): Promise<ConnectionView>
+  /** Creates the connection for a source once; never duplicates it. */
+  ensureConnection(input: CreateConnectionInput): ConnectionView
+  syncAllSources(): Promise<SyncRunSummary[]>
   previewPlan(
     range: Range,
     options?: Omit<PreviewOptions, 'range'>,
@@ -561,26 +627,11 @@ export async function createAcademicApp(
     clock,
     ids,
     validateSource(input) {
-      const registered = sourceEngines.get(input.engine)
-      if (!registered) return `未知 engine：${input.engine}`
-      const descriptor = registered.descriptor
-      if (
-        descriptor.authKinds &&
-        !(descriptor.authKinds as readonly string[]).includes(input.authKind)
-      ) {
-        return `该引擎不支持认证方式 ${input.authKind}`
-      }
-      if (input.loginMode) {
-        if (input.authKind === 'none') return '认证方式为 none 时不应配置登录方式'
-        if (!descriptor.supportsLogin) return '该引擎不支持登录流程'
-        if (
-          descriptor.loginModes &&
-          !(descriptor.loginModes as readonly string[]).includes(input.loginMode)
-        ) {
-          return `该引擎不支持登录方式 ${input.loginMode}`
-        }
-      }
-      return descriptor.validateConfig?.(input.config)
+      const engine = sourceEngines.get(input.engine)
+      return (
+        sourceCapabilityError(engine, input) ??
+        engine?.descriptor.validateConfig?.(input.config)
+      )
     },
     onChange(change) {
       if (!sourceJobsReady) return
@@ -1128,6 +1179,9 @@ export async function createAcademicApp(
     ids,
     sources,
     sourceEngines,
+    createSource: (input) => requireApp().createSource(input),
+    updateSource: (sourceId, update, expectedVersion) =>
+      requireApp().updateSource(sourceId, update, expectedVersion),
     webSessions,
     materials,
     adapterCandidates,
@@ -1617,6 +1671,145 @@ export async function createAcademicApp(
     },
 
     syncSource: runSourceSync,
+
+    createSource(input) {
+      const engine = sourceEngines.get(input.engine)
+      if (!engine) {
+        throw new CapabilityUnavailableError(`source.engine.${input.engine}`)
+      }
+      const capabilityError = sourceCapabilityError(engine, {
+        engine: input.engine,
+        authKind: input.authKind,
+        ...(input.loginMode ? { loginMode: input.loginMode } : {}),
+      })
+      if (capabilityError) throw new SourceValidationError(capabilityError)
+      const configError = sourceConfigError(engine, input.config ?? {})
+      if (configError) throw new SourceValidationError(configError)
+      if (!input.sourceId) {
+        // Repeating the same quick-add must not create a second source.
+        const configJson = JSON.stringify(input.config ?? {})
+        const existing = sources
+          .list()
+          .find(
+            (entry) =>
+              entry.engine === input.engine &&
+              entry.displayName === input.displayName &&
+              JSON.stringify(entry.config) === configJson,
+          )
+        if (existing) return existing
+      }
+      return sources.create(input)
+    },
+
+    updateSource(sourceId, update, expectedVersion) {
+      const current = sources.get(sourceId)
+      if (!current) throw new SourceNotFoundError(sourceId)
+      if (current.archived) {
+        throw new SourceConflictError('Archived source cannot be updated')
+      }
+      const engine = sourceEngines.get(current.engine)
+      if (!engine) {
+        throw new CapabilityUnavailableError(`source.engine.${current.engine}`)
+      }
+      const loginMode = update.loginMode ?? current.loginMode
+      const capabilityError = sourceCapabilityError(engine, {
+        engine: current.engine,
+        authKind: update.authKind ?? current.authKind,
+        ...(loginMode ? { loginMode } : {}),
+      })
+      if (capabilityError) throw new SourceValidationError(capabilityError)
+      const configError = sourceConfigError(engine, update.config ?? current.config)
+      if (configError) throw new SourceValidationError(configError)
+      return sources.update(sourceId, update, expectedVersion)
+    },
+
+    archiveSource(sourceId) {
+      if (!sources.get(sourceId)) throw new SourceNotFoundError(sourceId)
+      return sources.archive(sourceId)
+    },
+
+    restoreSource(sourceId) {
+      if (!sources.get(sourceId)) throw new SourceNotFoundError(sourceId)
+      return sources.restore(sourceId)
+    },
+
+    async deleteSource(sourceId) {
+      if (!sources.get(sourceId)) throw new SourceNotFoundError(sourceId)
+      // Credentials go first: synced events stay, the connection metadata
+      // must not outlive the source it belongs to.
+      await connections.deleteBySource(sourceId)
+      sources.delete(sourceId)
+    },
+
+    async loginSource(sourceId) {
+      const source = sources.get(sourceId)
+      if (!source) throw new SourceNotFoundError(sourceId)
+      if (!source.enabled || source.archived) {
+        throw new CapabilityUnavailableError(`source.${sourceId}`)
+      }
+      const engine = sourceEngines.get(source.engine)
+      if (!engine?.login) {
+        throw new CapabilityUnavailableError(`source.login.${source.engine}`)
+      }
+      const context = { sourceId, config: source.config }
+      const login = await engine.login(context)
+      const connection =
+        connections.list().find((entry) => entry.sourceId === sourceId) ??
+        connections.create({
+          sourceId,
+          displayName: source.displayName,
+          authKind: source.authKind,
+          scopes: source.capabilities,
+          ...(login.accountLabel ? { accountLabel: login.accountLabel } : {}),
+        })
+      if (connection.authKind === 'none') return connection
+      await connections.setSecret(connection.connectionId, login.secret)
+      return connections.verify(
+        connection.connectionId,
+        async (secret) =>
+          engine.verify
+            ? engine.verify(context, secret)
+            : {
+                ok: true,
+                ...(login.accountLabel
+                  ? { accountLabel: login.accountLabel }
+                  : {}),
+              },
+      )
+    },
+
+    ensureConnection(input) {
+      const source = sources.get(input.sourceId)
+      if (!source) throw new SourceNotFoundError(input.sourceId)
+      if (!sourceEngines.get(source.engine)?.createAdapter) {
+        throw new CapabilityUnavailableError(`source.engine.${source.engine}`)
+      }
+      if (source.authKind !== input.authKind) {
+        throw new SourceValidationError('认证方式与数据源能力不匹配')
+      }
+      const existing = connections
+        .list()
+        .find((entry) => entry.sourceId === input.sourceId)
+      return existing ?? connections.create(input)
+    },
+
+    async syncAllSources() {
+      const summaries: SyncRunSummary[] = []
+      for (const source of sources.list()) {
+        if (!source.enabled) continue
+        if (!sourceEngines.get(source.engine)?.createAdapter) continue
+        const connection = connections
+          .list()
+          .find((entry) => entry.sourceId === source.sourceId)
+        if (source.authKind !== 'none' && connection?.status !== 'connected') {
+          continue
+        }
+        summaries.push(
+          await runSourceSync(source.sourceId, connection?.connectionId),
+        )
+      }
+      return summaries
+    },
 
     async previewPlan(range, previewOptions = {}) {
       return planner.preview({ range, ...previewOptions })

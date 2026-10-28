@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ACADEMIC_TOOL_NAMES } from '@academic/agent-tools'
-import type { AcademicApp } from '@academic/cli'
+import type { AcademicApp } from '@academic/application'
 
 export const name = 'academic-tools'
 export const inject = ['academicApp', 'tools']

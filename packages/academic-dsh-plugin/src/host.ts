@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Service, type Context } from '@deepseek-ai/cordis'
-import { createAcademicApp, type AcademicApp } from '@academic/cli'
+import { createAcademicApp, type AcademicApp } from '@academic/application'
 
 export interface AcademicHostConfig {
   databasePath?: string
