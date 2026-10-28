@@ -226,3 +226,9 @@ export {
   type BlackboardLoginOptions,
   type BlackboardLoginResult,
 } from './login.js'
+export {
+  createBlackboardEngine,
+  blackboardConfigSchema,
+  type BlackboardConfig,
+  type BlackboardEngineOptions,
+} from './engine.js'

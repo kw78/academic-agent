@@ -15,6 +15,8 @@ import {
   type QueryApi,
   type SyncRunStatus,
   type SyncRunSummary,
+  type SyncPreview,
+  type SyncPreviewItem,
 } from '@academic/contracts'
 
 export interface ConnectorDependencies {
@@ -102,6 +104,62 @@ export class ConnectorService {
     )
     if (!course) throw new Error('Course registration did not become visible')
     return course
+  }
+
+  async preview(
+    adapter: AcademicSourceAdapter,
+    options: Pick<SyncOptions, 'connection'> = {},
+  ): Promise<SyncPreview> {
+    let credentials: CredentialAccess | undefined
+    if (options.connection) {
+      credentials = await options.connection.credentials.openCredential(
+        options.connection.connectionId,
+        adapter.sourceId,
+      )
+    }
+    const result = await adapter.fetch(credentials ? { credentials } : undefined)
+    const counts = { create: 0, update: 0, unchanged: 0, skip: 0 }
+    const items: SyncPreviewItem[] = []
+    for (const item of result.items) {
+      let action: SyncPreviewItem['action'] = 'create'
+      let reason: string | undefined
+      if (!item.externalItemId) {
+        action = 'skip'
+        reason = '缺少稳定外部 ID'
+      } else if (!item.courseExternalId) {
+        action = 'skip'
+        reason = '缺少外部课程 ID'
+      } else {
+        const existing = await this.#queries.getAcademicItemBySource(
+          adapter.sourceId,
+          item.externalItemId,
+        )
+        action = existing
+          ? existing.source.contentHash === item.contentHash
+            ? 'unchanged'
+            : 'update'
+          : 'create'
+      }
+      counts[action] += 1
+      items.push({
+        ...(item.externalItemId ? { externalItemId: item.externalItemId } : {}),
+        title: item.title,
+        kind: item.kind,
+        ...(item.courseExternalId
+          ? { courseExternalId: item.courseExternalId }
+          : {}),
+        action,
+        ...(reason ? { reason } : {}),
+      })
+    }
+    return {
+      sourceId: adapter.sourceId,
+      fetchedAt: result.fetchedAt,
+      completeness: result.completeness,
+      warnings: result.warnings,
+      counts,
+      items,
+    }
   }
 
   async sync(adapter: AcademicSourceAdapter, options: SyncOptions = {}): Promise<SyncRunSummary> {

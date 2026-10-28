@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createAcademicApp } from '@academic/cli'
 import { InMemoryCredentialVault } from '@academic/connections'
+import type { SourceEngine } from '@academic/contracts'
 import { createAcademicUiApi } from '../../packages/academic-dsh-ui/src/api.js'
 import { fixedClock } from '../helpers/store.js'
 
@@ -369,6 +370,89 @@ describe('generic DB-backed source login', () => {
     expect(created.value.adapterReady).toBe(false)
     expect(created.value.syncHealth).toBe('never-synced')
     expect(created.value.state).toBe('unconfigured')
+  })
+
+  it('previews source items without writing and then syncs them', async () => {
+    const fakeSyncEngine: SourceEngine = {
+      descriptor: {
+        id: 'fake-sync',
+        displayName: 'Fake Sync',
+        supportsSync: true,
+        supportsLogin: false,
+        supportsVerify: false,
+        authKinds: ['none'],
+      },
+      async listCourses(context) {
+        return [
+          {
+            sourceId: context.sourceId,
+            externalCourseId: 'C1',
+            termId: '2026FA',
+            code: 'C1',
+            title: 'Course',
+          },
+        ]
+      },
+      createAdapter(context) {
+        return {
+          id: 'fake-sync.readonly',
+          sourceId: context.sourceId,
+          async fetch() {
+            return {
+              items: [
+                {
+                  sourceId: context.sourceId,
+                  externalItemId: 'i1',
+                  courseExternalId: 'C1',
+                  kind: 'assignment' as const,
+                  title: 'Item',
+                  due: { kind: 'unknown' as const },
+                  contentHash: 'hash-1',
+                },
+              ],
+              completeness: 'full' as const,
+              fetchedAt: '2026-10-28T00:00:00.000Z',
+              warnings: [],
+            }
+          },
+        }
+      },
+    }
+    const clock = fixedClock()
+    const app = await createAcademicApp({
+      databasePath: ':memory:',
+      clock,
+      sourceEngines: [fakeSyncEngine],
+    })
+    cleanup.push(() => app.close())
+    app.sources.create({
+      sourceId: 'fake-source',
+      engine: 'fake-sync',
+      displayName: 'Fake Source',
+      authKind: 'none',
+    })
+    const api = createAcademicUiApi(app)
+
+    const preview = await api.previewSourceSync({ sourceId: 'fake-source' })
+    expect(preview.ok).toBe(true)
+    if (!preview.ok) return
+    expect(preview.value.counts).toEqual({
+      create: 1,
+      update: 0,
+      unchanged: 0,
+      skip: 0,
+    })
+    expect((await app.store.queries.listAcademicItems()).items).toHaveLength(0)
+
+    const sync = await api.syncNow({ sourceId: 'fake-source' })
+    expect(sync.ok).toBe(true)
+    if (!sync.ok) return
+    expect(sync.value.created).toBe(1)
+
+    const again = await api.previewSourceSync({ sourceId: 'fake-source' })
+    expect(again.ok).toBe(true)
+    if (!again.ok) return
+    expect(again.value.counts.unchanged).toBe(1)
   })
 
   it('rejects engine, auth and login combinations the engine does not support', async () => {

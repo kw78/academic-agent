@@ -1,0 +1,355 @@
+import { z } from 'zod'
+import {
+  AdapterAuthError,
+  AdapterTransientError,
+  type AcademicSourceAdapter,
+  type AdapterFetchContext,
+  type AdapterResult,
+  type CredentialAccess,
+  type NormalizedAcademicItem,
+  type NormalizedCourse,
+  type SourceEngine,
+  type SourceEngineContext,
+  type SourceLoginResult,
+  type SourceVerification,
+} from '@academic/contracts'
+import {
+  browserConfigSchema,
+  createBrowserSessionEngine,
+  type BrowserSessionEngineOptions,
+} from '@academic/source-browser'
+import {
+  SafeFetchError,
+  safeFetch,
+  type ResolveHost,
+  type WebCookie,
+} from '@academic/web-sessions'
+import {
+  findAssignmentsAreaUrl,
+  isLoginPage,
+  parseAssignmentDetail,
+  parseAssignmentLinks,
+  parseCourseLinks,
+} from './parse.js'
+
+export const blackboardConfigSchema = browserConfigSchema.extend({
+  portalUrl: z.string().url().optional(),
+  maxCourses: z.number().int().min(1).max(200).optional(),
+  maxAssignments: z.number().int().min(1).max(500).optional(),
+  termFilter: z.array(z.string().min(1)).max(20).optional(),
+  courseFilter: z.array(z.string().min(1)).max(50).optional(),
+  delayMs: z.number().int().min(0).max(5_000).optional(),
+  timeZone: z.string().min(1).optional(),
+  utcOffsetMinutes: z.number().int().min(-840).max(840).optional(),
+})
+
+export type BlackboardConfig = z.infer<typeof blackboardConfigSchema>
+
+export interface BlackboardEngineOptions extends BrowserSessionEngineOptions {
+  now?: () => string
+}
+
+interface ClientOptions {
+  fetchImpl?: typeof fetch
+  resolveHost?: ResolveHost
+  now?: () => string
+}
+
+function parseConfig(config: Record<string, unknown>): BlackboardConfig {
+  return blackboardConfigSchema.parse(config)
+}
+
+function sessionCookies(secret: string): WebCookie[] {
+  try {
+    const parsed = JSON.parse(secret) as { cookies?: unknown }
+    if (!Array.isArray(parsed.cookies) || parsed.cookies.length === 0) {
+      throw new Error('missing cookies')
+    }
+    return parsed.cookies as WebCookie[]
+  } catch {
+    throw new AdapterAuthError('网站会话格式已过期，请重新登录')
+  }
+}
+
+class BlackboardClient {
+  readonly #config: BlackboardConfig
+  readonly #cookies: WebCookie[]
+  readonly #fetchImpl: typeof fetch
+  readonly #resolveHost: ResolveHost | undefined
+
+  constructor(
+    config: BlackboardConfig,
+    cookies: WebCookie[],
+    options: ClientOptions,
+  ) {
+    this.#config = config
+    this.#cookies = cookies
+    this.#fetchImpl = options.fetchImpl ?? fetch
+    this.#resolveHost = options.resolveHost
+  }
+
+  async get(url: string): Promise<{ html: string; finalUrl: string }> {
+    try {
+      const result = await safeFetch(url, {
+        cookies: this.#cookies,
+        allowedHosts: this.#config.cookieDomains,
+        ...(this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {}),
+        fetchImpl: this.#fetchImpl,
+        ...(this.#resolveHost ? { resolveHost: this.#resolveHost } : {}),
+      })
+      if (result.status === 401 || result.status === 403) {
+        throw new AdapterAuthError('Blackboard 会话已失效，请重新登录')
+      }
+      if (result.status >= 500) {
+        throw new AdapterTransientError(`Blackboard 返回 HTTP ${result.status}`)
+      }
+      if (
+        isLoginPage(
+          result.finalUrl,
+          result.body,
+          this.#config.loggedOutPatterns ?? [],
+        )
+      ) {
+        throw new AdapterAuthError('Blackboard 会话已失效，请重新登录')
+      }
+      return { html: result.body, finalUrl: result.finalUrl }
+    } catch (error) {
+      if (
+        error instanceof AdapterAuthError ||
+        error instanceof AdapterTransientError
+      ) {
+        throw error
+      }
+      if (error instanceof SafeFetchError) {
+        if (error.code === 'TIMEOUT' || error.code === 'NETWORK') {
+          throw new AdapterTransientError(error.message)
+        }
+        if (error.code === 'UNSAFE_HOST') {
+          throw new AdapterAuthError(
+            '请求跳转到未授权站点，可能是会话失效；请重新登录',
+          )
+        }
+        throw new AdapterTransientError(error.message)
+      }
+      throw new AdapterTransientError(
+        error instanceof Error ? error.message : 'Blackboard 请求失败',
+      )
+    }
+  }
+
+  async delay(): Promise<void> {
+    const delay = this.#config.delayMs ?? 100
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
+  }
+}
+
+class BlackboardReadOnlyAdapter implements AcademicSourceAdapter {
+  readonly id = 'blackboard.readonly'
+  readonly sourceId: string
+  readonly #config: BlackboardConfig
+  readonly #options: ClientOptions
+
+  constructor(
+    sourceId: string,
+    config: BlackboardConfig,
+    options: ClientOptions,
+  ) {
+    this.sourceId = sourceId
+    this.#config = config
+    this.#options = options
+  }
+
+  async fetch(context?: AdapterFetchContext): Promise<AdapterResult> {
+    if (!context?.credentials) {
+      throw new AdapterAuthError('缺少 Blackboard 会话凭据')
+    }
+    const client = new BlackboardClient(
+      this.#config,
+      sessionCookies(await context.credentials.getSecret()),
+      this.#options,
+    )
+    const portalUrl = this.#config.portalUrl ?? this.#config.loginUrl
+    const portal = await client.get(portalUrl)
+    const parsedCourses = parseCourseLinks(portal.html, {
+      baseUrl: portal.finalUrl,
+      ...(this.#config.termFilter ? { termFilter: this.#config.termFilter } : {}),
+      ...(this.#config.courseFilter
+        ? { courseFilter: this.#config.courseFilter }
+        : {}),
+      maxCourses: this.#config.maxCourses ?? 20,
+    })
+
+    const warnings: string[] = []
+    const items: NormalizedAcademicItem[] = []
+    let partial = parsedCourses.truncated
+    let truncatedAssignments = false
+    let coursesWithAssignmentsArea = 0
+    const maxAssignments = this.#config.maxAssignments ?? 100
+    const zone = this.#config.timeZone ?? 'Asia/Shanghai'
+    const utcOffsetMinutes = this.#config.utcOffsetMinutes ?? 480
+
+    if (parsedCourses.courses.length === 0) {
+      return {
+        items,
+        completeness: 'partial',
+        fetchedAt: this.#options.now?.() ?? new Date().toISOString(),
+        warnings: ['没有匹配到课程；保留上一次有效数据'],
+      }
+    }
+
+    for (const course of parsedCourses.courses) {
+      if (truncatedAssignments) break
+      await client.delay()
+      let courseHtml: string
+      try {
+        courseHtml = (await client.get(course.url)).html
+      } catch (error) {
+        if (error instanceof AdapterAuthError) throw error
+        warnings.push(`课程「${course.title}」页面读取失败：${messageOf(error)}`)
+        partial = true
+        continue
+      }
+
+      const areaUrl = findAssignmentsAreaUrl(courseHtml, course.url)
+      if (!areaUrl) continue
+      coursesWithAssignmentsArea += 1
+
+      await client.delay()
+      let assignmentsHtml: string
+      try {
+        assignmentsHtml = (await client.get(areaUrl)).html
+      } catch (error) {
+        if (error instanceof AdapterAuthError) throw error
+        warnings.push(`课程「${course.title}」作业区读取失败：${messageOf(error)}`)
+        partial = true
+        continue
+      }
+
+      const assignments = parseAssignmentLinks(
+        assignmentsHtml,
+        areaUrl,
+        course.externalCourseId,
+      ).assignments
+
+      for (const assignment of assignments) {
+        if (items.length >= maxAssignments) {
+          partial = true
+          truncatedAssignments = true
+          break
+        }
+        await client.delay()
+        try {
+          const detail = await client.get(assignment.url)
+          const parsed = parseAssignmentDetail(
+            detail.html,
+            assignment.url,
+            course.externalCourseId,
+            assignment.title,
+            { zone, utcOffsetMinutes },
+          )
+          items.push({ sourceId: this.sourceId, ...parsed })
+        } catch (error) {
+          if (error instanceof AdapterAuthError) throw error
+          warnings.push(
+            `课程「${course.title}」作业「${assignment.title}」读取失败：${messageOf(error)}`,
+          )
+          partial = true
+        }
+      }
+    }
+
+    if (coursesWithAssignmentsArea === 0) {
+      warnings.push('未找到作业区；保留上一次有效数据')
+      partial = true
+    }
+    if (truncatedAssignments) {
+      warnings.push(`作业数量达到上限 ${maxAssignments}，本次标记为部分同步`)
+    }
+    if (parsedCourses.truncated) {
+      warnings.push(
+        `课程数量达到上限 ${this.#config.maxCourses ?? 20}，本次标记为部分同步`,
+      )
+    }
+
+    return {
+      items,
+      completeness: partial ? 'partial' : 'full',
+      fetchedAt: this.#options.now?.() ?? new Date().toISOString(),
+      warnings,
+    }
+  }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+export function createBlackboardEngine(
+  options: BlackboardEngineOptions = {},
+): SourceEngine {
+  const browser = createBrowserSessionEngine(options)
+  return {
+    descriptor: {
+      id: 'blackboard',
+      displayName: 'Blackboard Learn',
+      description:
+        'Blackboard Learn 只读同步：复用浏览器会话，读取课程与作业；不提交作业。',
+      supportsSync: true,
+      supportsLogin: true,
+      supportsVerify: true,
+      authKinds: ['token'],
+      loginModes: ['browser'],
+      validateConfig(config) {
+        const parsed = blackboardConfigSchema.safeParse(config)
+        if (parsed.success) return undefined
+        return parsed.error.issues
+          .map((issue) => `${issue.path.join('.') || 'config'}: ${issue.message}`)
+          .join('; ')
+      },
+    },
+    async login(context: SourceEngineContext): Promise<SourceLoginResult> {
+      return browser.login!(context)
+    },
+    async verify(
+      context: SourceEngineContext,
+      secret: string,
+    ): Promise<SourceVerification> {
+      return browser.verify!(context, secret)
+    },
+    async listCourses(
+      context: SourceEngineContext,
+      credentials?: CredentialAccess,
+    ): Promise<NormalizedCourse[]> {
+      if (!credentials) throw new AdapterAuthError('缺少 Blackboard 会话凭据')
+      const config = parseConfig(context.config)
+      const client = new BlackboardClient(
+        config,
+        sessionCookies(await credentials.getSecret()),
+        options,
+      )
+      const portalUrl = config.portalUrl ?? config.loginUrl
+      const portal = await client.get(portalUrl)
+      return parseCourseLinks(portal.html, {
+        baseUrl: portal.finalUrl,
+        ...(config.termFilter ? { termFilter: config.termFilter } : {}),
+        ...(config.courseFilter ? { courseFilter: config.courseFilter } : {}),
+        maxCourses: config.maxCourses ?? 20,
+      }).courses.map((course) => ({
+        sourceId: context.sourceId,
+        externalCourseId: course.externalCourseId,
+        termId: course.termId,
+        code: course.code,
+        title: course.title,
+      }))
+    },
+    createAdapter(context: SourceEngineContext): AcademicSourceAdapter {
+      return new BlackboardReadOnlyAdapter(
+        context.sourceId,
+        parseConfig(context.config),
+        options,
+      )
+    },
+  }
+}
+
+export { parseCourseLinks, parseAssignmentLinks, parseAssignmentDetail } from './parse.js'

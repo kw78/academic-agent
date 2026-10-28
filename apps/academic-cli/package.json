@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@academic/adapter-fixture-lms": "0.1.0",
+    "@academic/adapter-ustc-blackboard": "0.1.0",
     "@academic/agent-tools": "0.1.0",
     "@academic/connectors": "0.1.0",
     "@academic/connections": "0.1.0",

@@ -2497,9 +2497,18 @@ function SourceCard({
   const action = useAction(async () => {
     await refresh();
   });
+  const [preview, setPreview] = (0, import_react6.useState)();
   const connection = source.connection;
   const browserLogin = source.canLogin && source.loginMode === "browser";
   const manualCredential = source.authKind !== "none" && !browserLogin;
+  const previewSync = async () => {
+    const result = await callApi(ctx, "previewSourceSync", {
+      sourceId: source.sourceId,
+      ...connection ? { connectionId: connection.connectionId } : {}
+    });
+    if (result.ok) setPreview(result.value);
+    return result;
+  };
   const sync = async () => {
     const result = await callApi(ctx, "syncNow", {
       sourceId: source.sourceId,
@@ -2590,6 +2599,51 @@ function SourceCard({
       ] }),
       connection?.status === "configured" && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-warn", children: "\u5DF2\u4FDD\u5B58\u51ED\u636E\uFF0C\u4F46\u5C1A\u672A\u9A8C\u8BC1\uFF1B\u4FDD\u5B58\u51ED\u636E\u4E0D\u4EE3\u8868\u5E73\u53F0\u53EF\u7528\u3002" }),
       action.notice && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) }),
+      preview && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
+          "\u9884\u89C8\uFF1A\u65B0\u589E ",
+          preview.counts.create,
+          " \xB7 \u66F4\u65B0 ",
+          preview.counts.update,
+          " \xB7 \u672A\u53D8",
+          " ",
+          preview.counts.unchanged,
+          " \xB7 \u8DF3\u8FC7 ",
+          preview.counts.skip,
+          preview.completeness === "partial" ? "\uFF08\u90E8\u5206\u540C\u6B65\uFF0C\u65E7\u6570\u636E\u4FDD\u7559\uFF09" : ""
+        ] }),
+        preview.warnings.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-warning-list", children: preview.warnings.map((warning) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("li", { children: warning }, warning)) }),
+        preview.items.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-list", children: preview.items.slice(0, 5).map((entry) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+          entry.action,
+          " \xB7 ",
+          entry.title,
+          entry.reason ? `\uFF08${entry.reason}\uFF09` : ""
+        ] }, `${entry.externalItemId ?? entry.title}-${entry.action}`)) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-form-actions", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            "button",
+            {
+              type: "button",
+              className: "ac-button ac-button-primary",
+              disabled: action.pending !== void 0,
+              onClick: () => void action.run("sync", sync, "\u540C\u6B65\u5B8C\u6210").then((ok) => {
+                if (ok) setPreview(void 0);
+              }),
+              children: action.pending === "sync" ? "\u540C\u6B65\u4E2D\u2026" : "\u786E\u8BA4\u540C\u6B65"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            "button",
+            {
+              type: "button",
+              className: "ac-button",
+              disabled: action.pending !== void 0,
+              onClick: () => setPreview(void 0),
+              children: "\u53D6\u6D88"
+            }
+          )
+        ] })
+      ] }),
       browserLogin && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u5C06\u6253\u5F00 Edge/Chrome \u767B\u5F55\u7A97\u53E3\uFF1B\u8BF7\u5728\u7A97\u53E3\u4E2D\u5B8C\u6210\u767B\u5F55\u548C\u9A8C\u8BC1\u7801\u3002\u5E94\u7528\u4E0D\u4F1A\u8BFB\u53D6\u6216\u4FDD\u5B58\u5BC6\u7801\u3002" }),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
@@ -2625,6 +2679,16 @@ function SourceCard({
       ] })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-source-actions", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "ac-button",
+          disabled: !source.syncAvailable || action.pending !== void 0,
+          onClick: () => void action.run("preview", previewSync, "\u9884\u89C8\u5B8C\u6210"),
+          children: action.pending === "preview" ? "\u8BFB\u53D6\u4E2D\u2026" : "\u9884\u89C8\u540C\u6B65"
+        }
+      ),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
         "button",
         {

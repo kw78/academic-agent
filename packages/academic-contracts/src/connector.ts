@@ -29,6 +29,31 @@ export interface AcademicSourceAdapter {
   fetch(context?: AdapterFetchContext): Promise<AdapterResult>
 }
 
+export type SyncPreviewAction = 'create' | 'update' | 'unchanged' | 'skip'
+
+export interface SyncPreviewItem {
+  externalItemId?: string
+  title: string
+  kind: NormalizedAcademicItem['kind']
+  courseExternalId?: string
+  action: SyncPreviewAction
+  reason?: string
+}
+
+export interface SyncPreview {
+  sourceId: string
+  fetchedAt: string
+  completeness: AdapterResult['completeness']
+  warnings: string[]
+  counts: {
+    create: number
+    update: number
+    unchanged: number
+    skip: number
+  }
+  items: SyncPreviewItem[]
+}
+
 export const SYNC_RUN_STATUSES = ['running', 'success', 'partial', 'failed', 'auth-required'] as const
 export type SyncRunStatus = (typeof SYNC_RUN_STATUSES)[number]
 

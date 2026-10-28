@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import type { ConnectionView, CourseView, SyncRunSummary } from '@academic/contracts'
+import type { ConnectionView, CourseView, SyncPreview, SyncRunSummary } from '@academic/contracts'
 import { callApi } from '../api.js'
 import {
   Badge,
@@ -112,9 +112,19 @@ function SourceCard({
   const action = useAction(async () => {
     await refresh()
   })
+  const [preview, setPreview] = useState<SyncPreview>()
   const connection = source.connection
   const browserLogin = source.canLogin && source.loginMode === 'browser'
   const manualCredential = source.authKind !== 'none' && !browserLogin
+
+  const previewSync = async (): Promise<UiResult<SyncPreview>> => {
+    const result = await callApi<SyncPreview>(ctx, 'previewSourceSync', {
+      sourceId: source.sourceId,
+      ...(connection ? { connectionId: connection.connectionId } : {}),
+    })
+    if (result.ok) setPreview(result.value)
+    return result
+  }
 
   const sync = async (): Promise<UiResult<SyncRunSummary>> => {
     const result = await callApi<SyncRunSummary>(ctx, 'syncNow', {
@@ -192,6 +202,54 @@ function SourceCard({
         {action.notice && (
           <NoticeBar notice={action.notice} onDismiss={() => action.setNotice(undefined)} />
         )}
+        {preview && (
+          <div className="ac-secret-form">
+            <p className="ac-muted">
+              预览：新增 {preview.counts.create} · 更新 {preview.counts.update} · 未变{' '}
+              {preview.counts.unchanged} · 跳过 {preview.counts.skip}
+              {preview.completeness === 'partial' ? '（部分同步，旧数据保留）' : ''}
+            </p>
+            {preview.warnings.length > 0 && (
+              <ul className="ac-warning-list">
+                {preview.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            )}
+            {preview.items.length > 0 && (
+              <ul className="ac-list">
+                {preview.items.slice(0, 5).map((entry) => (
+                  <li key={`${entry.externalItemId ?? entry.title}-${entry.action}`}>
+                    {entry.action} · {entry.title}
+                    {entry.reason ? `（${entry.reason}）` : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="ac-form-actions">
+              <button
+                type="button"
+                className="ac-button ac-button-primary"
+                disabled={action.pending !== undefined}
+                onClick={() =>
+                  void action.run('sync', sync, '同步完成').then((ok) => {
+                    if (ok) setPreview(undefined)
+                  })
+                }
+              >
+                {action.pending === 'sync' ? '同步中…' : '确认同步'}
+              </button>
+              <button
+                type="button"
+                className="ac-button"
+                disabled={action.pending !== undefined}
+                onClick={() => setPreview(undefined)}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        )}
         {browserLogin && (
           <div className="ac-secret-form">
             <p className="ac-muted">
@@ -237,6 +295,14 @@ function SourceCard({
         )}
       </div>
       <div className="ac-source-actions">
+        <button
+          type="button"
+          className="ac-button"
+          disabled={!source.syncAvailable || action.pending !== undefined}
+          onClick={() => void action.run('preview', previewSync, '预览完成')}
+        >
+          {action.pending === 'preview' ? '读取中…' : '预览同步'}
+        </button>
         <button
           type="button"
           className="ac-button"

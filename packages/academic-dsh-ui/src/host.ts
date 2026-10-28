@@ -43,7 +43,7 @@ import type {
   WebSessionIdRequest,
   WebSessionView,
 } from './protocol.js'
-import type { ConnectionView, SyncRunSummary } from '@academic/contracts'
+import type { ConnectionView, SyncPreview, SyncRunSummary } from '@academic/contracts'
 
 const REMOTE_METHODS = [
   'status',
@@ -78,6 +78,7 @@ const REMOTE_METHODS = [
   'setJobEnabled',
   'updateSyncSchedule',
   'syncNow',
+  'previewSourceSync',
   'markNotificationRead',
   'markAllNotificationsRead',
   'settings',
@@ -280,6 +281,10 @@ export class AcademicUiService extends TypertRemoteService {
 
   async syncNow(request: unknown): Promise<UiResult<SyncRunSummary>> {
     return (await this.apiReady).syncNow(request as SyncNowRequest)
+  }
+
+  async previewSourceSync(request: unknown): Promise<UiResult<SyncPreview>> {
+    return (await this.apiReady).previewSourceSync(request)
   }
 
   async markNotificationRead(

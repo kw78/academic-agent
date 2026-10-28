@@ -13,6 +13,7 @@ import {
   type Range,
   type StudyPlanView,
   type StudyTaskView,
+  type SyncPreview,
   type SyncRunSummary,
 } from '@academic/contracts'
 import type { AcademicApp } from '@academic/cli'
@@ -722,6 +723,7 @@ export interface AcademicUiApi {
   setJobEnabled(request: unknown): Promise<UiResult<AutomationJob>>
   updateSyncSchedule(request: unknown): Promise<UiResult<AutomationJob>>
   syncNow(request: unknown): Promise<UiResult<SyncRunSummary>>
+  previewSourceSync(request: unknown): Promise<UiResult<SyncPreview>>
   markNotificationRead(request: unknown): Promise<UiResult<{ changed: boolean }>>
   markAllNotificationsRead(request: unknown): Promise<UiResult<{ changed: number }>>
   settings(request: unknown): Promise<UiResult<SettingsView>>
@@ -1388,6 +1390,24 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
         },
       })
       return ok(mapJob(updated))
+    },
+
+    async previewSourceSync(request) {
+      const parsed = parse(syncNowSchema, request)
+      if (!parsed.ok) return parsed
+      const body: SyncNowRequest = parsed.value
+      let sourceId = body.sourceId
+      if (!sourceId && body.connectionId) {
+        const connection = app.connections.get(body.connectionId)
+        if (!connection) return failure('NOT_FOUND', '连接不存在')
+        sourceId = connection.sourceId
+      }
+      if (!sourceId) return failure('VALIDATION', '缺少数据源 ID')
+      try {
+        return ok(await app.previewSourceSync(sourceId, body.connectionId))
+      } catch (error) {
+        return fromError(error)
+      }
     },
 
     async syncNow(request) {

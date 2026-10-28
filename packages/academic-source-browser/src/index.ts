@@ -12,7 +12,7 @@ import type {
   SourceVerification,
 } from '@academic/contracts'
 
-const browserConfigSchema = z.object({
+export const browserConfigSchema = z.object({
   loginUrl: z.string().url(),
   authenticatedUrlPatterns: z.array(z.string().min(1)).min(1),
   cookieDomains: z.array(z.string().min(1)).min(1),

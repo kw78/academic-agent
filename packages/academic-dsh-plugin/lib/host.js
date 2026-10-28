@@ -11,7 +11,7 @@ import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { Service } from "@deepseek-ai/cordis";
 
 // apps/academic-cli/src/composition.ts
-import { createHash as createHash6, randomUUID as randomUUID3 } from "node:crypto";
+import { createHash as createHash7, randomUUID as randomUUID3 } from "node:crypto";
 import { mkdirSync as mkdirSync3 } from "node:fs";
 import { dirname as dirname2 } from "node:path";
 
@@ -21527,6 +21527,581 @@ function createFixtureSourceEngine() {
   };
 }
 
+// adapters/ustc-blackboard/src/login.ts
+import { chromium as chromium3 } from "playwright-core";
+
+// adapters/ustc-blackboard/src/parse.ts
+import { createHash as createHash4 } from "node:crypto";
+var NAMED_ENTITIES = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  ndash: "\u2013",
+  mdash: "\u2014",
+  hellip: "\u2026",
+  rsquo: "\u2019",
+  lsquo: "\u2018",
+  rdquo: "\u201D",
+  ldquo: "\u201C"
+};
+function decodeEntities(value) {
+  return value.replace(
+    /&#x([0-9a-f]+);/gi,
+    (_, hex3) => String.fromCodePoint(Number.parseInt(hex3, 16))
+  ).replace(
+    /&#(\d+);/g,
+    (_, decimal) => String.fromCodePoint(Number(decimal))
+  ).replace(/&([a-z]+);/gi, (entity, name) => {
+    return NAMED_ENTITIES[name.toLowerCase()] ?? entity;
+  });
+}
+function stripHtml(value) {
+  return decodeEntities(
+    value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ")
+  ).replace(/\s+/g, " ").trim();
+}
+function absoluteUrl(href, baseUrl) {
+  try {
+    return new URL(href.replace(/&amp;/g, "&"), baseUrl).toString();
+  } catch {
+    return void 0;
+  }
+}
+function anchors(html, baseUrl) {
+  const result = [];
+  for (const match of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+    const attributes = match[1] ?? "";
+    const href = /href\s*=\s*["']([^"']+)["']/i.exec(attributes)?.[1];
+    if (!href) continue;
+    const url2 = absoluteUrl(href, baseUrl);
+    if (!url2) continue;
+    const title = /title\s*=\s*["']([^"']*)["']/i.exec(attributes)?.[1];
+    const text = stripHtml(match[2] ?? "") || (title ? decodeEntities(title) : "");
+    result.push({
+      href: url2,
+      text: text.slice(0, 300),
+      ...title ? { title: decodeEntities(title).slice(0, 300) } : {}
+    });
+  }
+  return result;
+}
+function searchParam(url2, names) {
+  try {
+    const parsed = new URL(url2);
+    for (const name of names) {
+      const value = parsed.searchParams.get(name);
+      if (value) return value;
+    }
+  } catch {
+    return void 0;
+  }
+  return void 0;
+}
+function courseExternalIdFromUrl(url2) {
+  return searchParam(url2, ["course_id", "id"]);
+}
+function parseCourseTitle(value) {
+  const text = stripHtml(value);
+  const split = text.match(/^(.+?)[:：]\s*(.+)$/);
+  if (!split?.[1] || !split[2]) return { code: "", termId: "unknown", title: text };
+  const left = split[1].trim();
+  const title = split[2].trim();
+  const parts = left.split(".").filter(Boolean);
+  const term = parts.at(-1);
+  if (term && /^\d{4}(FA|SP|SU|WI)$/i.test(term)) {
+    return {
+      code: parts.slice(0, -1).join("."),
+      termId: term.toUpperCase(),
+      title
+    };
+  }
+  return { code: left, termId: "unknown", title };
+}
+function parseCourseLinks(html, options) {
+  const filters = {
+    terms: options.termFilter?.map((value) => value.toUpperCase()),
+    courses: options.courseFilter?.map((value) => value.toLowerCase())
+  };
+  const byId = /* @__PURE__ */ new Map();
+  for (const anchor2 of anchors(html, options.baseUrl)) {
+    if (!/launcher\?type=Course/i.test(anchor2.href) && !/listContent\.jsp\?course_id=/i.test(anchor2.href) && !/courseMain\?course_id=/i.test(anchor2.href)) {
+      continue;
+    }
+    const externalCourseId = courseExternalIdFromUrl(anchor2.href);
+    if (!externalCourseId) continue;
+    const parsed = parseCourseTitle(anchor2.text || anchor2.title || "");
+    if (!parsed.title) continue;
+    const existing = byId.get(externalCourseId);
+    const candidate = {
+      externalCourseId,
+      code: parsed.code,
+      termId: parsed.termId,
+      title: parsed.title,
+      url: anchor2.href
+    };
+    if (!existing) {
+      byId.set(externalCourseId, candidate);
+      continue;
+    }
+    if (existing.termId === "unknown" && candidate.termId !== "unknown") {
+      byId.set(externalCourseId, candidate);
+    }
+  }
+  const courses = [...byId.values()].filter((course2) => {
+    if (filters.terms && filters.terms.length > 0 && !filters.terms.includes(course2.termId.toUpperCase())) {
+      return false;
+    }
+    if (filters.courses && filters.courses.length > 0) {
+      const haystack = `${course2.code} ${course2.title}`.toLowerCase();
+      if (!filters.courses.some((value) => haystack.includes(value))) return false;
+    }
+    return true;
+  });
+  let truncated = false;
+  const limit = options.maxCourses ?? 50;
+  if (courses.length > limit) {
+    courses.length = limit;
+    truncated = true;
+  }
+  return { courses, truncated };
+}
+function findAssignmentsAreaUrl(courseHtml, baseUrl) {
+  const candidate = anchors(courseHtml, baseUrl).find((anchor2) => {
+    if (!/listContent\.jsp\?/i.test(anchor2.href)) return false;
+    const label = `${anchor2.text} ${anchor2.title ?? ""}`;
+    return /作业|assignment/i.test(label);
+  });
+  return candidate?.href;
+}
+function parseAssignmentLinks(assignmentsHtml, baseUrl, courseExternalId) {
+  const seen = /* @__PURE__ */ new Set();
+  const assignments = [];
+  for (const anchor2 of anchors(assignmentsHtml, baseUrl)) {
+    if (!/\/webapps\/assignment\//i.test(anchor2.href)) continue;
+    const contentId = searchParam(anchor2.href, ["content_id"]);
+    if (!contentId) continue;
+    const courseId = searchParam(anchor2.href, ["course_id"]) ?? courseExternalId;
+    const externalItemId = `bb:${courseId}:${contentId}`;
+    if (seen.has(externalItemId)) continue;
+    seen.add(externalItemId);
+    assignments.push({
+      externalItemId,
+      courseExternalId: courseId,
+      title: anchor2.text || anchor2.title || contentId,
+      url: anchor2.href
+    });
+  }
+  return { assignments };
+}
+function isLoginPage(finalUrl, body, loggedOutPatterns = []) {
+  const haystack = `${finalUrl}
+${body.slice(0, 2e4)}`;
+  for (const pattern of loggedOutPatterns) {
+    try {
+      if (new RegExp(pattern).test(haystack)) return true;
+    } catch {
+    }
+  }
+  return /\/webapps\/login|\/cas\/login|id\.ustc\.edu\.cn/i.test(finalUrl) || /name=["']login["']|id=["']loginForm["']/i.test(body);
+}
+var MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec"
+];
+function validDate(year, month, day) {
+  const date5 = new Date(Date.UTC(year, month - 1, day));
+  return date5.getUTCFullYear() === year && date5.getUTCMonth() === month - 1 && date5.getUTCDate() === day;
+}
+function two(value) {
+  return String(value).padStart(2, "0");
+}
+function parseDue(value, zone, utcOffsetMinutes) {
+  const text = stripHtml(value);
+  const chinese = new RegExp(
+    `(\\d{4})\\s*\u5E74\\s*(\\d{1,2})\\s*\u6708\\s*(\\d{1,2})\\s*\u65E5(?:\\s*\u661F\u671F[\u4E00\u4E8C\u4E09\u56DB\u4E94\u516D\u65E5\u5929])?(?:\\s*(\u4E0A\u5348|\u4E0B\u5348|\u665A\u4E0A)?\\s*(\\d{1,2})\\s*[:\uFF1A]\\s*(\\d{2}))?`
+  ).exec(text);
+  if (chinese?.[1] && chinese[2] && chinese[3]) {
+    const year = Number(chinese[1]);
+    const month = Number(chinese[2]);
+    const day = Number(chinese[3]);
+    if (!validDate(year, month, day)) return { kind: "unknown" };
+    const date5 = `${year}-${two(month)}-${two(day)}`;
+    const hourText = chinese[4];
+    const hourRaw = chinese[5];
+    const minuteRaw = chinese[6];
+    if (hourRaw && minuteRaw) {
+      let hour = Number(hourRaw);
+      const minute = Number(minuteRaw);
+      if (hourText && /上午/.test(hourText) && hour === 12) hour = 0;
+      if (hourText && /下午|晚上/.test(hourText) && hour < 12) hour += 12;
+      if (hour > 23 || minute > 59) return { kind: "local-date", date: date5, zone };
+      const utc = new Date(
+        Date.UTC(year, month - 1, day, hour, minute) - utcOffsetMinutes * 6e4
+      ).toISOString();
+      return { kind: "instant", utc, zone };
+    }
+    return { kind: "local-date", date: date5, zone };
+  }
+  const english = new RegExp(
+    `(${MONTHS.join("|")})\\s+(\\d{1,2}),?\\s+(\\d{4})(?:\\s+(\\d{1,2}):(\\d{2})\\s*(AM|PM)?)?`,
+    "i"
+  ).exec(text);
+  if (english?.[1] && english[2] && english[3]) {
+    const month = MONTHS.indexOf(
+      MONTHS.find((name) => name.toLowerCase() === english[1].toLowerCase()) ?? english[1]
+    ) + 1;
+    const day = Number(english[2]);
+    const year = Number(english[3]);
+    if (!validDate(year, month, day)) return { kind: "unknown" };
+    const date5 = `${year}-${two(month)}-${two(day)}`;
+    if (english[4] && english[5]) {
+      let hour = Number(english[4]);
+      const minute = Number(english[5]);
+      if (english[6]?.toUpperCase() === "PM" && hour < 12) hour += 12;
+      if (english[6]?.toUpperCase() === "AM" && hour === 12) hour = 0;
+      if (hour > 23 || minute > 59) return { kind: "local-date", date: date5, zone };
+      const utc = new Date(
+        Date.UTC(year, month - 1, day, hour, minute) - utcOffsetMinutes * 6e4
+      ).toISOString();
+      return { kind: "instant", utc, zone };
+    }
+    return { kind: "local-date", date: date5, zone };
+  }
+  const iso = /(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(text);
+  if (iso?.[1] && iso[2] && iso[3]) {
+    const year = Number(iso[1]);
+    const month = Number(iso[2]);
+    const day = Number(iso[3]);
+    if (!validDate(year, month, day)) return { kind: "unknown" };
+    const date5 = `${year}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+    if (iso[4] && iso[5]) {
+      const utc = new Date(
+        Date.UTC(year, month - 1, day, Number(iso[4]), Number(iso[5])) - utcOffsetMinutes * 6e4
+      ).toISOString();
+      return { kind: "instant", utc, zone };
+    }
+    return { kind: "local-date", date: date5, zone };
+  }
+  return { kind: "unknown" };
+}
+function parseAssignmentDetail(html, url2, courseExternalId, fallbackTitle, options) {
+  const contentId = searchParam(url2, ["content_id"]);
+  if (!contentId) throw new Error("Assignment URL has no content_id");
+  const pageTitle = decodeEntities(
+    /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? ""
+  );
+  const titleMatch = /^(?:上载作业|复查提交历史记录|Upload Assignment|Review Submission History)\s*[:：]\s*(.+?)(?:\s+[–-]\s+.*)?$/i.exec(
+    stripHtml(pageTitle)
+  );
+  const title = (titleMatch?.[1] ?? fallbackTitle).trim() || fallbackTitle;
+  const pageText = stripHtml(html);
+  const dueHtml = /<div[^>]*id=["']assignMeta2["'][^>]*>[\s\S]*?截止日期[\s\S]*?<div[^>]*class=["'][^"']*metaField[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(
+    html
+  )?.[1] ?? /截止日期\s*([\s\S]{0,160})/i.exec(pageText)?.[1] ?? "";
+  const due = parseDue(
+    stripHtml(dueHtml),
+    options.zone,
+    options.utcOffsetMinutes
+  );
+  const instructions = /<li[^>]*id=["']instructions["'][^>]*>([\s\S]*?)<\/li>/i.exec(html)?.[1] ?? "";
+  const description = stripHtml(instructions).slice(0, 4e3);
+  const kind = /考试|exam/i.test(title) ? "exam" : /测验|quiz|test/i.test(title) ? "quiz" : "assignment";
+  const contentHash = createHash4("sha256").update(
+    JSON.stringify({
+      title,
+      description,
+      due,
+      courseExternalId
+    })
+  ).digest("hex");
+  return {
+    externalItemId: `bb:${courseExternalId}:${contentId}`,
+    courseExternalId,
+    kind,
+    title,
+    ...description ? { description } : {},
+    due,
+    sourceUrl: url2,
+    contentHash
+  };
+}
+
+// adapters/ustc-blackboard/src/engine.ts
+var blackboardConfigSchema = browserConfigSchema.extend({
+  portalUrl: external_exports.string().url().optional(),
+  maxCourses: external_exports.number().int().min(1).max(200).optional(),
+  maxAssignments: external_exports.number().int().min(1).max(500).optional(),
+  termFilter: external_exports.array(external_exports.string().min(1)).max(20).optional(),
+  courseFilter: external_exports.array(external_exports.string().min(1)).max(50).optional(),
+  delayMs: external_exports.number().int().min(0).max(5e3).optional(),
+  timeZone: external_exports.string().min(1).optional(),
+  utcOffsetMinutes: external_exports.number().int().min(-840).max(840).optional()
+});
+function parseConfig2(config2) {
+  return blackboardConfigSchema.parse(config2);
+}
+function sessionCookies(secret) {
+  try {
+    const parsed = JSON.parse(secret);
+    if (!Array.isArray(parsed.cookies) || parsed.cookies.length === 0) {
+      throw new Error("missing cookies");
+    }
+    return parsed.cookies;
+  } catch {
+    throw new AdapterAuthError("\u7F51\u7AD9\u4F1A\u8BDD\u683C\u5F0F\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+  }
+}
+var BlackboardClient = class {
+  #config;
+  #cookies;
+  #fetchImpl;
+  #resolveHost;
+  constructor(config2, cookies, options) {
+    this.#config = config2;
+    this.#cookies = cookies;
+    this.#fetchImpl = options.fetchImpl ?? fetch;
+    this.#resolveHost = options.resolveHost;
+  }
+  async get(url2) {
+    try {
+      const result = await safeFetch(url2, {
+        cookies: this.#cookies,
+        allowedHosts: this.#config.cookieDomains,
+        ...this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {},
+        fetchImpl: this.#fetchImpl,
+        ...this.#resolveHost ? { resolveHost: this.#resolveHost } : {}
+      });
+      if (result.status === 401 || result.status === 403) {
+        throw new AdapterAuthError("Blackboard \u4F1A\u8BDD\u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      }
+      if (result.status >= 500) {
+        throw new AdapterTransientError(`Blackboard \u8FD4\u56DE HTTP ${result.status}`);
+      }
+      if (isLoginPage(
+        result.finalUrl,
+        result.body,
+        this.#config.loggedOutPatterns ?? []
+      )) {
+        throw new AdapterAuthError("Blackboard \u4F1A\u8BDD\u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+      }
+      return { html: result.body, finalUrl: result.finalUrl };
+    } catch (error62) {
+      if (error62 instanceof AdapterAuthError || error62 instanceof AdapterTransientError) {
+        throw error62;
+      }
+      if (error62 instanceof SafeFetchError) {
+        if (error62.code === "TIMEOUT" || error62.code === "NETWORK") {
+          throw new AdapterTransientError(error62.message);
+        }
+        if (error62.code === "UNSAFE_HOST") {
+          throw new AdapterAuthError(
+            "\u8BF7\u6C42\u8DF3\u8F6C\u5230\u672A\u6388\u6743\u7AD9\u70B9\uFF0C\u53EF\u80FD\u662F\u4F1A\u8BDD\u5931\u6548\uFF1B\u8BF7\u91CD\u65B0\u767B\u5F55"
+          );
+        }
+        throw new AdapterTransientError(error62.message);
+      }
+      throw new AdapterTransientError(
+        error62 instanceof Error ? error62.message : "Blackboard \u8BF7\u6C42\u5931\u8D25"
+      );
+    }
+  }
+  async delay() {
+    const delay = this.#config.delayMs ?? 100;
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+};
+var BlackboardReadOnlyAdapter = class {
+  id = "blackboard.readonly";
+  sourceId;
+  #config;
+  #options;
+  constructor(sourceId, config2, options) {
+    this.sourceId = sourceId;
+    this.#config = config2;
+    this.#options = options;
+  }
+  async fetch(context) {
+    if (!context?.credentials) {
+      throw new AdapterAuthError("\u7F3A\u5C11 Blackboard \u4F1A\u8BDD\u51ED\u636E");
+    }
+    const client = new BlackboardClient(
+      this.#config,
+      sessionCookies(await context.credentials.getSecret()),
+      this.#options
+    );
+    const portalUrl = this.#config.portalUrl ?? this.#config.loginUrl;
+    const portal = await client.get(portalUrl);
+    const parsedCourses = parseCourseLinks(portal.html, {
+      baseUrl: portal.finalUrl,
+      ...this.#config.termFilter ? { termFilter: this.#config.termFilter } : {},
+      ...this.#config.courseFilter ? { courseFilter: this.#config.courseFilter } : {},
+      maxCourses: this.#config.maxCourses ?? 20
+    });
+    const warnings = [];
+    const items = [];
+    let partial2 = parsedCourses.truncated;
+    let truncatedAssignments = false;
+    let coursesWithAssignmentsArea = 0;
+    const maxAssignments = this.#config.maxAssignments ?? 100;
+    const zone = this.#config.timeZone ?? "Asia/Shanghai";
+    const utcOffsetMinutes = this.#config.utcOffsetMinutes ?? 480;
+    if (parsedCourses.courses.length === 0) {
+      return {
+        items,
+        completeness: "partial",
+        fetchedAt: this.#options.now?.() ?? (/* @__PURE__ */ new Date()).toISOString(),
+        warnings: ["\u6CA1\u6709\u5339\u914D\u5230\u8BFE\u7A0B\uFF1B\u4FDD\u7559\u4E0A\u4E00\u6B21\u6709\u6548\u6570\u636E"]
+      };
+    }
+    for (const course2 of parsedCourses.courses) {
+      if (truncatedAssignments) break;
+      await client.delay();
+      let courseHtml;
+      try {
+        courseHtml = (await client.get(course2.url)).html;
+      } catch (error62) {
+        if (error62 instanceof AdapterAuthError) throw error62;
+        warnings.push(`\u8BFE\u7A0B\u300C${course2.title}\u300D\u9875\u9762\u8BFB\u53D6\u5931\u8D25\uFF1A${messageOf(error62)}`);
+        partial2 = true;
+        continue;
+      }
+      const areaUrl = findAssignmentsAreaUrl(courseHtml, course2.url);
+      if (!areaUrl) continue;
+      coursesWithAssignmentsArea += 1;
+      await client.delay();
+      let assignmentsHtml;
+      try {
+        assignmentsHtml = (await client.get(areaUrl)).html;
+      } catch (error62) {
+        if (error62 instanceof AdapterAuthError) throw error62;
+        warnings.push(`\u8BFE\u7A0B\u300C${course2.title}\u300D\u4F5C\u4E1A\u533A\u8BFB\u53D6\u5931\u8D25\uFF1A${messageOf(error62)}`);
+        partial2 = true;
+        continue;
+      }
+      const assignments = parseAssignmentLinks(
+        assignmentsHtml,
+        areaUrl,
+        course2.externalCourseId
+      ).assignments;
+      for (const assignment of assignments) {
+        if (items.length >= maxAssignments) {
+          partial2 = true;
+          truncatedAssignments = true;
+          break;
+        }
+        await client.delay();
+        try {
+          const detail = await client.get(assignment.url);
+          const parsed = parseAssignmentDetail(
+            detail.html,
+            assignment.url,
+            course2.externalCourseId,
+            assignment.title,
+            { zone, utcOffsetMinutes }
+          );
+          items.push({ sourceId: this.sourceId, ...parsed });
+        } catch (error62) {
+          if (error62 instanceof AdapterAuthError) throw error62;
+          warnings.push(
+            `\u8BFE\u7A0B\u300C${course2.title}\u300D\u4F5C\u4E1A\u300C${assignment.title}\u300D\u8BFB\u53D6\u5931\u8D25\uFF1A${messageOf(error62)}`
+          );
+          partial2 = true;
+        }
+      }
+    }
+    if (coursesWithAssignmentsArea === 0) {
+      warnings.push("\u672A\u627E\u5230\u4F5C\u4E1A\u533A\uFF1B\u4FDD\u7559\u4E0A\u4E00\u6B21\u6709\u6548\u6570\u636E");
+      partial2 = true;
+    }
+    if (truncatedAssignments) {
+      warnings.push(`\u4F5C\u4E1A\u6570\u91CF\u8FBE\u5230\u4E0A\u9650 ${maxAssignments}\uFF0C\u672C\u6B21\u6807\u8BB0\u4E3A\u90E8\u5206\u540C\u6B65`);
+    }
+    if (parsedCourses.truncated) {
+      warnings.push(
+        `\u8BFE\u7A0B\u6570\u91CF\u8FBE\u5230\u4E0A\u9650 ${this.#config.maxCourses ?? 20}\uFF0C\u672C\u6B21\u6807\u8BB0\u4E3A\u90E8\u5206\u540C\u6B65`
+      );
+    }
+    return {
+      items,
+      completeness: partial2 ? "partial" : "full",
+      fetchedAt: this.#options.now?.() ?? (/* @__PURE__ */ new Date()).toISOString(),
+      warnings
+    };
+  }
+};
+function messageOf(error62) {
+  return error62 instanceof Error ? error62.message : String(error62);
+}
+function createBlackboardEngine(options = {}) {
+  const browser = createBrowserSessionEngine(options);
+  return {
+    descriptor: {
+      id: "blackboard",
+      displayName: "Blackboard Learn",
+      description: "Blackboard Learn \u53EA\u8BFB\u540C\u6B65\uFF1A\u590D\u7528\u6D4F\u89C8\u5668\u4F1A\u8BDD\uFF0C\u8BFB\u53D6\u8BFE\u7A0B\u4E0E\u4F5C\u4E1A\uFF1B\u4E0D\u63D0\u4EA4\u4F5C\u4E1A\u3002",
+      supportsSync: true,
+      supportsLogin: true,
+      supportsVerify: true,
+      authKinds: ["token"],
+      loginModes: ["browser"],
+      validateConfig(config2) {
+        const parsed = blackboardConfigSchema.safeParse(config2);
+        if (parsed.success) return void 0;
+        return parsed.error.issues.map((issue2) => `${issue2.path.join(".") || "config"}: ${issue2.message}`).join("; ");
+      }
+    },
+    async login(context) {
+      return browser.login(context);
+    },
+    async verify(context, secret) {
+      return browser.verify(context, secret);
+    },
+    async listCourses(context, credentials) {
+      if (!credentials) throw new AdapterAuthError("\u7F3A\u5C11 Blackboard \u4F1A\u8BDD\u51ED\u636E");
+      const config2 = parseConfig2(context.config);
+      const client = new BlackboardClient(
+        config2,
+        sessionCookies(await credentials.getSecret()),
+        options
+      );
+      const portalUrl = config2.portalUrl ?? config2.loginUrl;
+      const portal = await client.get(portalUrl);
+      return parseCourseLinks(portal.html, {
+        baseUrl: portal.finalUrl,
+        ...config2.termFilter ? { termFilter: config2.termFilter } : {},
+        ...config2.courseFilter ? { courseFilter: config2.courseFilter } : {},
+        maxCourses: config2.maxCourses ?? 20
+      }).courses.map((course2) => ({
+        sourceId: context.sourceId,
+        externalCourseId: course2.externalCourseId,
+        termId: course2.termId,
+        code: course2.code,
+        title: course2.title
+      }));
+    },
+    createAdapter(context) {
+      return new BlackboardReadOnlyAdapter(
+        context.sourceId,
+        parseConfig2(context.config),
+        options
+      );
+    }
+  };
+}
+
 // packages/academic-agent-tools/src/tools.ts
 var ACADEMIC_TOOL_NAMES = {
   ListCourses: "academic_list_courses",
@@ -21939,6 +22514,52 @@ var ConnectorService = class {
     );
     if (!course2) throw new Error("Course registration did not become visible");
     return course2;
+  }
+  async preview(adapter, options = {}) {
+    let credentials;
+    if (options.connection) {
+      credentials = await options.connection.credentials.openCredential(
+        options.connection.connectionId,
+        adapter.sourceId
+      );
+    }
+    const result = await adapter.fetch(credentials ? { credentials } : void 0);
+    const counts = { create: 0, update: 0, unchanged: 0, skip: 0 };
+    const items = [];
+    for (const item of result.items) {
+      let action = "create";
+      let reason;
+      if (!item.externalItemId) {
+        action = "skip";
+        reason = "\u7F3A\u5C11\u7A33\u5B9A\u5916\u90E8 ID";
+      } else if (!item.courseExternalId) {
+        action = "skip";
+        reason = "\u7F3A\u5C11\u5916\u90E8\u8BFE\u7A0B ID";
+      } else {
+        const existing = await this.#queries.getAcademicItemBySource(
+          adapter.sourceId,
+          item.externalItemId
+        );
+        action = existing ? existing.source.contentHash === item.contentHash ? "unchanged" : "update" : "create";
+      }
+      counts[action] += 1;
+      items.push({
+        ...item.externalItemId ? { externalItemId: item.externalItemId } : {},
+        title: item.title,
+        kind: item.kind,
+        ...item.courseExternalId ? { courseExternalId: item.courseExternalId } : {},
+        action,
+        ...reason ? { reason } : {}
+      });
+    }
+    return {
+      sourceId: adapter.sourceId,
+      fetchedAt: result.fetchedAt,
+      completeness: result.completeness,
+      warnings: result.warnings,
+      counts,
+      items
+    };
   }
   async sync(adapter, options = {}) {
     const runId = this.#ids.next();
@@ -22682,7 +23303,7 @@ async function registerNotificationReaction(options) {
 }
 
 // packages/academic-notifications/src/deadline-reminders.ts
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 var DEADLINE_REMINDER_CONSUMER_ID = "academic.notifications.deadline.v1";
 function zoneOffsetMs(zone, instant) {
   const truncated = new Date(Math.floor(instant.getTime() / 1e3) * 1e3);
@@ -22743,7 +23364,7 @@ function describeDue2(due) {
   }
 }
 function hash2(value) {
-  return createHash4("sha256").update(value).digest("hex").slice(0, 32);
+  return createHash5("sha256").update(value).digest("hex").slice(0, 32);
 }
 async function scanDeadlineReminders(dependencies) {
   const consumerId = dependencies.consumerId ?? DEADLINE_REMINDER_CONSUMER_ID;
@@ -23254,7 +23875,7 @@ function buildPlan(input2) {
 }
 
 // packages/academic-planner-basic/src/replan-store.ts
-import { createHash as createHash5, randomUUID } from "node:crypto";
+import { createHash as createHash6, randomUUID } from "node:crypto";
 function parseJson(value) {
   return JSON.parse(String(value));
 }
@@ -23281,7 +23902,7 @@ var ReplanStore = class {
            ORDER BY created_at DESC, rowid DESC LIMIT 1`
       ).get(input2.reason, rangeJson);
       if (pending) return this.#toRequest(pending);
-      const replanRequestId = input2.replanRequestId ?? `replan-${createHash5("sha256").update(input2.sourceKey ?? randomUUID()).digest("hex").slice(0, 32)}`;
+      const replanRequestId = input2.replanRequestId ?? `replan-${createHash6("sha256").update(input2.sourceKey ?? randomUUID()).digest("hex").slice(0, 32)}`;
       const now = this.#clock.now();
       this.#db.prepare(
         `INSERT OR IGNORE INTO replan_requests (
@@ -25574,13 +26195,29 @@ async function createAcademicApp(options) {
     config: {}
   });
   const sourceEngines = new SourceEngineRegistry();
-  const sourceEngineRegistrations = [
-    sourceEngines.register(createFixtureSourceEngine()),
-    sourceEngines.register(createBrowserSessionEngine()),
-    ...(options.sourceEngines ?? []).map(
-      (engine) => sourceEngines.register(engine)
-    )
-  ];
+  const configuredEngines = options.sourceEngines ?? [];
+  const configuredIds = new Set(
+    configuredEngines.map((engine) => engine.descriptor.id)
+  );
+  const sourceEngineRegistrations = [];
+  if (!configuredIds.has("fixture")) {
+    sourceEngineRegistrations.push(
+      sourceEngines.register(createFixtureSourceEngine())
+    );
+  }
+  if (!configuredIds.has("browser-session")) {
+    sourceEngineRegistrations.push(
+      sourceEngines.register(createBrowserSessionEngine())
+    );
+  }
+  if (!configuredIds.has("blackboard")) {
+    sourceEngineRegistrations.push(
+      sourceEngines.register(createBlackboardEngine())
+    );
+  }
+  for (const engine of configuredEngines) {
+    sourceEngineRegistrations.push(sourceEngines.register(engine));
+  }
   const host = new InMemoryToolHost();
   const agentRegistration = registerAcademicTools(host, {
     queries: store.queries,
@@ -25650,7 +26287,7 @@ async function createAcademicApp(options) {
       async handler(event) {
         if (event.type !== EVENT.AcademicItemDiscovered) return;
         const itemId = event.streamId.slice(event.streamId.indexOf("/") + 1);
-        const taskId = `task-default-${createHash6("sha256").update(itemId).digest("hex").slice(0, 32)}`;
+        const taskId = `task-default-${createHash7("sha256").update(itemId).digest("hex").slice(0, 32)}`;
         const result = await store.commands.execute(
           parseCommand({
             commandId: `default-task:${event.eventId}`,
@@ -25805,6 +26442,38 @@ async function createAcademicApp(options) {
       await dispatcher.processOnce();
       return summary;
     },
+    async previewSourceSync(sourceId, connectionId) {
+      const source = sources.get(sourceId);
+      if (!source || !source.enabled || source.archived) {
+        throw new CapabilityUnavailableError(`source.${sourceId}`);
+      }
+      const engine = sourceEngines.get(source.engine);
+      if (!engine?.createAdapter) {
+        throw new CapabilityUnavailableError(`source.engine.${source.engine}`);
+      }
+      let connection;
+      if (connectionId) {
+        const record2 = connections.get(connectionId);
+        if (!record2) throw new Error(`Connection not found: ${connectionId}`);
+        if (record2.sourceId !== sourceId) {
+          throw new Error("Connection does not belong to the requested source");
+        }
+        connection = { connectionId, credentials: connections };
+      } else if (source.authKind !== "none") {
+        throw new CapabilityUnavailableError(`source.credentials.${sourceId}`);
+      }
+      try {
+        return await connectors.preview(
+          engine.createAdapter({ sourceId, config: source.config }),
+          connection ? { connection } : {}
+        );
+      } catch (error62) {
+        if (connectionId && error62 instanceof AdapterAuthError) {
+          await connections.markAuthRequired(connectionId, error62.message);
+        }
+        throw error62;
+      }
+    },
     async syncSource(sourceId, connectionId) {
       const source = sources.get(sourceId);
       if (!source || !source.enabled || source.archived) {
@@ -25829,9 +26498,16 @@ async function createAcademicApp(options) {
         throw new CapabilityUnavailableError(`source.credentials.${sourceId}`);
       }
       if (engine.listCourses) {
-        const courses = await engine.listCourses(context, credentials);
-        for (const course2 of courses) {
-          await connectors.registerCourse({ ...course2, sourceId });
+        try {
+          const courses = await engine.listCourses(context, credentials);
+          for (const course2 of courses) {
+            await connectors.registerCourse({ ...course2, sourceId });
+          }
+        } catch (error62) {
+          if (connectionId && error62 instanceof AdapterAuthError) {
+            await connections.markAuthRequired(connectionId, error62.message);
+          }
+          throw error62;
         }
       }
       const summary = await connectors.sync(

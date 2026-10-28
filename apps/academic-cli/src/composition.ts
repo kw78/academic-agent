@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import {
+  AdapterAuthError,
   COMMAND,
   CapabilityRegistry,
   CapabilityUnavailableError,
@@ -24,6 +25,7 @@ import {
   type ReplanReason,
   type SourceEngine,
   type StudyPlanView,
+  type SyncPreview,
   type SyncRunSummary,
 } from '@academic/contracts'
 import {
@@ -39,6 +41,7 @@ import {
   FixtureLmsAdapter,
   createFixtureSourceEngine,
 } from '@academic/adapter-fixture-lms'
+import { createBlackboardEngine } from '@academic/adapter-ustc-blackboard'
 import {
   InMemoryToolHost,
   registerAcademicTools,
@@ -169,6 +172,7 @@ export interface AcademicApp {
     connectionId: string,
     adapter: AcademicSourceAdapter,
   ): Promise<SyncRunSummary>
+  previewSourceSync(sourceId: string, connectionId?: string): Promise<SyncPreview>
   syncSource(sourceId: string, connectionId?: string): Promise<SyncRunSummary>
   previewPlan(
     range: Range,
@@ -317,13 +321,29 @@ export async function createAcademicApp(
     config: {},
   })
   const sourceEngines = new SourceEngineRegistry()
-  const sourceEngineRegistrations = [
-    sourceEngines.register(createFixtureSourceEngine()),
-    sourceEngines.register(createBrowserSessionEngine()),
-    ...(options.sourceEngines ?? []).map((engine) =>
-      sourceEngines.register(engine),
-    ),
-  ]
+  const configuredEngines = options.sourceEngines ?? []
+  const configuredIds = new Set(
+    configuredEngines.map((engine) => engine.descriptor.id),
+  )
+  const sourceEngineRegistrations: DisposableRegistration[] = []
+  if (!configuredIds.has('fixture')) {
+    sourceEngineRegistrations.push(
+      sourceEngines.register(createFixtureSourceEngine()),
+    )
+  }
+  if (!configuredIds.has('browser-session')) {
+    sourceEngineRegistrations.push(
+      sourceEngines.register(createBrowserSessionEngine()),
+    )
+  }
+  if (!configuredIds.has('blackboard')) {
+    sourceEngineRegistrations.push(
+      sourceEngines.register(createBlackboardEngine()),
+    )
+  }
+  for (const engine of configuredEngines) {
+    sourceEngineRegistrations.push(sourceEngines.register(engine))
+  }
 
   const host = new InMemoryToolHost()
   const agentRegistration = registerAcademicTools(host, {
@@ -586,6 +606,39 @@ export async function createAcademicApp(
       return summary
     },
 
+    async previewSourceSync(sourceId, connectionId) {
+      const source = sources.get(sourceId)
+      if (!source || !source.enabled || source.archived) {
+        throw new CapabilityUnavailableError(`source.${sourceId}`)
+      }
+      const engine = sourceEngines.get(source.engine)
+      if (!engine?.createAdapter) {
+        throw new CapabilityUnavailableError(`source.engine.${source.engine}`)
+      }
+      let connection: ConnectionSyncBinding | undefined
+      if (connectionId) {
+        const record = connections.get(connectionId)
+        if (!record) throw new Error(`Connection not found: ${connectionId}`)
+        if (record.sourceId !== sourceId) {
+          throw new Error('Connection does not belong to the requested source')
+        }
+        connection = { connectionId, credentials: connections }
+      } else if (source.authKind !== 'none') {
+        throw new CapabilityUnavailableError(`source.credentials.${sourceId}`)
+      }
+      try {
+        return await connectors.preview(
+          engine.createAdapter({ sourceId, config: source.config }),
+          connection ? { connection } : {},
+        )
+      } catch (error) {
+        if (connectionId && error instanceof AdapterAuthError) {
+          await connections.markAuthRequired(connectionId, error.message)
+        }
+        throw error
+      }
+    },
+
     async syncSource(sourceId, connectionId) {
       const source = sources.get(sourceId)
       if (!source || !source.enabled || source.archived) {
@@ -610,9 +663,16 @@ export async function createAcademicApp(
         throw new CapabilityUnavailableError(`source.credentials.${sourceId}`)
       }
       if (engine.listCourses) {
-        const courses = await engine.listCourses(context, credentials)
-        for (const course of courses) {
-          await connectors.registerCourse({ ...course, sourceId })
+        try {
+          const courses = await engine.listCourses(context, credentials)
+          for (const course of courses) {
+            await connectors.registerCourse({ ...course, sourceId })
+          }
+        } catch (error) {
+          if (connectionId && error instanceof AdapterAuthError) {
+            await connections.markAuthRequired(connectionId, error.message)
+          }
+          throw error
         }
       }
       const summary = await connectors.sync(

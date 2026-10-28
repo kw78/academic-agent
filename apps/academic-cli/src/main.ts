@@ -678,6 +678,23 @@ async function runSourceLogin(
   printConnection(connection)
 }
 
+async function runSourcePreview(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  const sourceId = positional[0]
+  if (!sourceId) throw new Error('用法：source preview <sourceId> [--connection <id>]')
+  const preview = await app.previewSourceSync(sourceId, stringFlag(flags, 'connection'))
+  console.log(
+    `同步预览：新增 ${preview.counts.create} · 更新 ${preview.counts.update} · 未变 ${preview.counts.unchanged} · 跳过 ${preview.counts.skip} · ${preview.completeness}`,
+  )
+  for (const warning of preview.warnings) console.log(`  ! ${warning}`)
+  for (const item of preview.items.slice(0, 10)) {
+    console.log(`  [${item.action}] ${item.title}${item.reason ? `（${item.reason}）` : ''}`)
+  }
+  if (preview.items.length > 10) {
+    console.log(`  … 其余 ${preview.items.length - 10} 项`)
+  }
+}
+
 async function runSourceSync(app: AcademicApp, args: string[]): Promise<void> {
   const { positional, flags } = parseArgs(args)
   const sourceId = positional[0]
@@ -859,6 +876,7 @@ function printHelp(): void {
   source list               列出数据库数据源与可用 engine
   source add <id> <name> --engine <id> [--auth token] [--login-mode browser] [--config JSON]
   source login <sourceId>    使用 engine 登录流程，会话写入凭据库
+  source preview <sourceId> [--connection ID]
   source sync <sourceId> [--connection ID]
   source archive <sourceId>
   web login <url> [--label name]   打开浏览器登录并保存网站会话
@@ -966,9 +984,10 @@ async function main(): Promise<void> {
         if (subcommand === 'list') await runSourceList(app)
         else if (subcommand === 'add') await runSourceAdd(app, args)
         else if (subcommand === 'login') await runSourceLogin(app, args[0])
+        else if (subcommand === 'preview') await runSourcePreview(app, args)
         else if (subcommand === 'sync') await runSourceSync(app, args)
         else if (subcommand === 'archive') await runSourceArchive(app, args[0])
-        else throw new Error('用法：source list|add|login|sync|archive')
+        else throw new Error('用法：source list|add|login|preview|sync|archive')
         break
       }
 

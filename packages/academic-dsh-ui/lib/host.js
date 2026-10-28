@@ -21336,6 +21336,23 @@ function createAcademicUiApi(app) {
       });
       return ok(mapJob(updated));
     },
+    async previewSourceSync(request) {
+      const parsed = parse3(syncNowSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      let sourceId = body.sourceId;
+      if (!sourceId && body.connectionId) {
+        const connection = app.connections.get(body.connectionId);
+        if (!connection) return failure2("NOT_FOUND", "\u8FDE\u63A5\u4E0D\u5B58\u5728");
+        sourceId = connection.sourceId;
+      }
+      if (!sourceId) return failure2("VALIDATION", "\u7F3A\u5C11\u6570\u636E\u6E90 ID");
+      try {
+        return ok(await app.previewSourceSync(sourceId, body.connectionId));
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
     async syncNow(request) {
       const parsed = parse3(syncNowSchema, request);
       if (!parsed.ok) return parsed;
@@ -21493,6 +21510,7 @@ var REMOTE_METHODS = [
   "setJobEnabled",
   "updateSyncSchedule",
   "syncNow",
+  "previewSourceSync",
   "markNotificationRead",
   "markAllNotificationsRead",
   "settings",
@@ -21625,6 +21643,9 @@ var AcademicUiService = class extends TypertRemoteService {
   }
   async syncNow(request) {
     return (await this.apiReady).syncNow(request);
+  }
+  async previewSourceSync(request) {
+    return (await this.apiReady).previewSourceSync(request);
   }
   async markNotificationRead(request) {
     return (await this.apiReady).markNotificationRead(
