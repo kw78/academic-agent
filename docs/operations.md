@@ -2,10 +2,12 @@
 
 ## 1. 数据源接入流程
 
-1. 在“连接”页添加数据源，选择 engine（`fixture` / `browser-session` / `blackboard` / `declarative`）。
+1. 在“连接”页“快速添加平台”填写 HTTPS 首页并选择类型（Blackboard 或通用网站）；engine 与 JSON 收在“高级”中。
 2. 需要登录的 engine 选择 `browser` 登录方式；用户在 Edge/Chrome 中完成 SSO/验证码后，宿主把会话写入 DPAPI。
-3. 点击“预览同步”，确认新增/更新/未变/跳过数量和警告。
-4. 确认后点击“立即同步”；同步经 Adapter → Schema/标准化 → Connector → Kernel → Event Store。
+3. 点击“验证连接”，再点击“探测页面”查看脱敏证据与下一步提示。
+4. 对 Blackboard 直接“预览同步”；对通用网站先在 DSH 对话中让 Agent 用 `academic_probe_source` 生成 Manifest 候选，再到“Adapter 候选”面板验证、启用。
+5. 点击“预览同步”，确认新增/更新/未变/未返回/跳过数量和警告。
+6. 确认后点击“立即同步”；同步经 Adapter → Schema/标准化 → Connector → Kernel → Event Store。
 
 Blackboard 的配置示例、限制和真实页面结构见 [real-sources.md](real-sources.md)。声明式 Manifest 的示例见 `fixtures/declarative/`，候选流程见下文。
 
@@ -52,8 +54,9 @@ ACADEMIC_DB=.data/academic.db npm run demo -- adapter list
 ```
 
 - `samples.json` 是 `[{ "url": "https://...", "body": "..." }]`，必须覆盖 Manifest 会请求的每个 URL。
-- 候选不会自动进入同步；只有显式启用的 validated 版本会被 `engine=declarative` 使用。
-- Agent 的 `academic_validate_adapter_candidate` 只读；注册/启用需要可信宿主逐次授权。CLI 操作用户即授权者。
+- 候选不会自动进入同步；只有显式启用的 validated 版本会被 `engine=declarative` 使用。UI 启用后会创建/更新 `adapter-<adapterId>` 数据源；若已有同站点浏览器会话，Host 在内部复制会话到新连接，成功响应不包含秘密。
+- Agent 的 `academic_validate_adapter_candidate` 与 `academic_probe_source` 只读；注册/启用需要可信宿主逐次授权。CLI 操作用户或 UI 点击即授权者。
+- 记录：候选报告与状态持久化，激活时间在 `adapter_active.activated_at`；旧 validated 版本可回滚。
 - 当前只接受声明式 Manifest；不支持任意 JavaScript 生成/执行，因此没有候选代码进入主进程的路径。
 
 ## 6. 可观测性与日志
@@ -68,7 +71,7 @@ ACADEMIC_DB=.data/academic.db npm run demo -- adapter list
 2. 固定/核对 DSH 版本（当前验证 `0.2.1-rc.3`）。
 3. `npm install` → `npm run typecheck` → `npm test`。
 4. `npm run build:dsh`、`npm run build:ui`；确认 `migrations/` 已复制到插件产物。
-5. 用独立测试数据库运行 `ACADEMIC_AGENT_SELFTEST=1 dsh academic --json "hello"`，确认 16 个工具、只读查询与写入拒绝。
+5. 用独立测试数据库运行 `ACADEMIC_AGENT_SELFTEST=1 dsh academic --json "hello"`，确认 17 个工具、只读查询与写入拒绝。
 6. 桌面端重启后检查“学业”入口、Host 状态、后台作业与最近同步。
 
 ## 8. 已知限制

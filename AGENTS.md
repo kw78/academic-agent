@@ -129,7 +129,7 @@ docs/adr/                      # 架构决策记录
 - DSH 绑定继续按 M0 验证：`inject`、Service 注册/撤销、Tool 注册/撤销、HMR/重启语义、依赖组件卸载时资源释放。目前已完成加载、工具注册、ToolRegistry 执行、DeepSeek 模型自然语言调用，以及 Web 客户端 UI 的加载/卸载/重载；文件级 HMR 与真实 Session 生命周期待补。
 - Agent 工具通过 `ctx.tools.register(defineTool(...))` 暴露；工具只调用领域服务，不拼 SQL、不直接追加事件。
 - 普通 Host 插件可访问宿主进程；Cordis disposer 不是安全沙箱。未审查代码不得以可信 Host 插件身份安装。
-- 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 拆成 `host` / `planner` / `tools` 三个 Cordis fiber；host 提供 `academicApp` 服务，planner 与 tools 独立注入，16 个工具经真实 `ctx.tools` 注册。
+- 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 拆成 `host` / `planner` / `tools` 三个 Cordis fiber；host 提供 `academicApp` 服务，planner 与 tools 独立注入，17 个工具经真实 `ctx.tools` 注册。
 - 真实 Cordis 生命周期测试已验证：卸载 tools 后 host/scheduler/store 继续运行；卸载 planner 后旧计划仍可读、能力消失；重载二者恢复；host 卸载关闭 app。
 - DSH Web profile 已实测通过 Plugins 页面禁用/启用 `@academic/dsh-ui`：入口消失后后台同步/重算继续，重新启用后入口恢复且没有重复 Host、作业或课程。文件级 HMR 尚未验证。
 - DSH 运行时提供 `@deepseek-ai/cordis` / `@deepseek-ai/dsh-tools`；插件保持二者 external，不另造 Harness。普通 `--patch` 直接加载工作区文件无法解析这些 peer，必须安装到 profile（或从 DSH 源码 checkout 运行）。
@@ -157,8 +157,8 @@ docs/adr/                      # 架构决策记录
 | M0 | 基线核对与文档统一 | 已完成：typecheck、145 项测试/31 文件、`build:dsh`/`build:ui` 实测通过 |
 | M1 | 抓取安全与凭据加固 | 进行中：DNS 固定解析、访问策略、正则与秘密防护 |
 | M2 | Blackboard 垂直闭环 | 已完成：课程/作业/考试/测验解析、文件夹分页、差异预览与真实只读同步；真实账号暂无测试项样本 |
-| M3 | 统一数据源接入流程 | 部分完成：创建/登录/验证/预览/同步已可用；探测与生成未接入统一 UI |
-| M4 | AI 候选工作流集成 | 部分完成：校验、回放、保存、启用、回滚已实现；自动探测与审批 UI 待补 |
+| M3 | 统一数据源接入流程 | 已完成：快速添加、登录、验证、探测、预览、同步、候选审批均在 UI；高级配置默认收起 |
+| M4 | AI 候选工作流集成 | 已完成（Agent 生成 + 确定性验证 + UI 审批）；未实现 Host 直连模型、多页自动采样与代码沙箱 |
 | M5 | 恢复能力与发布验收 | 部分完成：备份恢复/重启/并发已有测试；Session/HMR/迁移演练待做 |
 | M6 | 第二平台扩展 | 未开始：需要用户授权第二个真实平台 |
 
@@ -166,7 +166,7 @@ docs/adr/                      # 架构决策记录
 
 首个真实平台只读 Adapter 已落地在 `adapters/ustc-blackboard`：读取课程、作业、考试与测验，支持文件夹/下一页遍历，不提交作业、不读取附件与成绩；`engine=blackboard` 复用通用浏览器登录/会话。真实会话已验证 13 门 `2026FA` 课程中的 5 门内容区、9 个含文件夹作业与截止时间；当前账号没有暴露测试项，考试/测验仍以脱敏 fixture 验证，不得声称测试模块已完整真实验收。
 
-声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、分页、字段映射、允许域名、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选流水线已实现：Agent 可生成 Manifest、用显式样本做离线回放；候选保存与启用分开，只有 validated 版本可启用，且启用/注册需要可信授权；CLI `adapter validate/register/activate/rollback` 提供用户操作入口。尚未实现任意 JavaScript 生成与沙箱执行。
+声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、分页、字段映射、允许域名、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选流水线已实现：Agent 可调用只读 `academic_probe_source` 获取脱敏证据，生成 Manifest 并用显式样本离线回放；候选保存与启用分开，只有 validated 版本可启用，且启用/注册需要可信授权。UI“连接”页提供快速添加、探测、候选列表、验证报告、启用/回滚，并在启用后创建/更新可同步的 declarative 数据源；同站点已有会话会在 Host 内复制，不返回秘密。CLI `adapter validate/register/activate/rollback` 同样可用。尚未实现 Host 直接调用模型生成、多页自动采样、任意 JavaScript 生成与沙箱执行。
 
 架构测试矩阵进度：
 
@@ -216,7 +216,7 @@ dsh plugin --profile academic add D:/project/classhelper/packages/academic-dsh-p
 ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db dsh academic --json "hello"
 ```
 
-已观测：host/planner/tools 三个 fiber 加载，`tools=16 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`；退出时 planner capability 释放。另外使用 DSH 凭证中的 DeepSeek key 跑通真实自然语言调用：模型调用 `academic_list_courses`，返回真实 SQLite 课程并正确回答。密钥只在进程环境中注入，未写入代码或日志。
+已观测：host/planner/tools 三个 fiber 加载，`tools=17 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`；退出时 planner capability 释放。另外使用 DSH 凭证中的 DeepSeek key 跑通真实自然语言调用：模型调用 `academic_list_courses`，返回真实 SQLite 课程并正确回答。密钥只在进程环境中注入，未写入代码或日志。
 
 ## 10. 待确认的环境参数（不阻塞实现）
 
