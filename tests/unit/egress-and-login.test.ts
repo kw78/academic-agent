@@ -60,6 +60,59 @@ describe('proxy fake-IP egress', () => {
   })
 })
 
+describe('POST transport limits', () => {
+  it('sends form-encoded bodies only with the declared content type', async () => {
+    let sent: Headers | undefined
+    const fetchImpl = (async (_input: unknown, init?: RequestInit) => {
+      sent = new Headers(init?.headers)
+      return new Response('{"ok":true}', {
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof fetch
+
+    const result = await safeFetch('https://lms.example.edu/api/list', {
+      allowedHosts: ['lms.example.edu'],
+      resolveHost: publicResolver,
+      fetchImpl,
+      method: 'POST',
+      body: 'courseId=C1&page=1',
+      contentType: 'application/x-www-form-urlencoded; charset=utf-8',
+      extraHeaders: { 'x-requested-with': 'XMLHttpRequest' },
+    })
+
+    expect(result.status).toBe(200)
+    expect(sent?.get('content-type')).toBe(
+      'application/x-www-form-urlencoded; charset=utf-8',
+    )
+    expect(sent?.get('x-requested-with')).toBe('XMLHttpRequest')
+  })
+
+  it('rejects unlisted headers and unknown POST encodings', async () => {
+    const fetchImpl = (async () => new Response('ok')) as typeof fetch
+    const base = {
+      allowedHosts: ['lms.example.edu'],
+      resolveHost: publicResolver,
+      fetchImpl,
+      method: 'POST' as const,
+      body: 'a=1',
+    }
+
+    await expect(
+      safeFetch('https://lms.example.edu/api/list', {
+        ...base,
+        extraHeaders: { authorization: 'Bearer x' },
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+
+    await expect(
+      safeFetch('https://lms.example.edu/api/list', {
+        ...base,
+        contentType: 'multipart/form-data',
+      } as never),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+  })
+})
+
 describe('login page detection', () => {
   it('does not treat a JSON login-named API as an expired session', () => {
     expect(

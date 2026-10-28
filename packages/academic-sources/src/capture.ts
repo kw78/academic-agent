@@ -163,22 +163,45 @@ function collectionScore(
   return Math.max(0, Math.min(100, score))
 }
 
+const LIST_PATH_HINT = /list|record|item|course|assign|homework|exam|task|home|query/i
+const REFERENCE_PATH =
+  /school|dict|dictionary|area|region|province|city|college|organization|dept/i
+const REFERENCE_FIELD =
+  /schoolid|schoolname|loginurl|province|city|region|district|areacode|postal|collegeid/i
+
+function isReferenceCollection(path: string, fields: CaptureField[]): boolean {
+  if (COURSE_KEY.test(path) || ASSIGNMENT_KEY.test(path)) return false
+  if (fields.some((field) => COURSE_KEY.test(field.path ?? field.key))) return false
+  if (fields.some((field) => ASSIGNMENT_KEY.test(field.path ?? field.key))) return false
+  return (
+    REFERENCE_PATH.test(path) ||
+    fields.some((field) => REFERENCE_FIELD.test(field.path ?? field.key))
+  )
+}
+
+/**
+ * Keeps empty arrays too: an empty course list still names the real endpoint,
+ * and the agent needs that to ask for a re-record instead of guessing.
+ */
 function collectCollections(value: unknown): CaptureCollection[] {
   return collectArrayNodes(value)
     .filter(
       (node) =>
-        node.items.length > 0 &&
-        node.items.some(
-          (entry) => entry !== null && typeof entry === 'object' && !Array.isArray(entry),
-        ),
+        node.items.length > 0 ||
+        LIST_PATH_HINT.test(node.path) ||
+        node.path.startsWith('data.'),
     )
     .map((node) => {
       const fields = fieldsOf(node.items[0])
+      const reference = isReferenceCollection(node.path, fields)
+      const base = collectionScore(node.path, node.items, fields)
       return {
         path: node.path || '$',
         itemCount: node.items.length,
-        score: collectionScore(node.path, node.items, fields),
+        score: Math.max(0, base - (reference ? 40 : 0)),
         fields,
+        ...(node.items.length === 0 ? { empty: true } : {}),
+        ...(reference ? { reference: true } : {}),
       }
     })
     .sort((left, right) => right.score - left.score || right.itemCount - left.itemCount)
@@ -256,7 +279,13 @@ function kindOf(
       COURSE_KEY.test(field.path ?? field.key) ||
       ASSIGNMENT_KEY.test(field.path ?? field.key),
   )
-  if (best.itemCount >= 2 || hasListKeys) return 'list'
+  if (
+    best.itemCount >= 2 ||
+    hasListKeys ||
+    (best.empty === true && LIST_PATH_HINT.test(path))
+  ) {
+    return 'list'
+  }
   if (NOISE_PATH.test(path)) return 'other'
   return 'detail'
 }
@@ -268,6 +297,40 @@ function scoreOf(kind: CaptureEndpointKind, shape: JsonShape): number {
   return shape.collections[0]?.score ?? 0
 }
 
+function maskedBodyPreview(
+  body: string,
+  contentType: string | undefined,
+  transport: CaptureEndpoint['transport'],
+): string {
+  const isForm =
+    transport === 'form' || /x-www-form-urlencoded/i.test(contentType ?? '')
+  if (isForm) {
+    try {
+      const params = new URLSearchParams(body)
+      const masked = new URLSearchParams()
+      for (const [key, value] of params) {
+        masked.append(key, SENSITIVE_PARAM.test(key) ? '***' : value)
+      }
+      return truncate(masked.toString(), 500)
+    } catch {
+      return truncate(body, 500)
+    }
+  }
+  try {
+    const parsed = JSON.parse(body) as unknown
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const masked: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(parsed)) {
+        masked[key] = SENSITIVE_PARAM.test(key) ? '***' : value
+      }
+      return truncate(JSON.stringify(masked), 500)
+    }
+  } catch {
+    // Not JSON; fall back to a truncated raw preview.
+  }
+  return truncate(body, 500)
+}
+
 function transportOf(
   method: 'GET' | 'POST',
   requestContentType: string | undefined,
@@ -275,10 +338,32 @@ function transportOf(
   if (method !== 'POST') return undefined
   const type = requestContentType?.toLowerCase() ?? ''
   if (type.includes('json')) return 'json'
-  if (type.includes('x-www-form-urlencoded') || type.includes('multipart/form-data')) {
-    return 'form'
-  }
+  if (type.includes('x-www-form-urlencoded')) return 'form'
   return 'other'
+}
+
+function sensitiveBodyKeys(requestBody?: string): string[] {
+  if (!requestBody) return []
+  const keys = new Set<string>()
+  try {
+    const parsed = JSON.parse(requestBody) as unknown
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      for (const key of Object.keys(parsed as Record<string, unknown>)) {
+        if (SENSITIVE_PARAM.test(key)) keys.add(key)
+      }
+      return [...keys]
+    }
+  } catch {
+    // Not JSON; try form encoding below.
+  }
+  try {
+    for (const key of new URLSearchParams(requestBody).keys()) {
+      if (SENSITIVE_PARAM.test(key)) keys.add(key)
+    }
+  } catch {
+    // Unparseable body; nothing else to flag.
+  }
+  return [...keys]
 }
 
 function bodyKeys(requestBody?: string): string[] {
@@ -363,40 +448,77 @@ function paginationFor(raw: CapturedSampleInput[]): PaginationCandidate | undefi
   return undefined
 }
 
+function isTargetList(endpoint: CaptureEndpoint): boolean {
+  const collection = endpoint.collections?.[0]
+  if (!collection || collection.reference === true) return false
+  if (
+    collection.fields.some(
+      (field) =>
+        COURSE_KEY.test(field.path ?? field.key) ||
+        ASSIGNMENT_KEY.test(field.path ?? field.key),
+    )
+  ) {
+    return true
+  }
+  return (
+    collection.empty === true &&
+    /course|assign|homework|exam|task/i.test(endpoint.path)
+  )
+}
+
 function nextStepFor(
   endpoints: CaptureEndpoint[],
   masked: string[],
+  maskedBodies: string[],
 ): CaptureNextStep {
-  const best = endpoints[0]
-  if (!best) {
+  const target = endpoints.find(isTargetList)
+  if (!target) {
+    const document = endpoints.find((endpoint) => endpoint.kind === 'document')
+    if (document) {
+      return {
+        action: 'validate',
+        label: '用页面样本验证 HTML 提取',
+        reason: '没有课程/作业 JSON 列表，只能按页面结构提取',
+      }
+    }
     return {
       action: 'recapture',
-      label: '重新录制：登录后打开课程/作业列表并翻一页',
-      reason: '没有捕获到可用接口',
+      label: '重新录制：登录后打开课程/作业列表并翻页',
+      reason:
+        '录制里只有参考数据或其他接口，没有课程/作业列表；请确认账号身份并在列表渲染后结束录制',
     }
   }
-  if (best.transport === 'form') {
+  if (target.transport === 'other') {
     return {
       action: 'unsupported-transport',
-      label: '当前 Manifest 无法回放表单请求，请停止生成候选',
-      reason: `${best.method} ${best.path} 使用表单编码`,
+      label: '该请求的编码方式暂不支持，请停止生成候选',
+      reason: '只有 JSON 与扁平表单编码的只读 POST 可回放',
     }
   }
-  if (masked.includes(best.path)) {
+  if (masked.includes(target.path) || maskedBodies.includes(target.path)) {
     return {
       action: 'needs-confirmation',
       label: '接口含鉴权参数，需用户确认绑定方式',
-      reason: '离线回放可能无法精确匹配脱敏后的参数',
+      reason: maskedBodies.includes(target.path)
+        ? '请求体含动态签名/令牌（如 secretStr），静态模板无法回放'
+        : '离线回放可能无法精确匹配脱敏后的参数',
     }
   }
-  if (best.kind === 'document') {
+  if (target.transport === 'form') {
     return {
       action: 'validate',
-      label: '用页面样本验证 HTML 提取',
-      reason: '没有 JSON 列表，只能按页面结构提取',
+      label: '用 sampleIds 离线验证 Manifest',
+      reason: `表单请求需在 Manifest 声明 bodyFormat: "form"；items 路径：${target.response.collectionPath}`,
     }
   }
-  if (!best.response.collectionPath) {
+  if ((target.response.itemCount ?? 0) === 0) {
+    return {
+      action: 'recapture',
+      label: '列表接口返回 0 条，请重新录制或确认账号',
+      reason: '可能是账号身份不匹配、会话未生效或列表尚未渲染完成',
+    }
+  }
+  if (!target.response.collectionPath) {
     return {
       action: 'needs-confirmation',
       label: '未识别出列表集合，请确认目标接口',
@@ -406,7 +528,7 @@ function nextStepFor(
   return {
     action: 'validate',
     label: '用 sampleIds 离线验证 Manifest',
-    reason: `首选接口 items 路径：${best.response.collectionPath}`,
+    reason: `首选接口 items 路径：${target.response.collectionPath}`,
   }
 }
 
@@ -433,6 +555,7 @@ export function buildCaptureSummary(
   const warnings = [...(input.warnings ?? [])]
   const endpoints: CaptureEndpoint[] = []
   const masked: string[] = []
+  const maskedBodies: string[] = []
 
   // Rank every observed response before applying the cap: login-time noise must
   // never push the business list out of the inventory.
@@ -458,6 +581,10 @@ export function buildCaptureSummary(
       : jsonShape(item.sample.body)
     const kind = kindOf(parsed.pathname, isHtml, shape)
     const method = item.sample.method ?? 'GET'
+    const transport = transportOf(method, item.requestContentType)
+    const bodyPreview = item.sample.requestBody
+      ? maskedBodyPreview(item.sample.requestBody, item.requestContentType, transport)
+      : undefined
     const endpoint: CaptureEndpoint = {
       sampleId: item.sampleId,
       host: parsed.hostname,
@@ -469,12 +596,11 @@ export function buildCaptureSummary(
       bytes: Buffer.byteLength(item.sample.body, 'utf8'),
       kind,
       score: scoreOf(kind, shape),
-      ...(transportOf(method, item.requestContentType)
-        ? { transport: transportOf(method, item.requestContentType) }
-        : {}),
+      ...(transport ? { transport } : {}),
       request: {
         queryKeys: [...new Set(parsed.searchParams.keys())].slice(0, 20),
         bodyKeys: bodyKeys(item.sample.requestBody),
+        ...(bodyPreview ? { bodyPreview } : {}),
         headerHints: headerHints(item.headerNames),
       },
       response: {
@@ -486,6 +612,9 @@ export function buildCaptureSummary(
       ...(shape.collections.length > 0 ? { collections: shape.collections } : {}),
     }
     if (hasMaskedParam(rawUrl)) masked.push(endpoint.path)
+    if (sensitiveBodyKeys(item.sample.requestBody).length > 0) {
+      maskedBodies.push(endpoint.path)
+    }
     endpoints.push(endpoint)
   }
 
@@ -501,7 +630,7 @@ export function buildCaptureSummary(
     .map((endpoint) => endpoint.path)
   if (unsupported.length > 0) {
     warnings.push(
-      `表单编码请求：${[...new Set(unsupported)].join(', ')}；当前 Manifest 只能发送 JSON，无法精确回放`,
+      `表单编码请求：${[...new Set(unsupported)].join(', ')}；Manifest 需声明 bodyFormat: "form"（仅扁平字段）`,
     )
   }
   if (input.skipped) {
@@ -532,6 +661,11 @@ export function buildCaptureSummary(
       `部分接口含疑似鉴权参数（已屏蔽）：${[...new Set(masked)].join(', ')}；离线回放可能无法精确匹配，需模板化或重新探测`,
     )
   }
+  if (maskedBodies.length > 0) {
+    warnings.push(
+      `请求体含动态签名/令牌（已屏蔽）：${[...new Set(maskedBodies)].join(', ')}；静态 Manifest 无法回放`,
+    )
+  }
   if (kept.length === 0) {
     warnings.push('没有捕获到可用的数据接口；请登录后打开课程/作业列表并翻一页再结束录制')
   }
@@ -547,7 +681,7 @@ export function buildCaptureSummary(
     hosts,
     visited: input.visited,
     endpoints: kept,
-    nextStep: nextStepFor(kept, masked),
+    nextStep: nextStepFor(kept, masked, maskedBodies),
     suggested: {
       cookieDomains: hosts,
       pathPrefixes: pathPrefixes(kept),

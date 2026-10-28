@@ -1,7 +1,7 @@
 # 数据源发现与候选生成：架构评审与调整建议
 
 日期：2026-10-28  
-状态：分析建议，尚未实施；不替代 Intent、Architecture Spec 或现有 ADR。  
+状态：分析建议。第一步与只读表单 POST 已于 2026-10-28 实施，进展见 `docs/mvp-verification.md`；本文的第二步/第三步仍为建议。不替代 Intent、Architecture Spec 或现有 ADR。  
 范围：当前工作区中的 HTTP 探测、引导录制、证据摘要、Manifest 候选与回放链路。
 
 ## 结论

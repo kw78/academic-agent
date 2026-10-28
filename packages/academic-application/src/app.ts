@@ -801,7 +801,7 @@ export async function createAcademicApp(
 
   // A guided capture can hold 40 samples; keep the store above that so a
   // returned sampleId is never evicted before the agent can validate it.
-  const probeSamples = new ProbeSampleStore({ maxSamples: 80 })
+  const probeSamples = new ProbeSampleStore({ maxSamples: 240 })
   const probeLimiter = new ProbeRateLimiter({
     ...(options.probeMinIntervalMs !== undefined
       ? { minIntervalMs: options.probeMinIntervalMs }

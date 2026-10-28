@@ -108,7 +108,7 @@ SPA 平台（如超星、智慧树）的课程/作业数据不在入口页，盲
 4. 生成接口清单：方法、脱敏 URL、`collections[]`（每个数组的精确路径、条数、字段）、嵌套字段路径（如 `details.due`）、分页参数、传输类型、`sampleId`，以及宿主判定的下一步。Agent 调 `academic_list_capture_endpoints` 读取清单，再用 `sampleIds` 离线验证 Manifest；`nextStep` 不是 `validate` 时（需要补录、表单请求、待确认字段）应直接停止。
 5. 候选仍需用户在“连接”页启用；录制不会扩大任何域名/路径授权，也不会提交表单。
 
-限制：表单编码 POST 与自定义请求头（如 `X-Requested-With`）暂不被 Manifest 表达；遇到这类接口需要在录制清单中说明，或另开受控能力。
+传输限制（ADR 0021）：只读 POST 默认 JSON，也可用 `bodyFormat: "form"` 发送扁平 `x-www-form-urlencoded`（≤16 KB）；唯一允许的额外请求头是 `X-Requested-With: XMLHttpRequest`。multipart、文件上传、动态签名（如 `secretStr`）仍不支持，录制清单会标记为 `unsupported-transport` 并停止生成候选。
 
 ## 可行接入路径
 

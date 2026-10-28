@@ -29,6 +29,7 @@ import {
   SafeFetchError,
   loginPageSignals,
   safeFetch,
+  type AllowedPostContentType,
   type AllowedProtocol,
   type PinnedRequest,
   type ResolveHost,
@@ -165,6 +166,42 @@ function setJsonPath(
   cursor[parts[parts.length - 1]!] = value
 }
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+/**
+ * JSON key order and form field order are not semantics. Canonicalising them
+ * keeps sample replay exact without fuzzy-matching different requests.
+ */
+function canonicalBody(body?: string): string {
+  if (body === undefined) return ''
+  const trimmed = body.trim()
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      return `json:${stableJson(JSON.parse(trimmed))}`
+    } catch {
+      return `raw:${body}`
+    }
+  }
+  if (trimmed.includes('=')) {
+    const params = new URLSearchParams(trimmed)
+    const sorted = [...params.entries()].sort(([left], [right]) =>
+      left.localeCompare(right),
+    )
+    return `form:${new URLSearchParams(sorted).toString()}`
+  }
+  return `raw:${body}`
+}
+
 function sampleKey(
   url: string,
   method: string,
@@ -173,8 +210,19 @@ function sampleKey(
   const bodyHash =
     requestBody === undefined
       ? ''
-      : createHash('sha256').update(requestBody).digest('hex')
+      : createHash('sha256').update(canonicalBody(requestBody)).digest('hex')
   return `${method} ${url} ${bodyHash}`
+}
+
+function serializeForm(value: Record<string, unknown>): string {
+  const params = new URLSearchParams()
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry !== null && typeof entry === 'object') {
+      throw new Error('表单请求只支持扁平字段')
+    }
+    params.append(key, entry === null || entry === undefined ? '' : String(entry))
+  }
+  return params.toString()
 }
 
 export function renderManifestUrl(
@@ -319,6 +367,10 @@ class ManifestClient {
     url: string,
     method: 'GET' | 'POST',
     body?: string,
+    options: {
+      contentType?: AllowedPostContentType
+      headers?: Record<string, string>
+    } = {},
   ): Promise<string> {
     if (this.#requests >= (this.#config.maxRequests ?? 100)) {
       throw new AdapterTransientError('声明式抓取请求次数超过上限')
@@ -330,7 +382,7 @@ class ManifestClient {
     let lastError: unknown
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        const responseBody = await this.#requestOnce(url, method, body)
+        const responseBody = await this.#requestOnce(url, method, body, options)
         this.#bytes += Buffer.byteLength(responseBody, 'utf8')
         if (this.#bytes > (this.#config.maxBytes ?? 5 * 1024 * 1024)) {
           throw new Error('声明式抓取响应总大小超过上限')
@@ -351,6 +403,10 @@ class ManifestClient {
     url: string,
     method: 'GET' | 'POST',
     body?: string,
+    options: {
+      contentType?: AllowedPostContentType
+      headers?: Record<string, string>
+    } = {},
   ): Promise<string> {
     try {
       const result = await safeFetch(url, {
@@ -362,6 +418,8 @@ class ManifestClient {
         allowedPorts: this.#ports,
         method,
         ...(body !== undefined ? { body } : {}),
+        ...(options.contentType ? { contentType: options.contentType } : {}),
+        ...(options.headers ? { extraHeaders: options.headers } : {}),
         ...(this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {}),
         ...(this.#options.fetchImpl ? { fetchImpl: this.#options.fetchImpl } : {}),
         ...(this.#options.requestImpl ? { requestImpl: this.#options.requestImpl } : {}),
@@ -468,6 +526,7 @@ class ManifestClient {
         return result(true)
       }
       let requestBody: string | undefined
+      let contentType: AllowedPostContentType | undefined
       if (method === 'POST') {
         const value = renderManifestBody(baseBody, vars)
         if (request.pageParam && pageInBody) {
@@ -476,12 +535,19 @@ class ManifestClient {
         if (request.offsetParam && offsetInBody) {
           setJsonPath(value, request.offsetParam, offset)
         }
-        requestBody = JSON.stringify(value)
+        const form = request.bodyFormat === 'form'
+        requestBody = form ? serializeForm(value) : JSON.stringify(value)
+        contentType = form
+          ? 'application/x-www-form-urlencoded; charset=utf-8'
+          : 'application/json; charset=utf-8'
         if (Buffer.byteLength(requestBody, 'utf8') > MAX_POST_BODY_BYTES) {
           throw new Error('声明式请求 body 超过 16 KB 上限')
         }
       }
-      const body = await this.request(currentUrl, method, requestBody)
+      const body = await this.request(currentUrl, method, requestBody, {
+        ...(contentType ? { contentType } : {}),
+        ...(request.headers ? { headers: request.headers } : {}),
+      })
       const extracted = extractPage(body, request)
       collect(extracted.diagnostics)
       const remaining = MAX_TOTAL_ROWS - rows.length

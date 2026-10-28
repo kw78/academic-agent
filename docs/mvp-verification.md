@@ -8,7 +8,7 @@
 | 检查 | 命令 | 结果 |
 |---|---|---|
 | 类型检查 | `npm run typecheck` | 通过 |
-| 全量测试 | `npm test` | 通过：45 个文件、246 项 |
+| 全量测试 | `npm test` | 通过：47 个文件、286 项 |
 | DSH 构建 | `npm run build:dsh` | 通过 |
 | UI 构建 | `npm run build:ui` | 通过 |
 | DSH 自测 | `ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=.data/dsh-academic.db dsh academic --json "hello"` | 通过：host/planner/tools 加载，`tools=17 registered=true`，只读查询成功，未授权写入 `FORBIDDEN` |
@@ -146,3 +146,16 @@ USTC 教务（第二平台，Manifest）：
 - 录制同时统计被过滤/超限/读取失败的响应数并写入警告；POST 请求记录 `requestContentType`，表单编码标记 `transport=form`，清单给出宿主判定的 `nextStep`（validate / recapture / unsupported-transport / needs-confirmation），UI 在 `unsupported-transport` 时禁用“交给 Agent”。
 - 验证：`npm test`（45 文件/252 项）；DSH Web 重新点验：`集合 data.list`、`集合 data.records`、`details.due`、`details.teacher`、表单请求提示与“下一步：用 sampleIds 离线验证 Manifest · 首选接口 items 路径：data.list”。
 - 未验证：真实超星/智慧树的深层数组与表单接口；渲染后 DOM / iframe 采集（评审第二步）尚未实现。
+
+## 真实录制反哺（2026-10-28 晚）
+
+针对超星/智慧树两次真实录制报告修复：
+
+- 跨主机 Cookie：录制现在记录所有 `xhr`/`fetch`/`document` 请求主机，而不只看成功且可解析的响应；避免 API 主机返回空/401 时其 Cookie 未被保存。
+- 空列表：空数组保留为 `empty` 集合，仍显示真实列表端点；`nextStep` 变为 `recapture`，说明“可能是账号身份/会话/渲染未完成”，不再要求模型从空结构编字段。
+- 参考数据：学校/地区字典（`schoolId`/`loginUrl`、`province` 等）标记 `reference` 并降权，不再被当作首选列表；只有参考数据时返回 `recapture`。
+- 上限：录制缓冲从 40/8 MB 提高到 120/32 MB，并在结束时按相关度保留（路径/JSON/课程作业关键词/数组结构），不再按到达顺序丢弃后到的业务列表；被丢弃数量写入警告。
+- 请求体：清单新增脱敏 `bodyPreview`，Agent 可以按真实键值构造 POST body；请求体出现 `secretStr` 等动态签名/令牌时标记 `needs-confirmation` 并停止，不再假装可回放。
+- 传输（ADR 0021）：只读 POST 支持 `bodyFormat: "form"`（扁平 `x-www-form-urlencoded`，≤16 KB）与唯一允许的 `x-requested-with: XMLHttpRequest`；样本回放对 JSON/表单键序做语义规范化，仍要求 URL、方法、字段值一致。
+- 验证：`npm run typecheck`、`npm test`（47 文件/286 项）、`build:dsh`、`build:ui` 通过；新增 form replay、header 白名单、空列表、字典降权、bodyPreview、排序截断等回归测试。
+- 未验证：真实超星/智慧树的表单接口同步；动态签名（`secretStr`）、multipart 与浏览器内执行仍不支持。

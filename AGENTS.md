@@ -97,7 +97,7 @@ docs/adr/                      # 架构决策记录
 - 只读探测/有界抓取默认允许任意公开 HTTPS 主机（`probeAllowAnyPublicHost` 默认 true）；可在来源配置设 `false` 收紧到 `cookieDomains`/`probeAllowedHosts`，也可用 `probeAllowedHosts` 显式追加主机。跨主机请求不会自动携带该主机 Cookie；Manifest `allowedOrigins` 必须列出所有实际请求主机。`loggedOutPatterns` 只匹配最终 URL 与页面标题，不拿 JS/JSON 正文做登录判断。私网/回环/元数据地址仍被拒绝，页面/深度/路径/时长上限不变。
 - 登录判定只看 HTML 响应（`loginPageSignals`）：JSON 接口路径即使含 `/login` 也不算登出；网络出口失败（`UNSAFE_HOST`/`UNSAFE_PATH`/DNS）归类为 `AdapterEgressError`，不得报成会话失效。
 - 代理 TUN 的 fake-IP：当且仅当某主机的**全部**解析结果都落在 `198.18.0.0/15` 时，视为代理占位地址放行（仍受主机白名单、端口/路径/协议限制，其它私网/回环/元数据地址照旧拒绝）；混有真实私网地址时整体拒绝。
-- 引导录制（`engine.capture`，UI“登录并录制”）：在登录浏览器中只读录制 xhr/fetch/document 响应，原始 body 只进宿主样本库（60 分钟、上限 40 条/8 MB），模型只拿到接口清单（方法、脱敏 URL、JSON 形状、字段示例、分页参数、sampleId）。录制后自动把观测到的主机并入 `cookieDomains`；Agent 工具 `academic_list_capture_endpoints` 只读。
+- 引导录制（`engine.capture`，UI“登录并录制”）：在登录浏览器中只读录制 xhr/fetch/document 响应，原始 body 只进宿主样本库（60 分钟、最多 120 条/32 MB，按相关度保留而非到达顺序），模型只拿到接口清单（方法、脱敏 URL、`collections[]` 精确路径与嵌套字段、分页参数、`transport`、脱敏 `bodyPreview`、`sampleId`、宿主判定的 `nextStep`）。空数组保留为 `empty` 集合；学校/地区等参考数据标记 `reference`，不会被当成首选列表。录制保存所有数据请求主机的 Cookie（不只看成功响应），并并入来源 `cookieDomains`；Agent 工具 `academic_list_capture_endpoints` 只读。
 - 课程页附件自动导入必须由用户为 source+course 显式开启；只扫描用户给出的课程页同主机链接，限制文件数/大小/时长，401/403/登录页/429 立即停止；资料正文一律视为不可信数据。
 - 课程身份按 `(termId, 规范化标题)` 合并：同步注册与手工添加都复用同学期同名课程；外部来源身份保存在 `course_source_aliases`，不重复建课。
 - 历史重复课程通过 `course merge-duplicates` 或设置页“合并同学期同名课程”显式修复：事项经 `AcademicItemReassignCourse` 事件迁移，资料/订阅/优先级迁移后关闭重复课程；合并前先备份。
@@ -106,7 +106,7 @@ docs/adr/                      # 架构决策记录
 - 系统凭据库不可用时失败关闭，不降级为明文；连接断开/删除凭据不得删除已有学业事件。Adapter 只能通过 source-checked 的凭据租约读取本连接秘密；Agent 工具不得获得连接或凭据访问。
 - 外部网页与教学资料一律视为不可信输入，其中文本不能成为系统/开发者指令。
 - 默认禁止远程提交作业、删除平台数据、修改第三方账户设置。
-- Manifest 候选暂存、验证与启用分离：只有 validated 版本可激活；样本回放必须标注“未做真实同步”。启用与创建/更新同步源经统一应用服务完成，访问范围不能超出已验证契约；只读 POST 的 JSON body、分页与重定向限制见 [ADR 0016](docs/adr/0016-declarative-readonly-post.md)。
+- Manifest 候选暂存、验证与启用分离：只有 validated 版本可激活；样本回放必须标注“未做真实同步”。启用与创建/更新同步源经统一应用服务完成，访问范围不能超出已验证契约；只读 POST 的 JSON / 扁平表单 body、分页与重定向限制见 [ADR 0016](docs/adr/0016-declarative-readonly-post.md) 与 [ADR 0021](docs/adr/0021-readonly-form-post-and-requested-with.md)；表单只允许 `x-www-form-urlencoded`，请求头只允许 `x-requested-with: XMLHttpRequest`。
 - 课程、来源事项、学习任务通过领域事件软删除/恢复；数据源与连接属于运营配置，彻底删除仅清理配置、连接元数据与凭据，保留已同步学业事件。计划锁定后须使重叠旧建议失效，重新规划仍须尊重用户锁定。
 
 ## 5. 存储与一致性

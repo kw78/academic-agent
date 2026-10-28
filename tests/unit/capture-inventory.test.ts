@@ -139,8 +139,8 @@ describe('guided capture inventory', () => {
             payload: {
               result: {
                 records: [
-                  { id: 'C1', name: '高等数学' },
-                  { id: 'C2', name: '大学物理' },
+                  { courseId: 'C1', courseName: '高等数学' },
+                  { courseId: 'C2', courseName: '大学物理' },
                 ],
               },
             },
@@ -158,8 +158,8 @@ describe('guided capture inventory', () => {
       'data.payload.result.records',
     ])
     expect(endpoint.response.fields.map((field) => field.key)).toEqual([
-      'id',
-      'name',
+      'courseId',
+      'courseName',
     ])
     expect(summary.nextStep).toMatchObject({
       action: 'validate',
@@ -247,7 +247,7 @@ describe('guided capture inventory', () => {
     expect(summary.warnings.join(' ')).toContain('仅保留评分最高')
   })
 
-  it('flags form-encoded POST as an unsupported transport', () => {
+  it('reports form-encoded POST as replayable with bodyFormat', () => {
     const summary = buildCaptureSummary({
       ...base,
       samples: [
@@ -268,8 +268,9 @@ describe('guided capture inventory', () => {
     })
 
     expect(summary.endpoints[0]?.transport).toBe('form')
-    expect(summary.warnings.join(' ')).toContain('表单编码请求')
-    expect(summary.nextStep.action).toBe('unsupported-transport')
+    expect(summary.warnings.join(' ')).toContain('bodyFormat')
+    expect(summary.nextStep.action).toBe('validate')
+    expect(summary.nextStep.reason).toContain('bodyFormat')
   })
 
   it('reports filtered responses instead of silently shrinking', () => {
@@ -288,6 +289,112 @@ describe('guided capture inventory', () => {
     expect(warnings).toContain('过滤了部分响应')
     expect(warnings).toContain('静态/登出 3')
     expect(warnings).toContain('达到数量上限 1')
+  })
+
+  it('stops when a list request carries a dynamic signature', () => {
+    const summary = buildCaptureSummary({
+      ...base,
+      samples: [
+        {
+          sampleId: 's-sign',
+          status: 200,
+          headerNames: ['content-type'],
+          requestContentType:
+            'application/x-www-form-urlencoded; charset=UTF-8',
+          sample: {
+            url: 'https://lms.example.edu/api/course/list',
+            method: 'POST',
+            contentType: 'application/json',
+            body: JSON.stringify([
+              { courseId: 'C1', courseName: '高等数学' },
+              { courseId: 'C2', courseName: '大学物理' },
+            ]),
+            requestBody: 'secretStr=abc&page=1',
+          },
+        },
+      ],
+    })
+
+    expect(summary.endpoints[0]?.transport).toBe('form')
+    expect(summary.warnings.join(' ')).toContain('动态签名')
+    expect(summary.nextStep.action).toBe('needs-confirmation')
+  })
+
+  it('keeps an empty list endpoint visible and asks for a re-record', () => {
+    const summary = buildCaptureSummary({
+      ...base,
+      samples: [
+        jsonSample('s-empty', 'https://lms.example.edu/api/course/list', {
+          data: { list: [] },
+        }),
+      ],
+    })
+
+    const endpoint = summary.endpoints[0]!
+    expect(endpoint.collections?.[0]).toMatchObject({
+      path: 'data.list',
+      itemCount: 0,
+      empty: true,
+    })
+    expect(endpoint.kind).toBe('list')
+    expect(summary.nextStep.action).toBe('recapture')
+  })
+
+  it('does not treat a school dictionary as the course list', () => {
+    const dictionary = jsonSample(
+      'dict',
+      'https://lms.example.edu/v2/apis/school/findSchoolV2',
+      {
+        rt: [
+          { schoolId: 1, name: '南京邮电大学', loginUrl: 'https://a' },
+          { schoolId: 2, name: '中国科学技术大学', loginUrl: 'https://b' },
+        ],
+      },
+    )
+    const alone = buildCaptureSummary({ ...base, samples: [dictionary] })
+    expect(alone.endpoints[0]?.collections?.[0]?.reference).toBe(true)
+    expect(alone.nextStep.action).toBe('recapture')
+
+    const courses = jsonSample('courses', 'https://lms.example.edu/api/courses', {
+      data: {
+        records: [
+          { courseId: 'C1', courseName: '高等数学' },
+          { courseId: 'C2', courseName: '大学物理' },
+        ],
+      },
+    })
+    const both = buildCaptureSummary({ ...base, samples: [dictionary, courses] })
+    expect(both.nextStep.action).toBe('validate')
+    expect(both.nextStep.reason).toContain('data.records')
+  })
+
+  it('exposes a masked bodyPreview for POST requests', () => {
+    const summary = buildCaptureSummary({
+      ...base,
+      samples: [
+        {
+          sampleId: 's-json',
+          status: 200,
+          headerNames: ['content-type'],
+          requestContentType: 'application/json',
+          sample: {
+            url: 'https://lms.example.edu/api/list',
+            method: 'POST',
+            body: JSON.stringify([{ courseId: 'C1', courseName: '高等数学' }]),
+            contentType: 'application/json',
+            requestBody: JSON.stringify({
+              action: 'list',
+              token: 'abc',
+              courseId: 'C1',
+            }),
+          },
+        },
+      ],
+    })
+
+    const preview = summary.endpoints[0]?.request.bodyPreview
+    expect(preview).toContain('"token":"***"')
+    expect(preview).toContain('"courseId":"C1"')
   })
 
   it('drops login and other noise endpoints', () => {

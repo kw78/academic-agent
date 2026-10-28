@@ -49,6 +49,17 @@ export class SafeFetchError extends Error {
 
 export type AllowedProtocol = 'http:' | 'https:'
 
+export const POST_CONTENT_TYPES = [
+  'application/json; charset=utf-8',
+  'application/x-www-form-urlencoded; charset=utf-8',
+] as const
+
+export type AllowedPostContentType = (typeof POST_CONTENT_TYPES)[number]
+
+const ALLOWED_EXTRA_HEADERS: Record<string, string> = {
+  'x-requested-with': 'XMLHttpRequest',
+}
+
 export interface PinnedTarget {
   address: string
   family: number
@@ -82,10 +93,14 @@ export interface SafeFetchOptions {
   allowedPathPrefixes?: string[]
   /** Defaults true for existing session callers; manifests use exact hosts. */
   allowSubdomains?: boolean
-  /** Defaults to GET. POST is only for explicit read-only JSON calls. */
+  /** Defaults to GET. POST is only for explicit read-only calls. */
   method?: 'GET' | 'POST'
-  /** UTF-8 JSON body for POST; max 64 KB. Never form-encoded. */
+  /** UTF-8 body for POST; max 64 KB. Encoding is declared by contentType. */
   body?: string
+  /** POST encoding; defaults to JSON. Form encoding is allowed read-only. */
+  contentType?: AllowedPostContentType
+  /** Static, non-secret headers; only the reviewed allowlist is accepted. */
+  extraHeaders?: Record<string, string>
   fetchImpl?: typeof fetch
   requestImpl?: PinnedRequest
   resolveHost?: ResolveHost
@@ -591,15 +606,30 @@ async function fetchBytesInternal(
 ): Promise<SafeFetchBytesResult> {
   let method = options.method ?? 'GET'
   let requestBody = options.body
+  const postContentType = options.contentType ?? 'application/json; charset=utf-8'
   if (method === 'POST') {
     if (requestBody === undefined) {
-      throw new SafeFetchError('INVALID_REQUEST', 'POST 请求缺少 JSON body')
+      throw new SafeFetchError('INVALID_REQUEST', 'POST 请求缺少 body')
     }
     if (Buffer.byteLength(requestBody, 'utf8') > 64 * 1024) {
       throw new SafeFetchError('INVALID_REQUEST', 'POST 请求 body 超过 64 KB 上限')
     }
+    if (!POST_CONTENT_TYPES.includes(postContentType)) {
+      throw new SafeFetchError(
+        'INVALID_REQUEST',
+        `不允许的 POST 内容类型：${postContentType}`,
+      )
+    }
   } else if (requestBody !== undefined) {
     throw new SafeFetchError('INVALID_REQUEST', '只有 POST 请求可以携带 body')
+  }
+  const extraHeaders: Record<string, string> = {}
+  for (const [name, value] of Object.entries(options.extraHeaders ?? {})) {
+    const allowed = ALLOWED_EXTRA_HEADERS[name.toLowerCase()]
+    if (!allowed || allowed !== value) {
+      throw new SafeFetchError('INVALID_REQUEST', `不允许的请求头：${name}`)
+    }
+    extraHeaders[name] = value
   }
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS
@@ -644,9 +674,10 @@ async function fetchBytesInternal(
           'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
         'Accept-Encoding': 'identity',
         ...(cookie ? { Cookie: cookie } : {}),
+        ...extraHeaders,
       }
       if (requestBody !== undefined) {
-        headers['Content-Type'] = 'application/json; charset=utf-8'
+        headers['Content-Type'] = postContentType
         headers['Content-Length'] = String(
           Buffer.byteLength(requestBody, 'utf8'),
         )

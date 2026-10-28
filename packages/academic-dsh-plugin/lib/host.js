@@ -25863,6 +25863,13 @@ var SafeFetchError = class extends Error {
     this.code = code;
   }
 };
+var POST_CONTENT_TYPES = [
+  "application/json; charset=utf-8",
+  "application/x-www-form-urlencoded; charset=utf-8"
+];
+var ALLOWED_EXTRA_HEADERS = {
+  "x-requested-with": "XMLHttpRequest"
+};
 var DEFAULT_TIMEOUT_MS = 15e3;
 var DEFAULT_MAX_REDIRECTS = 5;
 var DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
@@ -26245,15 +26252,30 @@ async function readBodyBytes(response, finalUrl, maxBytes, signal) {
 async function fetchBytesInternal(input2, options) {
   let method = options.method ?? "GET";
   let requestBody = options.body;
+  const postContentType = options.contentType ?? "application/json; charset=utf-8";
   if (method === "POST") {
     if (requestBody === void 0) {
-      throw new SafeFetchError("INVALID_REQUEST", "POST \u8BF7\u6C42\u7F3A\u5C11 JSON body");
+      throw new SafeFetchError("INVALID_REQUEST", "POST \u8BF7\u6C42\u7F3A\u5C11 body");
     }
     if (Buffer.byteLength(requestBody, "utf8") > 64 * 1024) {
       throw new SafeFetchError("INVALID_REQUEST", "POST \u8BF7\u6C42 body \u8D85\u8FC7 64 KB \u4E0A\u9650");
     }
+    if (!POST_CONTENT_TYPES.includes(postContentType)) {
+      throw new SafeFetchError(
+        "INVALID_REQUEST",
+        `\u4E0D\u5141\u8BB8\u7684 POST \u5185\u5BB9\u7C7B\u578B\uFF1A${postContentType}`
+      );
+    }
   } else if (requestBody !== void 0) {
     throw new SafeFetchError("INVALID_REQUEST", "\u53EA\u6709 POST \u8BF7\u6C42\u53EF\u4EE5\u643A\u5E26 body");
+  }
+  const extraHeaders = {};
+  for (const [name, value] of Object.entries(options.extraHeaders ?? {})) {
+    const allowed = ALLOWED_EXTRA_HEADERS[name.toLowerCase()];
+    if (!allowed || allowed !== value) {
+      throw new SafeFetchError("INVALID_REQUEST", `\u4E0D\u5141\u8BB8\u7684\u8BF7\u6C42\u5934\uFF1A${name}`);
+    }
+    extraHeaders[name] = value;
   }
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
@@ -26289,10 +26311,11 @@ async function fetchBytesInternal(input2, options) {
       const headers = {
         Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
         "Accept-Encoding": "identity",
-        ...cookie ? { Cookie: cookie } : {}
+        ...cookie ? { Cookie: cookie } : {},
+        ...extraHeaders
       };
       if (requestBody !== void 0) {
-        headers["Content-Type"] = "application/json; charset=utf-8";
+        headers["Content-Type"] = postContentType;
         headers["Content-Length"] = String(
           Buffer.byteLength(requestBody, "utf8")
         );
@@ -27361,18 +27384,29 @@ function collectionScore(path, items, fields) {
   if (FILTER_PATH.test(path)) score -= 20;
   return Math.max(0, Math.min(100, score));
 }
+var LIST_PATH_HINT = /list|record|item|course|assign|homework|exam|task|home|query/i;
+var REFERENCE_PATH = /school|dict|dictionary|area|region|province|city|college|organization|dept/i;
+var REFERENCE_FIELD = /schoolid|schoolname|loginurl|province|city|region|district|areacode|postal|collegeid/i;
+function isReferenceCollection(path, fields) {
+  if (COURSE_KEY.test(path) || ASSIGNMENT_KEY.test(path)) return false;
+  if (fields.some((field) => COURSE_KEY.test(field.path ?? field.key))) return false;
+  if (fields.some((field) => ASSIGNMENT_KEY.test(field.path ?? field.key))) return false;
+  return REFERENCE_PATH.test(path) || fields.some((field) => REFERENCE_FIELD.test(field.path ?? field.key));
+}
 function collectCollections(value) {
   return collectArrayNodes(value).filter(
-    (node2) => node2.items.length > 0 && node2.items.some(
-      (entry) => entry !== null && typeof entry === "object" && !Array.isArray(entry)
-    )
+    (node2) => node2.items.length > 0 || LIST_PATH_HINT.test(node2.path) || node2.path.startsWith("data.")
   ).map((node2) => {
     const fields = fieldsOf(node2.items[0]);
+    const reference = isReferenceCollection(node2.path, fields);
+    const base = collectionScore(node2.path, node2.items, fields);
     return {
       path: node2.path || "$",
       itemCount: node2.items.length,
-      score: collectionScore(node2.path, node2.items, fields),
-      fields
+      score: Math.max(0, base - (reference ? 40 : 0)),
+      fields,
+      ...node2.items.length === 0 ? { empty: true } : {},
+      ...reference ? { reference: true } : {}
     };
   }).sort((left, right) => right.score - left.score || right.itemCount - left.itemCount).slice(0, MAX_COLLECTIONS);
 }
@@ -27425,7 +27459,9 @@ function kindOf(path, isHtml, shape) {
   const hasListKeys = best.fields.some(
     (field) => COURSE_KEY.test(field.path ?? field.key) || ASSIGNMENT_KEY.test(field.path ?? field.key)
   );
-  if (best.itemCount >= 2 || hasListKeys) return "list";
+  if (best.itemCount >= 2 || hasListKeys || best.empty === true && LIST_PATH_HINT.test(path)) {
+    return "list";
+  }
   if (NOISE_PATH.test(path)) return "other";
   return "detail";
 }
@@ -27435,14 +27471,60 @@ function scoreOf(kind, shape) {
   if (kind === "other") return 0;
   return shape.collections[0]?.score ?? 0;
 }
+function maskedBodyPreview(body, contentType, transport) {
+  const isForm = transport === "form" || /x-www-form-urlencoded/i.test(contentType ?? "");
+  if (isForm) {
+    try {
+      const params = new URLSearchParams(body);
+      const masked = new URLSearchParams();
+      for (const [key2, value] of params) {
+        masked.append(key2, SENSITIVE_PARAM.test(key2) ? "***" : value);
+      }
+      return truncate(masked.toString(), 500);
+    } catch {
+      return truncate(body, 500);
+    }
+  }
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const masked = {};
+      for (const [key2, value] of Object.entries(parsed)) {
+        masked[key2] = SENSITIVE_PARAM.test(key2) ? "***" : value;
+      }
+      return truncate(JSON.stringify(masked), 500);
+    }
+  } catch {
+  }
+  return truncate(body, 500);
+}
 function transportOf(method, requestContentType) {
   if (method !== "POST") return void 0;
   const type = requestContentType?.toLowerCase() ?? "";
   if (type.includes("json")) return "json";
-  if (type.includes("x-www-form-urlencoded") || type.includes("multipart/form-data")) {
-    return "form";
-  }
+  if (type.includes("x-www-form-urlencoded")) return "form";
   return "other";
+}
+function sensitiveBodyKeys(requestBody) {
+  if (!requestBody) return [];
+  const keys2 = /* @__PURE__ */ new Set();
+  try {
+    const parsed = JSON.parse(requestBody);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      for (const key2 of Object.keys(parsed)) {
+        if (SENSITIVE_PARAM.test(key2)) keys2.add(key2);
+      }
+      return [...keys2];
+    }
+  } catch {
+  }
+  try {
+    for (const key2 of new URLSearchParams(requestBody).keys()) {
+      if (SENSITIVE_PARAM.test(key2)) keys2.add(key2);
+    }
+  } catch {
+  }
+  return [...keys2];
 }
 function bodyKeys(requestBody) {
   if (!requestBody) return [];
@@ -27512,37 +27594,62 @@ function paginationFor(raw) {
   }
   return void 0;
 }
-function nextStepFor(endpoints, masked) {
-  const best = endpoints[0];
-  if (!best) {
+function isTargetList(endpoint) {
+  const collection = endpoint.collections?.[0];
+  if (!collection || collection.reference === true) return false;
+  if (collection.fields.some(
+    (field) => COURSE_KEY.test(field.path ?? field.key) || ASSIGNMENT_KEY.test(field.path ?? field.key)
+  )) {
+    return true;
+  }
+  return collection.empty === true && /course|assign|homework|exam|task/i.test(endpoint.path);
+}
+function nextStepFor(endpoints, masked, maskedBodies) {
+  const target = endpoints.find(isTargetList);
+  if (!target) {
+    const document2 = endpoints.find((endpoint) => endpoint.kind === "document");
+    if (document2) {
+      return {
+        action: "validate",
+        label: "\u7528\u9875\u9762\u6837\u672C\u9A8C\u8BC1 HTML \u63D0\u53D6",
+        reason: "\u6CA1\u6709\u8BFE\u7A0B/\u4F5C\u4E1A JSON \u5217\u8868\uFF0C\u53EA\u80FD\u6309\u9875\u9762\u7ED3\u6784\u63D0\u53D6"
+      };
+    }
     return {
       action: "recapture",
-      label: "\u91CD\u65B0\u5F55\u5236\uFF1A\u767B\u5F55\u540E\u6253\u5F00\u8BFE\u7A0B/\u4F5C\u4E1A\u5217\u8868\u5E76\u7FFB\u4E00\u9875",
-      reason: "\u6CA1\u6709\u6355\u83B7\u5230\u53EF\u7528\u63A5\u53E3"
+      label: "\u91CD\u65B0\u5F55\u5236\uFF1A\u767B\u5F55\u540E\u6253\u5F00\u8BFE\u7A0B/\u4F5C\u4E1A\u5217\u8868\u5E76\u7FFB\u9875",
+      reason: "\u5F55\u5236\u91CC\u53EA\u6709\u53C2\u8003\u6570\u636E\u6216\u5176\u4ED6\u63A5\u53E3\uFF0C\u6CA1\u6709\u8BFE\u7A0B/\u4F5C\u4E1A\u5217\u8868\uFF1B\u8BF7\u786E\u8BA4\u8D26\u53F7\u8EAB\u4EFD\u5E76\u5728\u5217\u8868\u6E32\u67D3\u540E\u7ED3\u675F\u5F55\u5236"
     };
   }
-  if (best.transport === "form") {
+  if (target.transport === "other") {
     return {
       action: "unsupported-transport",
-      label: "\u5F53\u524D Manifest \u65E0\u6CD5\u56DE\u653E\u8868\u5355\u8BF7\u6C42\uFF0C\u8BF7\u505C\u6B62\u751F\u6210\u5019\u9009",
-      reason: `${best.method} ${best.path} \u4F7F\u7528\u8868\u5355\u7F16\u7801`
+      label: "\u8BE5\u8BF7\u6C42\u7684\u7F16\u7801\u65B9\u5F0F\u6682\u4E0D\u652F\u6301\uFF0C\u8BF7\u505C\u6B62\u751F\u6210\u5019\u9009",
+      reason: "\u53EA\u6709 JSON \u4E0E\u6241\u5E73\u8868\u5355\u7F16\u7801\u7684\u53EA\u8BFB POST \u53EF\u56DE\u653E"
     };
   }
-  if (masked.includes(best.path)) {
+  if (masked.includes(target.path) || maskedBodies.includes(target.path)) {
     return {
       action: "needs-confirmation",
       label: "\u63A5\u53E3\u542B\u9274\u6743\u53C2\u6570\uFF0C\u9700\u7528\u6237\u786E\u8BA4\u7ED1\u5B9A\u65B9\u5F0F",
-      reason: "\u79BB\u7EBF\u56DE\u653E\u53EF\u80FD\u65E0\u6CD5\u7CBE\u786E\u5339\u914D\u8131\u654F\u540E\u7684\u53C2\u6570"
+      reason: maskedBodies.includes(target.path) ? "\u8BF7\u6C42\u4F53\u542B\u52A8\u6001\u7B7E\u540D/\u4EE4\u724C\uFF08\u5982 secretStr\uFF09\uFF0C\u9759\u6001\u6A21\u677F\u65E0\u6CD5\u56DE\u653E" : "\u79BB\u7EBF\u56DE\u653E\u53EF\u80FD\u65E0\u6CD5\u7CBE\u786E\u5339\u914D\u8131\u654F\u540E\u7684\u53C2\u6570"
     };
   }
-  if (best.kind === "document") {
+  if (target.transport === "form") {
     return {
       action: "validate",
-      label: "\u7528\u9875\u9762\u6837\u672C\u9A8C\u8BC1 HTML \u63D0\u53D6",
-      reason: "\u6CA1\u6709 JSON \u5217\u8868\uFF0C\u53EA\u80FD\u6309\u9875\u9762\u7ED3\u6784\u63D0\u53D6"
+      label: "\u7528 sampleIds \u79BB\u7EBF\u9A8C\u8BC1 Manifest",
+      reason: `\u8868\u5355\u8BF7\u6C42\u9700\u5728 Manifest \u58F0\u660E bodyFormat: "form"\uFF1Bitems \u8DEF\u5F84\uFF1A${target.response.collectionPath}`
     };
   }
-  if (!best.response.collectionPath) {
+  if ((target.response.itemCount ?? 0) === 0) {
+    return {
+      action: "recapture",
+      label: "\u5217\u8868\u63A5\u53E3\u8FD4\u56DE 0 \u6761\uFF0C\u8BF7\u91CD\u65B0\u5F55\u5236\u6216\u786E\u8BA4\u8D26\u53F7",
+      reason: "\u53EF\u80FD\u662F\u8D26\u53F7\u8EAB\u4EFD\u4E0D\u5339\u914D\u3001\u4F1A\u8BDD\u672A\u751F\u6548\u6216\u5217\u8868\u5C1A\u672A\u6E32\u67D3\u5B8C\u6210"
+    };
+  }
+  if (!target.response.collectionPath) {
     return {
       action: "needs-confirmation",
       label: "\u672A\u8BC6\u522B\u51FA\u5217\u8868\u96C6\u5408\uFF0C\u8BF7\u786E\u8BA4\u76EE\u6807\u63A5\u53E3",
@@ -27552,7 +27659,7 @@ function nextStepFor(endpoints, masked) {
   return {
     action: "validate",
     label: "\u7528 sampleIds \u79BB\u7EBF\u9A8C\u8BC1 Manifest",
-    reason: `\u9996\u9009\u63A5\u53E3 items \u8DEF\u5F84\uFF1A${best.response.collectionPath}`
+    reason: `\u9996\u9009\u63A5\u53E3 items \u8DEF\u5F84\uFF1A${target.response.collectionPath}`
   };
 }
 function pathPrefixes(endpoints) {
@@ -27571,6 +27678,7 @@ function buildCaptureSummary(input2) {
   const warnings = [...input2.warnings ?? []];
   const endpoints = [];
   const masked = [];
+  const maskedBodies = [];
   for (const item of input2.samples) {
     const rawUrl = item.sample.url;
     let parsed;
@@ -27591,6 +27699,8 @@ function buildCaptureSummary(input2) {
     } : jsonShape2(item.sample.body);
     const kind = kindOf(parsed.pathname, isHtml, shape);
     const method = item.sample.method ?? "GET";
+    const transport = transportOf(method, item.requestContentType);
+    const bodyPreview = item.sample.requestBody ? maskedBodyPreview(item.sample.requestBody, item.requestContentType, transport) : void 0;
     const endpoint = {
       sampleId: item.sampleId,
       host: parsed.hostname,
@@ -27602,10 +27712,11 @@ function buildCaptureSummary(input2) {
       bytes: Buffer.byteLength(item.sample.body, "utf8"),
       kind,
       score: scoreOf(kind, shape),
-      ...transportOf(method, item.requestContentType) ? { transport: transportOf(method, item.requestContentType) } : {},
+      ...transport ? { transport } : {},
       request: {
         queryKeys: [...new Set(parsed.searchParams.keys())].slice(0, 20),
         bodyKeys: bodyKeys(item.sample.requestBody),
+        ...bodyPreview ? { bodyPreview } : {},
         headerHints: headerHints(item.headerNames)
       },
       response: {
@@ -27617,6 +27728,9 @@ function buildCaptureSummary(input2) {
       ...shape.collections.length > 0 ? { collections: shape.collections } : {}
     };
     if (hasMaskedParam(rawUrl)) masked.push(endpoint.path);
+    if (sensitiveBodyKeys(item.sample.requestBody).length > 0) {
+      maskedBodies.push(endpoint.path);
+    }
     endpoints.push(endpoint);
   }
   endpoints.sort(
@@ -27629,7 +27743,7 @@ function buildCaptureSummary(input2) {
   const unsupported = kept.filter((endpoint) => endpoint.transport === "form").map((endpoint) => endpoint.path);
   if (unsupported.length > 0) {
     warnings.push(
-      `\u8868\u5355\u7F16\u7801\u8BF7\u6C42\uFF1A${[...new Set(unsupported)].join(", ")}\uFF1B\u5F53\u524D Manifest \u53EA\u80FD\u53D1\u9001 JSON\uFF0C\u65E0\u6CD5\u7CBE\u786E\u56DE\u653E`
+      `\u8868\u5355\u7F16\u7801\u8BF7\u6C42\uFF1A${[...new Set(unsupported)].join(", ")}\uFF1BManifest \u9700\u58F0\u660E bodyFormat: "form"\uFF08\u4EC5\u6241\u5E73\u5B57\u6BB5\uFF09`
     );
   }
   if (input2.skipped) {
@@ -27657,6 +27771,11 @@ function buildCaptureSummary(input2) {
       `\u90E8\u5206\u63A5\u53E3\u542B\u7591\u4F3C\u9274\u6743\u53C2\u6570\uFF08\u5DF2\u5C4F\u853D\uFF09\uFF1A${[...new Set(masked)].join(", ")}\uFF1B\u79BB\u7EBF\u56DE\u653E\u53EF\u80FD\u65E0\u6CD5\u7CBE\u786E\u5339\u914D\uFF0C\u9700\u6A21\u677F\u5316\u6216\u91CD\u65B0\u63A2\u6D4B`
     );
   }
+  if (maskedBodies.length > 0) {
+    warnings.push(
+      `\u8BF7\u6C42\u4F53\u542B\u52A8\u6001\u7B7E\u540D/\u4EE4\u724C\uFF08\u5DF2\u5C4F\u853D\uFF09\uFF1A${[...new Set(maskedBodies)].join(", ")}\uFF1B\u9759\u6001 Manifest \u65E0\u6CD5\u56DE\u653E`
+    );
+  }
   if (kept.length === 0) {
     warnings.push("\u6CA1\u6709\u6355\u83B7\u5230\u53EF\u7528\u7684\u6570\u636E\u63A5\u53E3\uFF1B\u8BF7\u767B\u5F55\u540E\u6253\u5F00\u8BFE\u7A0B/\u4F5C\u4E1A\u5217\u8868\u5E76\u7FFB\u4E00\u9875\u518D\u7ED3\u675F\u5F55\u5236");
   }
@@ -27671,7 +27790,7 @@ function buildCaptureSummary(input2) {
     hosts,
     visited: input2.visited,
     endpoints: kept,
-    nextStep: nextStepFor(kept, masked),
+    nextStep: nextStepFor(kept, masked, maskedBodies),
     suggested: {
       cookieDomains: hosts,
       pathPrefixes: pathPrefixes(kept)
@@ -28136,10 +28255,26 @@ var CAPTURE_HELPER_SCRIPT = `(() => {
 })()`;
 var CAPTURE_SKIP_URL = /\/(?:logout|signout|sign-out|favicon\.ico|robots\.txt)(?:[/?#]|$)/i;
 var CAPTURE_MAX_BODY = 512 * 1024;
-var CAPTURE_MAX_TOTAL = 8 * 1024 * 1024;
-var CAPTURE_MAX_SAMPLES = 40;
+var CAPTURE_MAX_TOTAL = 32 * 1024 * 1024;
+var CAPTURE_MAX_SAMPLES = 120;
+var CAPTURE_HARD_SAMPLES = 240;
 var CAPTURE_MAX_REQUEST_BODY = 16 * 1024;
 var CAPTURE_TIMEOUT_MS = 8 * 6e4;
+var CAPTURE_PATH_HINT = /course|assign|homework|exam|task|list|query|home/i;
+var CAPTURE_BODY_HINT = /course|课程|作业|assignment|homework|exam|考试|deadline|ddl|due/i;
+function capturePriority(item) {
+  let score = 0;
+  try {
+    if (CAPTURE_PATH_HINT.test(new URL(item.url).pathname)) score += 10;
+  } catch {
+    return 0;
+  }
+  if (/json/i.test(item.contentType ?? "")) score += 5;
+  const head = item.body.slice(0, 1e5);
+  if (CAPTURE_BODY_HINT.test(head)) score += 20;
+  if (/"(?:data|list|records|items|rows)"\s*:\s*\[/.test(head)) score += 5;
+  return score;
+}
 async function updateCaptureCount(context2, captured) {
   for (const page of context2.pages()) {
     await page.evaluate((value) => {
@@ -28157,11 +28292,15 @@ async function captureBrowserSession(config2, options = {}) {
   const pending = /* @__PURE__ */ new Set();
   const maxSamples = Math.min(
     Math.max(options.maxSamples ?? CAPTURE_MAX_SAMPLES, 1),
-    80
+    CAPTURE_HARD_SAMPLES
+  );
+  const hardSamples = Math.min(
+    Math.max(maxSamples * 2, maxSamples),
+    CAPTURE_HARD_SAMPLES
   );
   const maxTotal = Math.min(
     Math.max(options.maxBytes ?? CAPTURE_MAX_TOTAL, 64 * 1024),
-    32 * 1024 * 1024
+    CAPTURE_MAX_TOTAL
   );
   let totalBytes = 0;
   let visited = 0;
@@ -28213,7 +28352,7 @@ async function captureBrowserSession(config2, options = {}) {
             skipped.tooLarge += 1;
             return;
           }
-          if (captured.length >= maxSamples || totalBytes + buffer.length > maxTotal) {
+          if (captured.length >= hardSamples || totalBytes + buffer.length > maxTotal) {
             warning ??= "\u5F55\u5236\u5DF2\u8FBE\u4E0A\u9650\uFF0C\u540E\u7EED\u8BF7\u6C42\u88AB\u4E22\u5F03";
             skipped.limit += 1;
             return;
@@ -28244,8 +28383,17 @@ async function captureBrowserSession(config2, options = {}) {
         }
       };
       const attach = (page2) => {
-        page2.on("request", () => {
+        page2.on("request", (request) => {
           visited += 1;
+          const type = request.resourceType();
+          if (type !== "xhr" && type !== "fetch" && type !== "document") return;
+          try {
+            const url2 = new URL(request.url());
+            if (url2.protocol === "http:" || url2.protocol === "https:") {
+              hosts.add(url2.hostname);
+            }
+          } catch {
+          }
         });
         page2.on("response", (response) => {
           const task = record2(response);
@@ -28270,6 +28418,12 @@ async function captureBrowserSession(config2, options = {}) {
       }
       if (!confirmed) warning ??= "\u5F55\u5236\u8D85\u65F6\uFF0C\u5DF2\u4FDD\u7559\u5F53\u524D\u6355\u83B7\u7684\u5185\u5BB9";
       await Promise.allSettled([...pending]);
+      let kept = captured;
+      if (captured.length > maxSamples) {
+        kept = [...captured].sort((left, right) => capturePriority(right) - capturePriority(left)).slice(0, maxSamples);
+        skipped.limit += captured.length - kept.length;
+        warning ??= `\u5F55\u5236\u6761\u76EE\u8F83\u591A\uFF0C\u5DF2\u6309\u76F8\u5173\u5EA6\u4FDD\u7559 ${kept.length} \u6761`;
+      }
       const observedHosts = [...hosts].filter(Boolean);
       const cookies = (await context2.cookies()).filter(
         (cookie) => cookieDomainAllowed(cookie.domain, observedHosts)
@@ -28279,7 +28433,7 @@ async function captureBrowserSession(config2, options = {}) {
       }
       return {
         secret: JSON.stringify({ cookies }),
-        captures: captured,
+        captures: kept,
         hosts: observedHosts,
         visited,
         startedAt,
@@ -29452,14 +29606,17 @@ var requestSchema = external_exports.object({
   url: external_exports.string().min(1).max(2e3),
   responseType: external_exports.enum(["html", "json"]).default("html"),
   /**
-   * POST is for read-only JSON list/detail APIs; it is never form-encoded and
-   * cannot carry custom headers.
+   * POST is only for read-only list/detail APIs. JSON is the default; form
+   * encoding is opt-in and stays flat (no files, no multipart).
    */
   method: external_exports.enum(["GET", "POST"]).optional(),
+  bodyFormat: external_exports.enum(["json", "form"]).optional(),
   body: external_exports.record(
     external_exports.string().max(100),
     external_exports.union([external_exports.string().max(2e3), external_exports.number(), external_exports.boolean(), external_exports.null()])
   ).optional(),
+  /** Static, non-secret headers; only X-Requested-With: XMLHttpRequest is accepted. */
+  headers: external_exports.record(external_exports.enum(["x-requested-with"]), external_exports.literal("XMLHttpRequest")).optional(),
   items: external_exports.string().min(1).max(500),
   fields: external_exports.record(external_exports.string(), extractorSchema),
   next: external_exports.string().min(1).max(500).optional(),
@@ -29488,6 +29645,13 @@ var requestSchema = external_exports.object({
     });
   }
   const post = value.method === "POST";
+  if (value.bodyFormat !== void 0 && !post) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["bodyFormat"],
+      message: 'bodyFormat requires method: "POST"'
+    });
+  }
   if (value.body !== void 0 && !post) {
     ctx.addIssue({
       code: "custom",
@@ -40486,9 +40650,46 @@ function setJsonPath(target, path, value) {
   }
   cursor[parts[parts.length - 1]] = value;
 }
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record2 = value;
+    return `{${Object.keys(record2).sort().map((key2) => `${JSON.stringify(key2)}:${stableJson(record2[key2])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+function canonicalBody(body) {
+  if (body === void 0) return "";
+  const trimmed = body.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      return `json:${stableJson(JSON.parse(trimmed))}`;
+    } catch {
+      return `raw:${body}`;
+    }
+  }
+  if (trimmed.includes("=")) {
+    const params = new URLSearchParams(trimmed);
+    const sorted = [...params.entries()].sort(
+      ([left], [right]) => left.localeCompare(right)
+    );
+    return `form:${new URLSearchParams(sorted).toString()}`;
+  }
+  return `raw:${body}`;
+}
 function sampleKey(url2, method, requestBody) {
-  const bodyHash = requestBody === void 0 ? "" : createHash8("sha256").update(requestBody).digest("hex");
+  const bodyHash = requestBody === void 0 ? "" : createHash8("sha256").update(canonicalBody(requestBody)).digest("hex");
   return `${method} ${url2} ${bodyHash}`;
+}
+function serializeForm(value) {
+  const params = new URLSearchParams();
+  for (const [key2, entry] of Object.entries(value)) {
+    if (entry !== null && typeof entry === "object") {
+      throw new Error("\u8868\u5355\u8BF7\u6C42\u53EA\u652F\u6301\u6241\u5E73\u5B57\u6BB5");
+    }
+    params.append(key2, entry === null || entry === void 0 ? "" : String(entry));
+  }
+  return params.toString();
 }
 function renderManifestUrl(template, vars, baseUrl) {
   return absoluteUrl2(renderTemplate(template, vars), baseUrl);
@@ -40592,7 +40793,7 @@ var ManifestClient = class {
   async get(url2) {
     return this.request(url2, "GET");
   }
-  async request(url2, method, body) {
+  async request(url2, method, body, options = {}) {
     if (this.#requests >= (this.#config.maxRequests ?? 100)) {
       throw new AdapterTransientError("\u58F0\u660E\u5F0F\u6293\u53D6\u8BF7\u6C42\u6B21\u6570\u8D85\u8FC7\u4E0A\u9650");
     }
@@ -40603,7 +40804,7 @@ var ManifestClient = class {
     let lastError;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        const responseBody = await this.#requestOnce(url2, method, body);
+        const responseBody = await this.#requestOnce(url2, method, body, options);
         this.#bytes += Buffer.byteLength(responseBody, "utf8");
         if (this.#bytes > (this.#config.maxBytes ?? 5 * 1024 * 1024)) {
           throw new Error("\u58F0\u660E\u5F0F\u6293\u53D6\u54CD\u5E94\u603B\u5927\u5C0F\u8D85\u8FC7\u4E0A\u9650");
@@ -40619,7 +40820,7 @@ var ManifestClient = class {
     }
     throw lastError;
   }
-  async #requestOnce(url2, method, body) {
+  async #requestOnce(url2, method, body, options = {}) {
     try {
       const result = await safeFetch(url2, {
         cookies: this.#cookies,
@@ -40630,6 +40831,8 @@ var ManifestClient = class {
         allowedPorts: this.#ports,
         method,
         ...body !== void 0 ? { body } : {},
+        ...options.contentType ? { contentType: options.contentType } : {},
+        ...options.headers ? { extraHeaders: options.headers } : {},
         ...this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {},
         ...this.#options.fetchImpl ? { fetchImpl: this.#options.fetchImpl } : {},
         ...this.#options.requestImpl ? { requestImpl: this.#options.requestImpl } : {},
@@ -40718,6 +40921,7 @@ var ManifestClient = class {
         return result(true);
       }
       let requestBody;
+      let contentType;
       if (method === "POST") {
         const value = renderManifestBody(baseBody, vars);
         if (request.pageParam && pageInBody) {
@@ -40726,12 +40930,17 @@ var ManifestClient = class {
         if (request.offsetParam && offsetInBody) {
           setJsonPath(value, request.offsetParam, offset);
         }
-        requestBody = JSON.stringify(value);
+        const form = request.bodyFormat === "form";
+        requestBody = form ? serializeForm(value) : JSON.stringify(value);
+        contentType = form ? "application/x-www-form-urlencoded; charset=utf-8" : "application/json; charset=utf-8";
         if (Buffer.byteLength(requestBody, "utf8") > MAX_POST_BODY_BYTES) {
           throw new Error("\u58F0\u660E\u5F0F\u8BF7\u6C42 body \u8D85\u8FC7 16 KB \u4E0A\u9650");
         }
       }
-      const body = await this.request(currentUrl, method, requestBody);
+      const body = await this.request(currentUrl, method, requestBody, {
+        ...contentType ? { contentType } : {},
+        ...request.headers ? { headers: request.headers } : {}
+      });
       const extracted = extractPage(body, request);
       collect(extracted.diagnostics);
       const remaining = MAX_TOTAL_ROWS - rows.length;
@@ -43688,7 +43897,7 @@ function createAcademicTools(dependencies) {
       ),
       defineTool(
         ACADEMIC_TOOL_NAMES.ListCaptureEndpoints,
-        'List the real endpoints the user produced in the guided \u201C\u767B\u5F55\u5E76\u5F55\u5236\u201D browser session for one source: method, masked URL, collections[] with exact JSON paths (e.g. data.payload.result.records), field paths (e.g. details.due), pagination parameter, transport and opaque sampleIds. Use the collection path that matches courses/assignments as the Manifest items path instead of guessing. Prefer these observed endpoints; pass sampleIds to academic_validate_adapter_candidate. Read-only; never returns cookies or raw bodies. If transport is "form" or the site needs custom headers, report that as an unsupported transport and stop. If empty, ask the user to run \u767B\u5F55\u5E76\u5F55\u5236 on the \u8FDE\u63A5 page.',
+        'List the real endpoints the user produced in the guided \u201C\u767B\u5F55\u5E76\u5F55\u5236\u201D browser session for one source: method, masked URL, collections[] with exact JSON paths (e.g. data.payload.result.records), field paths (e.g. details.due), pagination parameter, transport, masked request bodyPreview, header hints and opaque sampleIds. Use the collection path that matches courses/assignments as the Manifest items path instead of guessing; match bodyPreview values in the POST body. transport "form" requires bodyFormat:"form" in the Manifest (flat fields); headerHints containing x-requested-with requires headers:{"x-requested-with":"XMLHttpRequest"}. transport "other" is unsupported\u2014stop and report. Prefer these observed endpoints; pass sampleIds to academic_validate_adapter_candidate. Read-only; never returns cookies or raw bodies. If empty, ask the user to run \u767B\u5F55\u5E76\u5F55\u5236 on the \u8FDE\u63A5 page.',
         external_exports.object({ sourceId: external_exports.string().min(1).max(200) }),
         async (input2) => {
           if (!dependencies.captureSummary) {
@@ -48520,7 +48729,7 @@ async function createAcademicApp(options) {
       return Boolean(item && item.courseId === courseId && !item.archived);
     }
   });
-  const probeSamples = new ProbeSampleStore({ maxSamples: 80 });
+  const probeSamples = new ProbeSampleStore({ maxSamples: 240 });
   const probeLimiter = new ProbeRateLimiter({
     ...options.probeMinIntervalMs !== void 0 ? { minIntervalMs: options.probeMinIntervalMs } : {}
   });

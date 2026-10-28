@@ -15,11 +15,15 @@ import {
 } from './http.js'
 
 export {
+  POST_CONTENT_TYPES,
   SafeFetchError,
   safeFetch,
   safeFetchBytes,
   safeUrlForDisplay,
   validateCookies,
+} from './http.js'
+export type {
+  AllowedPostContentType,
 } from './http.js'
 export { loginPageSignals } from './login-page.js'
 export type { LoginPageInput } from './login-page.js'

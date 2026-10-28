@@ -241,10 +241,32 @@ const CAPTURE_HELPER_SCRIPT = `(() => {
 const CAPTURE_SKIP_URL =
   /\/(?:logout|signout|sign-out|favicon\.ico|robots\.txt)(?:[/?#]|$)/i
 const CAPTURE_MAX_BODY = 512 * 1024
-const CAPTURE_MAX_TOTAL = 8 * 1024 * 1024
-const CAPTURE_MAX_SAMPLES = 40
+const CAPTURE_MAX_TOTAL = 32 * 1024 * 1024
+const CAPTURE_MAX_SAMPLES = 120
+const CAPTURE_HARD_SAMPLES = 240
 const CAPTURE_MAX_REQUEST_BODY = 16 * 1024
 const CAPTURE_TIMEOUT_MS = 8 * 60_000
+const CAPTURE_PATH_HINT = /course|assign|homework|exam|task|list|query|home/i
+const CAPTURE_BODY_HINT =
+  /course|课程|作业|assignment|homework|exam|考试|deadline|ddl|due/i
+
+/**
+ * Arrival order must not decide which responses survive the cap: login-time
+ * noise often arrives first and the business list later.
+ */
+function capturePriority(item: CapturedResponse): number {
+  let score = 0
+  try {
+    if (CAPTURE_PATH_HINT.test(new URL(item.url).pathname)) score += 10
+  } catch {
+    return 0
+  }
+  if (/json/i.test(item.contentType ?? '')) score += 5
+  const head = item.body.slice(0, 100_000)
+  if (CAPTURE_BODY_HINT.test(head)) score += 20
+  if (/"(?:data|list|records|items|rows)"\s*:\s*\[/.test(head)) score += 5
+  return score
+}
 
 async function updateCaptureCount(
   context: BrowserContext,
@@ -278,11 +300,15 @@ export async function captureBrowserSession(
   const pending = new Set<Promise<void>>()
   const maxSamples = Math.min(
     Math.max(options.maxSamples ?? CAPTURE_MAX_SAMPLES, 1),
-    80,
+    CAPTURE_HARD_SAMPLES,
+  )
+  const hardSamples = Math.min(
+    Math.max(maxSamples * 2, maxSamples),
+    CAPTURE_HARD_SAMPLES,
   )
   const maxTotal = Math.min(
     Math.max(options.maxBytes ?? CAPTURE_MAX_TOTAL, 64 * 1024),
-    32 * 1024 * 1024,
+    CAPTURE_MAX_TOTAL,
   )
   let totalBytes = 0
   let visited = 0
@@ -336,7 +362,7 @@ export async function captureBrowserSession(
             skipped.tooLarge += 1
             return
           }
-          if (captured.length >= maxSamples || totalBytes + buffer.length > maxTotal) {
+          if (captured.length >= hardSamples || totalBytes + buffer.length > maxTotal) {
             warning ??= '录制已达上限，后续请求被丢弃'
             skipped.limit += 1
             return
@@ -373,8 +399,18 @@ export async function captureBrowserSession(
       }
 
       const attach = (page: Page): void => {
-        page.on('request', () => {
+        page.on('request', (request) => {
           visited += 1
+          const type = request.resourceType()
+          if (type !== 'xhr' && type !== 'fetch' && type !== 'document') return
+          try {
+            const url = new URL(request.url())
+            if (url.protocol === 'http:' || url.protocol === 'https:') {
+              hosts.add(url.hostname)
+            }
+          } catch {
+            // Non-URL request (data:, blob:); no cookies to keep for it.
+          }
         })
         page.on('response', (response) => {
           const task = record(response)
@@ -400,6 +436,14 @@ export async function captureBrowserSession(
       }
       if (!confirmed) warning ??= '录制超时，已保留当前捕获的内容'
       await Promise.allSettled([...pending])
+      let kept = captured
+      if (captured.length > maxSamples) {
+        kept = [...captured]
+          .sort((left, right) => capturePriority(right) - capturePriority(left))
+          .slice(0, maxSamples)
+        skipped.limit += captured.length - kept.length
+        warning ??= `录制条目较多，已按相关度保留 ${kept.length} 条`
+      }
       const observedHosts = [...hosts].filter(Boolean)
       const cookies = (await context.cookies()).filter((cookie) =>
         cookieDomainAllowed(cookie.domain, observedHosts),
@@ -409,7 +453,7 @@ export async function captureBrowserSession(
       }
       return {
         secret: JSON.stringify({ cookies }),
-        captures: captured,
+        captures: kept,
         hosts: observedHosts,
         visited,
         startedAt,

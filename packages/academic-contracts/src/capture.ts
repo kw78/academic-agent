@@ -16,6 +16,10 @@ export interface CaptureCollection {
   itemCount: number
   score: number
   fields: CaptureField[]
+  /** An observed list endpoint that returned no rows. */
+  empty?: boolean
+  /** Reference/dictionary data (schools, regions), not the user's own list. */
+  reference?: boolean
 }
 
 /**
@@ -37,6 +41,8 @@ export interface CaptureEndpoint {
   request: {
     queryKeys: string[]
     bodyKeys: string[]
+    /** Masked request body so the agent can build the same read-only request. */
+    bodyPreview?: string
     /** Header names only, e.g. x-requested-with; values are never exported. */
     headerHints: string[]
   }

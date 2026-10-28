@@ -358,3 +358,90 @@ describe('adapter candidate replay and registry', () => {
     expect(() => service.activate('demo-json', '1.0.1')).toThrow(/validated/)
   })
 })
+
+describe('read-only form POST replay', () => {
+  const formManifest = {
+    schemaVersion: 1,
+    adapterId: 'form-demo',
+    version: '1.0.0',
+    displayName: 'Form Demo',
+    baseUrl: 'https://lms.example.edu/',
+    allowedOrigins: ['lms.example.edu'],
+    allowedPathPrefixes: ['/api'],
+    courses: {
+      url: '/api/courses',
+      responseType: 'json',
+      method: 'POST',
+      bodyFormat: 'form',
+      items: 'data',
+      body: { action: 'list', page: 1 },
+      headers: { 'x-requested-with': 'XMLHttpRequest' },
+      fields: {
+        externalCourseId: { path: 'id' },
+        code: { path: 'code' },
+        title: { path: 'name' },
+        termId: { constant: '2026-fall' },
+      },
+    },
+    assignments: {
+      url: '/api/assignments',
+      responseType: 'json',
+      method: 'POST',
+      bodyFormat: 'form',
+      items: 'data',
+      scope: 'source',
+      body: { action: 'list', courseId: 'C1' },
+      fields: {
+        externalItemId: { path: 'id' },
+        title: { path: 'title' },
+        courseExternalId: { path: 'courseId' },
+      },
+    },
+  } as const
+
+  const formSamples: AdapterSample[] = [
+    {
+      url: 'https://lms.example.edu/api/courses',
+      method: 'POST',
+      requestBody: 'page=1&action=list',
+      body: JSON.stringify({
+        data: [{ id: 'C1', code: 'CS101', name: '高等数学' }],
+      }),
+      contentType: 'application/json',
+    },
+    {
+      url: 'https://lms.example.edu/api/assignments',
+      method: 'POST',
+      requestBody: 'courseId=C1&action=list',
+      body: JSON.stringify({
+        data: [{ id: 'A1', title: '作业一', courseId: 'C1' }],
+      }),
+      contentType: 'application/json',
+    },
+  ]
+
+  it('replays a form request even when the field order differs', async () => {
+    const report = await replayManifest(formManifest, formSamples, {
+      now: () => '2026-10-28T00:00:00.000Z',
+    })
+    expect(report.errors).toEqual([])
+    expect(report.ok).toBe(true)
+    expect(report.courses).toHaveLength(1)
+    expect(report.courses[0]?.code).toBe('CS101')
+    expect(report.items.map((item) => item.title)).toEqual(['作业一'])
+  })
+
+  it('rejects header names outside the allowlist', async () => {
+    const report = await replayManifest(
+      {
+        ...formManifest,
+        courses: {
+          ...formManifest.courses,
+          headers: { authorization: 'Bearer x' },
+        },
+      },
+      formSamples,
+    )
+    expect(report.ok).toBe(false)
+  })
+})

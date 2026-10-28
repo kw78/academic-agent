@@ -161,7 +161,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     name: ACADEMIC_TOOL_NAMES.ListCaptureEndpoints,
     description:
-      'List endpoints observed in the user’s guided “登录并录制” session: method, masked URL, collections[] with exact JSON paths, field paths, pagination parameter, transport and sampleIds. Use the matching collection path as the Manifest items path; pass sampleIds to academic_validate_adapter_candidate. If transport is “form” or custom headers are required, stop and report. Read-only.',
+      'List endpoints observed in the user’s guided “登录并录制” session: method, masked URL, collections[] with exact JSON paths, field paths, pagination parameter, transport, masked request bodyPreview, header hints and sampleIds. Use the matching collection path as the Manifest items path; transport “form” requires bodyFormat:"form"; x-requested-with requires headers:{"x-requested-with":"XMLHttpRequest"}; “other” transports are unsupported. Pass sampleIds to academic_validate_adapter_candidate. Read-only.',
     parameters: {
       sourceId: { type: 'string', required: true, description: 'Source id with a capture' },
     },

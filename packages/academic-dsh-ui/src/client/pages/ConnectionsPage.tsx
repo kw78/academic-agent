@@ -400,6 +400,7 @@ function SourceCard({
         '我在“连接”页完成了“登录并录制”，请先调用 academic_list_capture_endpoints 读取真实接口，不要再盲探 URL。\n' +
         '1. 只使用清单里的真实 URL、方法、查询/请求体参数、分页参数、collections[].path 与字段路径；不要把清单外的主机或路径写进 Manifest。\n' +
         '1.1 先看 nextStep.action：只有 validate 时才生成候选；recapture / unsupported-transport / needs-confirmation 时直接说明并停止。\n' +
+        '1.2 transport 为 form 时在请求上声明 bodyFormat:"form"（扁平字段），并按 request.bodyPreview 填 body；headerHints 含 x-requested-with 时加 headers:{"x-requested-with":"XMLHttpRequest"}；transport 为 other 则停止。\n' +
         '2. Manifest 的 allowedOrigins 覆盖清单中的全部主机，allowedPathPrefixes 使用建议前缀；先用 sampleIds 调 academic_validate_adapter_candidate 离线回放，样本必须覆盖所有请求。\n' +
         '3. 若接口含已屏蔽的鉴权参数、或需要表单编码/自定义头导致无法精确回放，直接说明并停止，不要用合成样本让验证通过。\n' +
         '4. 保存候选即可，不要启用。先说明规则能读取哪些内容、样本验证是否通过、接下来需要我确认什么；技术细节按需补充。样本验证通过不代表已完成真实同步。',
@@ -750,8 +751,10 @@ function SourceCard({
                       ? ` · 分页参数 ${endpoint.pagination.param}`
                       : ''}
                     {endpoint.transport === 'form'
-                      ? ' · 表单请求（当前不支持）'
-                      : ''}
+                      ? ' · 表单请求（需 bodyFormat: form）'
+                      : endpoint.transport === 'other'
+                        ? ' · 编码方式暂不支持'
+                        : ''}
                     {endpoint.response.fields.length > 0
                       ? ` · 字段 ${endpoint.response.fields
                           .slice(0, 6)

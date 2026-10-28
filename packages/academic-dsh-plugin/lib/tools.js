@@ -20316,7 +20316,7 @@ var TOOL_SPECS = [
   },
   {
     name: ACADEMIC_TOOL_NAMES.ListCaptureEndpoints,
-    description: "List endpoints observed in the user\u2019s guided \u201C\u767B\u5F55\u5E76\u5F55\u5236\u201D session: method, masked URL, collections[] with exact JSON paths, field paths, pagination parameter, transport and sampleIds. Use the matching collection path as the Manifest items path; pass sampleIds to academic_validate_adapter_candidate. If transport is \u201Cform\u201D or custom headers are required, stop and report. Read-only.",
+    description: 'List endpoints observed in the user\u2019s guided \u201C\u767B\u5F55\u5E76\u5F55\u5236\u201D session: method, masked URL, collections[] with exact JSON paths, field paths, pagination parameter, transport, masked request bodyPreview, header hints and sampleIds. Use the matching collection path as the Manifest items path; transport \u201Cform\u201D requires bodyFormat:"form"; x-requested-with requires headers:{"x-requested-with":"XMLHttpRequest"}; \u201Cother\u201D transports are unsupported. Pass sampleIds to academic_validate_adapter_candidate. Read-only.',
     parameters: {
       sourceId: { type: "string", required: true, description: "Source id with a capture" }
     },

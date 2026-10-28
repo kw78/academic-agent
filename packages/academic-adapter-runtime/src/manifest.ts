@@ -32,15 +32,20 @@ const requestSchema = z
     url: z.string().min(1).max(2000),
     responseType: z.enum(['html', 'json']).default('html'),
     /**
-     * POST is for read-only JSON list/detail APIs; it is never form-encoded and
-     * cannot carry custom headers.
+     * POST is only for read-only list/detail APIs. JSON is the default; form
+     * encoding is opt-in and stays flat (no files, no multipart).
      */
     method: z.enum(['GET', 'POST']).optional(),
+    bodyFormat: z.enum(['json', 'form']).optional(),
     body: z
       .record(
         z.string().max(100),
         z.union([z.string().max(2_000), z.number(), z.boolean(), z.null()]),
       )
+      .optional(),
+    /** Static, non-secret headers; only X-Requested-With: XMLHttpRequest is accepted. */
+    headers: z
+      .record(z.enum(['x-requested-with']), z.literal('XMLHttpRequest'))
       .optional(),
     items: z.string().min(1).max(500),
     fields: z.record(z.string(), extractorSchema),
@@ -80,6 +85,13 @@ const requestSchema = z
       })
     }
     const post = value.method === 'POST'
+    if (value.bodyFormat !== undefined && !post) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['bodyFormat'],
+        message: 'bodyFormat requires method: "POST"',
+      })
+    }
     if (value.body !== undefined && !post) {
       ctx.addIssue({
         code: 'custom',
