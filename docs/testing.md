@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**158 项测试通过**（31 个测试文件）。
+当前基线：**168 项测试通过**（32 个测试文件）。
 
 ## 分层
 
@@ -127,12 +127,21 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 
 - `tests/integration/ui-api.test.ts` 覆盖：未传 ID 时返回生成的 `sourceId`；拒绝 engine 不支持的 `authKind` / `loginMode`；engine 配置校验失败返回 `VALIDATION`；配置、认证、同步健康与 Adapter 就绪度分别返回，fixture 同步后为 `connected/healthy`，browser-session 未登录为 `missing/never-synced`。
 - `tests/unit/ui-view.test.ts` 覆盖各维度标签与颜色语义。
+- 接入阶段：Host 返回统一 `stage`（待登录/已登录未验证/已验证/待首次同步/已启用/同步中/部分同步/失败等）与唯一 `nextStep`；测试断言 fixture 为 `enabled + sync`、新浏览器源为 `login-required + login`，客户端不再自行推断。
+- 失败诊断：`ui-api.test.ts` 用缺失字段的假 Adapter 触发失败，断言 `stage=failed`、`diagnosis.category=schema`，建议指向修复候选而不是放宽权限。
+- 探测证据：`ui-api.test.ts` 断言 JSON 探测只返回结构、包含 SHA-256 `digest`、不含姓名/学号/邮箱/token/课程名。
+
+## 用户偏好与计划
+
+- `tests/integration/preferences.test.ts`：课程优先级持久化并在新 Store 实例中可读；`buildPlan` 先按任务自身优先级，再按课程优先级排序。
+- `tests/integration/ui-api.test.ts`：设置页读取课程优先级列表，保存后重新读取保持一致，未知课程返回 `VALIDATION`。
 
 ## 声明式 Adapter
 
-- `packages/academic-adapter-runtime/test/manifest.test.ts`：Manifest Schema、版本注册/激活、HTML/JSON 字段提取、嵌套 JSON path。
-- `tests/integration/declarative.test.ts`：JSON 课程/作业/详情、作业分页、HTML CSS 提取、相对 URL、未授权响应、预览不写库、Connector/Kernel 同步与重复预览 no-op。
-- 已覆盖：允许域名、GET-only、分页上限、正则/trim、ISO/日期截止时间、`constant`/`template` 字段；XPath、XML、代码沙箱仍未实现。
+- `packages/academic-adapter-runtime/test/manifest.test.ts`：Manifest Schema、版本注册/激活、HTML/JSON 字段提取、嵌套 JSON path、类型转换/默认值/必需字段诊断、无效选择器受控错误。
+- `tests/integration/declarative.test.ts`：JSON 课程/作业/详情、作业分页、HTML CSS 提取、相对 URL、未授权响应、预览不写库、Connector/Kernel 同步与重复预览 no-op；总响应字节上限。
+- 已覆盖：允许域名与路径、GET-only、`next`/页码/offset 分页与页数/行数/字节/时长上限、正则/trim、ISO/日期截止时间、`constant`/`template`、`type`/`default`/`required` 字段转换；XPath、XML、POST 与代码沙箱仍未实现。
+- `packages/academic-adapter-runtime/test/candidate.test.ts`：不支持 `schemaVersion` 明确拒绝；验证报告按 schema/contract/permissions/sample-replay 分阶段；候选摘要包含允许主机、路径、数据类型与字段；页码/offset 分页与 maxPages 截断标记 partial。
 - `tests/integration/declarative.test.ts` 的第二平台用例：USTC 教务考试表经 Manifest 得到 1 门课程/2 个考试，时间 `2026-12-20 09:00` 正确转 UTC；同一 source 预览/同步/重复同步走 Connector/Kernel。
 - 真实验证：`jw.ustc.edu.cn` 使用应用登录会话完成候选注册→启用→自动建源→预览→同步→重复 no-op，写入 1 个真实考试；课表/成绩/作业未覆盖。
 - 会话闸门：`declarative.test.ts` 断言已保存但未验证的连接不能正式同步；`source-browser.test.ts` 断言已认证页面里的 `/login` 链接不会被误判为会话失效，真正的登录页仍被拒绝。
@@ -143,6 +152,7 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 - `tests/integration/blackboard.test.ts`：作业页 503 一次后重试成功；持续 5xx 保留 partial 或失败状态。
 - `tests/integration/web-sessions.test.ts`：429 映射为 `RATE_LIMITED`；超时与响应上限覆盖。
 - 备份/恢复、迁移、会话撤销、升级与故障排查见 [operations.md](operations.md)。
+- 2026-10-28 恢复演练：fixture 数据库备份后恢复到独立文件，`integrity_check=ok`、事件与投影位置一致，`list` 读回相同事项/任务/提醒；性能基线由 `npm run benchmark` 覆盖 1k/10k 事项的同步、查询与投影重建。
 
 ## AI 候选 Adapter
 

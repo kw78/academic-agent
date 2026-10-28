@@ -27,8 +27,11 @@ GitHub: <https://github.com/kw78/academic-agent>
 - 前端 UI 已验证（`packages/academic-dsh-ui`）：见 [前端验证记录](docs/frontend-verification.md)。
 - 数据源状态已拆分为配置、认证、同步健康与 Adapter 就绪度；表单只允许 engine 声明的 `authKind` / `loginMode`。
 - **Blackboard 只读 Adapter 已接入**：`engine=blackboard` 复用浏览器会话读取课程/作业，支持预览后确认同步；真实会话已在临时库验证（2 门课程、7 个作业），不提交作业。
-- **声明式 Adapter Runtime 已落地**：`engine=declarative` 通过版本化 Manifest 驱动 HTML/JSON 提取、分页和字段映射；新网站优先加 Manifest，不新增 engine。
-- **AI 候选 Adapter 流水线已落地**：AI 可生成 Manifest 并用显式页面样本做离线回放；候选保存后需校验通过、显式启用才进入同步，支持版本启用/回滚；Agent 校验只读，注册/启用需要可信授权。
+- **声明式 Adapter Runtime 已落地**：`engine=declarative` 通过版本化 Manifest 驱动 HTML/JSON 提取、字段类型转换/默认值、`next`/页码/offset 分页和字段映射，并受请求数、行数、字节与时长限制；新网站优先加 Manifest，不新增 engine。
+- **AI 候选 Adapter 流水线已落地**：AI 可生成 Manifest 并用显式页面样本做离线回放；验证按 schema、字段契约、访问范围、样本回放分阶段报告，候选列表展示允许主机/路径/数据类型/字段；保存后需校验通过、显式启用才进入同步，支持版本启用/回滚；Agent 校验只读，注册/启用需要可信授权。
+- **接入状态可解释**：Host 统一返回“待登录/已登录未验证/待首次同步/已启用/部分同步/失败”等阶段与唯一“下一步”；同步失败按认证、网络、权限、结构、质量分类并给出修复建议。
+- **用户控制扩展**：课程优先级持久化并作为计划排序的第二依据；任务页提供按课程分组的复习清单与带上下文的 Agent 入口。
+- **运维可恢复**：`backup`/`restore` 支持独立目录恢复、完整性检查与投影一致性校验；`npm run benchmark` 记录 1k/10k 事项基线。
 - **稳定性收尾**：同源同步并发锁、429/5xx/超时有限重试、同步状态与错误分类、备份/迁移/恢复与故障排查文档已完成。
 - 已用 DSH 中保存的 DeepSeek key 跑通真实自然语言工具调用：模型调用 `academic_list_courses` 并正确回答课程。
 - **DSH 客户端 UI 已落地**：`/dsh-ui` 在真实 DSH Web profile 中注册“学业”入口，提供总览、任务、计划、连接、自动化与设置；任务完成、候选计划确认、锁定、可用时间、作业启停和提醒已读均经 Host Remote API 生效。
@@ -36,7 +39,7 @@ GitHub: <https://github.com/kw78/academic-agent>
 
 ## 快速开始
 
-要求 Node.js ≥ 22.12（当前开发机为 v22.23.2）。
+要求 Node.js ≥ 22.12（当前开发机为 v24.18.0）。
 
 ```bash
 npm install
@@ -226,10 +229,11 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 
 ## 已知限制与后续
 
-- **Gate 0/2–6 已完成**：类型检查、158 项测试、构建、DSH selftest、DSH Web UI 独立库同步、真实 BB/JW 平台闭环均已实测；详见 [docs/mvp-verification.md](docs/mvp-verification.md)。
+- **Gate 0/2–6 已完成**：类型检查、168 项测试、构建、DSH selftest、DSH Web UI 独立库同步、真实 BB/JW 平台闭环均已实测；详见 [docs/mvp-verification.md](docs/mvp-verification.md)。
 - **Gate 1**：DSH Web 已验证 UI/Host/同步；用户已在 Desktop 当前构建手工检查基本流程，未报告问题；文件级 HMR/完整生命周期专项仍未验证。
 - 系统凭据库当前为 Windows DPAPI；Credential Manager/其他 OS vault 是后续可替换实现。
-- **接入流程**：给定 HTTPS 网址后可登录、验证、只读探测；Agent 可基于探测证据生成声明式 Manifest 候选，用户在“连接”页验证、启用/回滚。仍未实现任意站点全自动生成或任意 JavaScript。
+- **接入流程**：给定 HTTPS 网址后可登录、验证、只读探测；Agent 可基于探测证据生成声明式 Manifest 候选，用户在“连接”页验证、启用/回滚。仍未实现任意站点全自动生成、多页自动采样或任意 JavaScript。
+- **偏好与复习**：课程优先级、可用时间与任务预计时长已持久化；复习清单只基于已保存事项与任务，不生成成绩趋势或能力评分。
 - 真实 Blackboard 只读同步已接入并验证课程/作业/文件夹；当前账号无测试项样本，考试/测验仍以 fixture 验证。
 - **第二平台**：USTC 综合教务系统用 Manifest 真实同步考试表（1 门课程/1 个考试，重复同步 no-op）；课表、成绩、作业未覆盖，平台无 ICS 订阅，Manifest 暂不支持 XML。
 - Desktop profile 已安装 `@academic/dsh-plugin` 与 `@academic/dsh-ui`；`academic-web` profile 已用独立数据库实测。
@@ -243,4 +247,4 @@ npm test
 npm run build:dsh
 ```
 
-共 158 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态、Blackboard 只读解析/同步、声明式 Adapter、AI 候选校验/启用、同步重试/并发与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。
+共 168 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态、Blackboard 只读解析/同步、声明式 Adapter、AI 候选校验/启用、同步重试/并发与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。

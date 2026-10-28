@@ -103,7 +103,7 @@ docs/adr/                      # 架构决策记录
 
 ## 6. 代码与测试
 
-- TypeScript strict；ESM；Node.js（本机 Node v22.23.2）。
+- TypeScript strict；ESM；Node.js（本机 Node v24.18.0；`engines` 要求 ≥22.12）。
 - 运行时输入校验使用 Schema（zod），不以 `string` / `unknown` 作为最终业务校验方案。
 - 核心逻辑必须可测试、无外部副作用；时钟、ID 生成器可注入。
 - 测试分层：`unit`、`integration`、`replay`、`e2e`。
@@ -154,7 +154,7 @@ docs/adr/                      # 架构决策记录
 
 | Gate | 内容 | 状态 |
 |---|---|---|
-| Gate 0 | 真实基线 | 已完成：typecheck、158 项测试/31 文件、两个构建、DSH selftest；桌面干净启动待复核 |
+| Gate 0 | 真实基线 | 已完成：typecheck、168 项测试/32 文件、两个构建、DSH selftest；桌面干净启动待复核 |
 | Gate 1 | 桌面端可启动、可操作 | 用户已手工检查当前 Desktop 基本流程，无阻塞；链接配置已置顶；文件级 HMR/完整生命周期专项仍未验证 |
 | Gate 2 | 真实平台登录与会话 | 已完成：BB 与 USTC 教务真实登录/验证；正式同步新增“连接必须已验证”闸门；删除凭据不删学业数据 |
 | Gate 3 | 一个平台的数据同步闭环 | 已完成：BB 真实课程/作业/文件夹；考试/测验 fixture 验证并标注；JW 考试真实同步 |
@@ -162,11 +162,13 @@ docs/adr/                      # 架构决策记录
 | Gate 5 | 最小 Agent 适配流程 | 已完成：探测证据、Manifest 候选、离线回放、UI 审批、启用/回滚；生成仍需 DSH 对话，UI 已说明 |
 | Gate 6 | 发布前最小回归 | 已完成自动化、DSH Web UI 与真实临时库回归；DSH Desktop 基本流程经用户手工检查通过；完整生命周期专项保留未验证 |
 
-仍有限制：DSH Desktop 文件级 HMR/真实 Session 手工复验、Blackboard 真实测试项样本、Manifest XML/复杂转换、任意脚本沙箱未完成。
+仍有限制：DSH Desktop 文件级 HMR/真实 Session 手工复验、Blackboard 真实测试项样本、Manifest XML/POST/多页自动采样、任意脚本沙箱未完成。
 
 首个真实平台只读 Adapter 已落地在 `adapters/ustc-blackboard`：读取课程、作业、考试与测验，支持文件夹/下一页遍历，不提交作业、不读取附件与成绩；`engine=blackboard` 复用通用浏览器登录/会话。真实会话已验证 13 门 `2026FA` 课程中的 5 门内容区、9 个含文件夹作业与截止时间；当前账号没有暴露测试项，考试/测验仍以脱敏 fixture 验证，不得声称测试模块已完整真实验收。
 
-声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、分页、字段映射、允许域名、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选流水线已实现：Agent 可调用只读 `academic_probe_source` 获取脱敏证据，生成 Manifest 并用显式样本离线回放；候选保存与启用分开，只有 validated 版本可启用，且启用/注册需要可信授权。UI“连接”页提供快速添加、探测、候选列表、验证报告、启用/回滚，并在启用后创建/更新可同步的 declarative 数据源；同站点已有会话会在 Host 内复制，不返回秘密。CLI `adapter validate/register/activate/rollback` 同样可用。尚未实现 Host 直接调用模型生成、多页自动采样、任意 JavaScript 生成与沙箱执行。
+声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、常量/模板、类型转换/默认值/必需字段诊断、`next`/页码/offset 分页、字段映射、允许主机与路径、总请求/行/字节/时长上限、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选流水线已实现：Agent 可调用只读 `academic_probe_source` 获取带 SHA-256 摘要的脱敏证据，生成 Manifest 并用显式样本离线回放；验证按 schema、字段契约、访问范围、样本回放分阶段报告，候选摘要包含允许主机/路径/数据类型/字段；候选保存与启用分开，只有 validated 版本可启用，且启用/注册需要可信授权。UI“连接”页提供快速添加、探测、候选列表、验证报告、启用/回滚，并在启用后创建/更新可同步的 declarative 数据源；同站点已有会话会在 Host 内复制，不返回秘密。CLI `adapter validate/register/activate/rollback` 同样可用。尚未实现 Host 直接调用模型生成、多页自动采样、任意 JavaScript 生成与沙箱执行。
+
+MVP 后能力（2026-10-28）：Host 统一返回数据源阶段与唯一下一步，同步失败分类为认证/网络/权限/结构/质量并给出建议；课程优先级保存于 `user_preferences` 并作为任务优先级之后的计划排序依据；任务页提供按课程的复习清单与带上下文 Agent 提示；CLI 支持带完整性/投影校验的独立目录恢复；`npm run benchmark` 记录 1k/10k 事项基线。仍未验证：Desktop 文件级 HMR/真实 Session、真实 BB 考试样本、JW 会话过期后的重新登录、新 UI 面板的真实浏览器点验。
 
 架构测试矩阵进度：
 
@@ -193,7 +195,7 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（158 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（168 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 

@@ -111,15 +111,17 @@ npm test
 
 - `tests/unit/ui-view.test.ts`：截止时间呈现、筛选、计划分组、状态映射、来源状态文案；
 - `tests/unit/ui-security.test.ts`：客户端源码不出现 `credentialRef`/`credential_ref`、`sessionStorage`、`indexedDB`、`fetch(`、`node:`；仅保存 UI tab 偏好；凭据状态在提交前清空；
-- `tests/integration/ui-api.test.ts`：Query API 读取、Command API 任务变更、候选/确认分离、防篡改确认、凭据引用不泄露、未支持 Adapter 拒绝认证、输入校验、作业暂停/恢复、可用时间与提醒设置、通知已读、同步结果。
+- `tests/integration/ui-api.test.ts`：Query API 读取、Command API 任务变更、候选/确认分离、防篡改确认、凭据引用不泄露、未支持 Adapter 拒绝认证、输入校验、作业暂停/恢复、可用时间与提醒设置、通知已读、同步结果、统一数据源阶段/下一步、失败诊断、课程优先级、候选访问范围。
+- `tests/integration/preferences.test.ts`：课程优先级持久化与计划排序。
 - `tests/integration/web-sessions.test.ts`、`source-browser.test.ts`：Cookie 作用域、逐跳重定向、SSRF、超时与流式响应上限。
 
-当前基线：158 项测试通过（31 个测试文件）。
+当前基线：168 项测试通过（32 个测试文件）。
 
 ## 未完成/未验证
 
 - Blackboard 只读 Adapter 与真实会话同步已完成课程/作业/文件夹验证；考试与测验已由 fixture 覆盖，真实账号暂无测试项样本；附件与成绩不在首版范围，UI 不做展示承诺。
 - 快速添加、只读探测、候选验证报告与启用/回滚已进入 UI；Manifest 生成仍由 DSH Agent 完成。新增流程尚未做真实浏览器手工验收，自动化只覆盖 Host API 与构建。
+- 2026-10-28 新增/改动的 UI：连接页阶段徽章与下一步、失败诊断、候选允许范围、设置页课程优先级、任务页复习清单与带上下文 Agent 入口。均已通过类型检查、UI 构建与 Host API 测试，但未重新做真实浏览器点验。
 - 系统通知未实现，当前只有应用内提醒。
 - 移动端只做了响应式降级，未做专项浏览器验收。
 - DSH 文件级 HMR 代码热替换未验证；已验证的是 profile 级插件启用/禁用与重新加载。
