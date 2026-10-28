@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**136 项测试通过**（28 个测试文件）。
+当前基线：**143 项测试通过**（30 个测试文件）。
 
 ## 分层
 
@@ -84,7 +84,7 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 
 - host 创建 Academic App 并提供 `academicApp` 服务；
 - planner fiber 注册/卸载 Planner 能力；卸载后已有计划仍可查询；
-- tools fiber 注册 12 个工具；卸载后工具清零，host/store/planner 保持；
+- tools fiber 注册 16 个工具；卸载后工具清零，host/store/planner 保持；
 - 重新加载 tools/planner 后能力恢复；
 - host 卸载关闭 app。
 
@@ -126,6 +126,12 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 - `tests/integration/declarative.test.ts`：JSON 课程/作业/详情、作业分页、HTML CSS 提取、相对 URL、未授权响应、预览不写库、Connector/Kernel 同步与重复预览 no-op。
 - 已覆盖：允许域名、GET-only、分页上限、正则/trim、ISO/日期截止时间；XPath、字段级复杂转换和代码沙箱仍未实现。
 
+## AI 候选 Adapter
+
+- `packages/academic-adapter-runtime/test/candidate.test.ts`：离线样本回放、无效样本失败、候选持久化、validated 才能启用、版本回滚、失败候选保持 inactive。
+- `tests/integration/adapter-candidate-tools.test.ts`：Agent 校验只读；注册/启用无授权被拒；可信授权后注册并启用。
+- `tests/integration/declarative.test.ts`：候选注册 → 启用 → declarative source 同步 3 条事项。
+
 ## Blackboard 只读切片
 
 - `adapters/ustc-blackboard/test/parse.test.ts`：课程链接/学期过滤、作业区定位、作业链接去重、中英文/ISO 截止时间、登录页识别、内容 hash 稳定性。
@@ -159,12 +165,12 @@ dsh academic --json "hello"
 ```text
 [academic-host] loaded db=D:/project/classhelper/.data/dsh-academic.db
 [academic-planner] capability registered
-[academic-tools] tools=12 registered=true
+[academic-tools] tools=16 registered=true
 [academic-tools] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 
 - 插件在真实 DSH 进程加载；
-- 12 个工具注册到真实 `ctx.tools`；
+- 16 个工具注册到真实 `ctx.tools`；
 - 只读工具经真实 ToolRegistry 执行成功；
 - 未授权写入被权限门禁拒绝；
 - 不调用模型。

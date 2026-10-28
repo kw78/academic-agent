@@ -1,6 +1,6 @@
 # @academic/dsh-plugin
 
-DSH（DeepSeek Harness）bundle，把 Academic Agent 的 12 个模型工具暴露给模型。默认只读；写入必须由可信宿主对每次操作授权，模型参数（包括旧版的 `confirmed`）不能作为授权依据。当前 bundle 尚未接入 DSH 审批适配器，因此写入会被拒绝。
+DSH（DeepSeek Harness）bundle，把 Academic Agent 的 16 个模型工具暴露给模型。默认只读；写入必须由可信宿主对每次操作授权，模型参数（包括旧版的 `confirmed`）不能作为授权依据。当前 bundle 尚未接入 DSH 审批适配器，因此写入会被拒绝。
 
 ## 插件拆分
 
@@ -8,7 +8,7 @@ bundle 现在由三个独立 Cordis fiber 组成：
 
 - `@academic/dsh-plugin/host`：创建 Academic App（Event Store、Scheduler、Dispatcher、Notification），提供 `academicApp` 服务。
 - `@academic/dsh-plugin/planner`：注册 Planner 能力；卸载后已有计划仍可读取，新规划请求不可用。
-- `@academic/dsh-plugin/tools`：Agent Bridge，注册 12 个模型工具；卸载后后台同步、调度、提醒继续运行。
+- `@academic/dsh-plugin/tools`：Agent Bridge，注册 16 个模型工具；卸载后后台同步、调度、提醒继续运行。
 
 `cordis.patch.yml` 按 host → planner → tools 插入三行。禁用 `academic-tools` 行即可验证 Agent Bridge 独立卸载。
 
@@ -30,6 +30,10 @@ bundle 现在由三个独立 Cordis fiber 组成：
 | `academic_update_source` | 写入 | 修改数据源配置；需可信宿主授权 |
 | `academic_list_web_sessions` | 只读 | 列出已保存的网站会话元数据，不返回 Cookie |
 | `academic_fetch_web_session` | 只读 | 用已保存会话访问同域 URL，返回响应正文但不返回 Cookie |
+| `academic_validate_adapter_candidate` | 只读 | 用显式页面样本离线回放 Adapter Manifest |
+| `academic_list_adapter_candidates` | 只读 | 列出候选 Adapter 与版本状态 |
+| `academic_register_adapter_candidate` | 写入 | 保存已校验的候选 Manifest；需可信宿主授权 |
+| `academic_activate_adapter_candidate` | 写入 | 启用 validated 版本；需可信宿主授权，可回滚 |
 
 工具只调用 `@academic/agent-tools` 的宿主无关工具层，最终仍走 Kernel Command API；不拼 SQL、不直接追加事件。
 
@@ -70,7 +74,7 @@ dsh academic --json "hello"
 ```text
 [academic-host] loaded db=D:/project/classhelper/.data/dsh-academic.db
 [academic-planner] capability registered
-[academic-tools] tools=12 registered=true
+[academic-tools] tools=16 registered=true
 [academic-tools] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 

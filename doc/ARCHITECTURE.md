@@ -40,6 +40,7 @@ Connector/Kernel 路径进入应用的事件与查询模型，并由 DSH UI 展�
 -   会话抓取已按 Cookie 属性筛选、逐跳校验重定向、阻断私网/元数据地址，并设置超时与流式响应字节上限。
 -   `blackboard` 引擎提供课程/作业只读 Adapter，输出经预览后进入 Connector/Kernel。
 -   声明式 Adapter Runtime 已提供版本化 Manifest：HTML/JSON 提取、分页、允许域名、样本回放和版本激活/回滚。
+-   Adapter 候选流水线已提供离线样本校验、持久化、显式启用/回滚和授权 Agent 工具；尚未执行任意生成代码。
 -   Agent 工具用于查询数据源、获取会话页面和维护数据源配置。
 -   Fixture 数据源可作为测试基础。
 

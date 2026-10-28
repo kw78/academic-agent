@@ -129,7 +129,7 @@ docs/adr/                      # 架构决策记录
 - DSH 绑定继续按 M0 验证：`inject`、Service 注册/撤销、Tool 注册/撤销、HMR/重启语义、依赖组件卸载时资源释放。目前已完成加载、工具注册、ToolRegistry 执行、DeepSeek 模型自然语言调用，以及 Web 客户端 UI 的加载/卸载/重载；文件级 HMR 与真实 Session 生命周期待补。
 - Agent 工具通过 `ctx.tools.register(defineTool(...))` 暴露；工具只调用领域服务，不拼 SQL、不直接追加事件。
 - 普通 Host 插件可访问宿主进程；Cordis disposer 不是安全沙箱。未审查代码不得以可信 Host 插件身份安装。
-- 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 拆成 `host` / `planner` / `tools` 三个 Cordis fiber；host 提供 `academicApp` 服务，planner 与 tools 独立注入，12 个工具经真实 `ctx.tools` 注册。
+- 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 拆成 `host` / `planner` / `tools` 三个 Cordis fiber；host 提供 `academicApp` 服务，planner 与 tools 独立注入，16 个工具经真实 `ctx.tools` 注册。
 - 真实 Cordis 生命周期测试已验证：卸载 tools 后 host/scheduler/store 继续运行；卸载 planner 后旧计划仍可读、能力消失；重载二者恢复；host 卸载关闭 app。
 - DSH Web profile 已实测通过 Plugins 页面禁用/启用 `@academic/dsh-ui`：入口消失后后台同步/重算继续，重新启用后入口恢复且没有重复 Host、作业或课程。文件级 HMR 尚未验证。
 - DSH 运行时提供 `@deepseek-ai/cordis` / `@deepseek-ai/dsh-tools`；插件保持二者 external，不另造 Harness。普通 `--patch` 直接加载工作区文件无法解析这些 peer，必须安装到 profile（或从 DSH 源码 checkout 运行）。
@@ -144,7 +144,7 @@ docs/adr/                      # 架构决策记录
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
-| M0 | DSH 版本锁定与框架可运行性验证 | 部分完成：本机 `0.2.1-rc.3` 已验证 bundle 加载、host/planner/tools 分离、真实 Cordis 独立卸载/重载、12 工具注册与执行、Web 客户端 UI 加载/卸载/重载；文件级 HMR/真实 Session 待补 |
+| M0 | DSH 版本锁定与框架可运行性验证 | 部分完成：本机 `0.2.1-rc.3` 已验证 bundle 加载、host/planner/tools 分离、真实 Cordis 独立卸载/重载、16 工具注册与执行、Web 客户端 UI 加载/卸载/重载；文件级 HMR/真实 Session 待补 |
 | M1 | Event-Sourced Kernel、SQLite Event Store、核心投影、迁移 | 已完成（MVP 范围） |
 | M2 | fixture LMS、Connector、Scheduler、StudyTask/StudyPlan、Planner | 已完成（fixture 闭环 + 用户管理/计划锁定） |
 | M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成：宿主无关工具、DSH 工具绑定、DeepSeek 模型自然语言工具调用均通过 |
@@ -154,7 +154,7 @@ docs/adr/                      # 架构决策记录
 
 首个真实平台只读 Adapter 已落地在 `adapters/ustc-blackboard`：只读取课程和作业，不提交作业；`engine=blackboard` 复用通用浏览器登录/会话，解析器有脱敏 fixture 与真实页面验证。考试/测验、文件夹分页、附件与成绩尚未覆盖，不得声称已完整同步 Blackboard。
 
-声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、分页、字段映射、允许域名、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选生成/审批流水线属于 M4，尚未完成。
+声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、分页、字段映射、允许域名、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选流水线已实现：Agent 可生成 Manifest、用显式样本做离线回放；候选保存与启用分开，只有 validated 版本可启用，且启用/注册需要可信授权；CLI `adapter validate/register/activate/rollback` 提供用户操作入口。尚未实现任意 JavaScript 生成与沙箱执行。
 
 架构测试矩阵进度：
 
@@ -181,7 +181,7 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（136 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（143 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 
@@ -204,11 +204,11 @@ dsh plugin --profile academic add D:/project/classhelper/packages/academic-dsh-p
 ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db dsh academic --json "hello"
 ```
 
-已观测：host/planner/tools 三个 fiber 加载，`tools=12 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`；退出时 planner capability 释放。另外使用 DSH 凭证中的 DeepSeek key 跑通真实自然语言调用：模型调用 `academic_list_courses`，返回真实 SQLite 课程并正确回答。密钥只在进程环境中注入，未写入代码或日志。
+已观测：host/planner/tools 三个 fiber 加载，`tools=16 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`；退出时 planner capability 释放。另外使用 DSH 凭证中的 DeepSeek key 跑通真实自然语言调用：模型调用 `academic_list_courses`，返回真实 SQLite 课程并正确回答。密钥只在进程环境中注入，未写入代码或日志。
 
 ## 10. 待确认的环境参数（不阻塞实现）
 
-- 首个真实课程平台：尚未接入；安全凭据连接与通用浏览器会话已具备（DPAPI + 隐藏输入/应用内登录），但真实 Adapter 与同步尚未实现，真实平台 E2E 未完成（当前用 fixture，不能当作真实验收）。
+- 首个真实课程平台：Blackboard 只读 Adapter 已接入并完成真实会话同步验证；真实 Adapter 覆盖课程/作业，考试/测验、文件夹分页、附件与成绩仍未覆盖，不能当作完整平台验收。
 - 目标运行形态：本地 CLI + SQLite 已验证；DSH `headless` / `web` profile 可挂载；Desktop profile 已安装并验证 Academic Host 与 UI。
 - 通知仅应用内还是系统通知（当前先应用内）。
 - 课程规模、同步频率（当前 15 分钟）、计划粒度（15 分钟）、资源预算。

@@ -20,11 +20,12 @@ GitHub: <https://github.com/kw78/academic-agent>
 - 新增凭据连接 MVP：连接元数据与秘密分离，Windows DPAPI 加密存储，CLI 隐藏输入，Agent 工具无法读取凭据；DPAPI 受保护凭据同步已通过 E2E。
 - 常规同步、去重、提醒、基础规划**不调用 LLM**；Agent 只通过受控工具读取事实或提交命令。
 - M1（事件溯源内核）与 M2（fixture 数据源 + 调度 + 规划）已完成；M3 的 Agent 工具已完成。
-- **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，12 个工具注册成功，并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
+- **DSH 绑定已落地**：`@academic/dsh-plugin` 已在本机 DSH `0.2.1-rc.3` 的独立 `academic` profile 中加载，16 个工具注册成功，并通过真实 ToolRegistry 执行了只读查询与写入拒绝自测。
 - 前端 UI 已验证（`packages/academic-dsh-ui`）：见 [前端验证记录](docs/frontend-verification.md)。
 - 数据源状态已拆分为配置、认证、同步健康与 Adapter 就绪度；表单只允许 engine 声明的 `authKind` / `loginMode`。
 - **Blackboard 只读 Adapter 已接入**：`engine=blackboard` 复用浏览器会话读取课程/作业，支持预览后确认同步；真实会话已在临时库验证（2 门课程、7 个作业），不提交作业。
 - **声明式 Adapter Runtime 已落地**：`engine=declarative` 通过版本化 Manifest 驱动 HTML/JSON 提取、分页和字段映射；新网站优先加 Manifest，不新增 engine。
+- **AI 候选 Adapter 流水线已落地**：AI 可生成 Manifest 并用显式页面样本做离线回放；候选保存后需校验通过、显式启用才进入同步，支持版本启用/回滚；Agent 校验只读，注册/启用需要可信授权。
 - 已用 DSH 中保存的 DeepSeek key 跑通真实自然语言工具调用：模型调用 `academic_list_courses` 并正确回答课程。
 - **DSH 客户端 UI 已落地**：`/dsh-ui` 在真实 DSH Web profile 中注册“学业”入口，提供总览、任务、计划、连接、自动化与设置；任务完成、候选计划确认、锁定、可用时间、作业启停和提醒已读均经 Host Remote API 生效。
 - 已通过 DSH Plugins 页面禁用/启用 UI：入口消失后后台同步/重算继续，重新启用后无重复 Host/作业/课程。文件级 HMR、真实 DSH Session 生命周期与审批 UI 仍待验证。
@@ -106,7 +107,7 @@ dsh academic --json "hello"
 ```text
 [academic-host] loaded db=D:/project/classhelper/.data/dsh-academic.db
 [academic-planner] capability registered
-[academic-tools] tools=12 registered=true
+[academic-tools] tools=16 registered=true
 [academic-tools] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 
@@ -238,4 +239,4 @@ npm test
 npm run build:dsh
 ```
 
-共 136 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态、Blackboard 只读解析/同步、声明式 Adapter 与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。
+共 143 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态、Blackboard 只读解析/同步、声明式 Adapter、AI 候选校验/启用与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。
