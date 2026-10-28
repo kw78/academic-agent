@@ -13,13 +13,31 @@ export interface AdapterCandidateServiceOptions {
 }
 
 function summary(stored: StoredCandidate): AdapterCandidateSummary {
+  const manifest = stored.manifest
+  const dataTypes: Array<'courses' | 'assignments' | 'detail'> = [
+    'courses',
+    'assignments',
+  ]
+  if (manifest.detail) dataTypes.push('detail')
   return {
-    adapterId: stored.manifest.adapterId,
-    version: stored.manifest.version,
-    displayName: stored.manifest.displayName,
+    adapterId: manifest.adapterId,
+    version: manifest.version,
+    displayName: manifest.displayName,
     status: stored.status,
     createdAt: stored.createdAt,
     updatedAt: stored.updatedAt,
+    scope: {
+      allowedOrigins: [...manifest.allowedOrigins],
+      allowedPathPrefixes: [...manifest.allowedPathPrefixes],
+      dataTypes,
+      fields: {
+        courses: Object.keys(manifest.courses.fields),
+        assignments: Object.keys(manifest.assignments.fields),
+        ...(manifest.detail
+          ? { detail: Object.keys(manifest.detail.fields) }
+          : {}),
+      },
+    },
   }
 }
 

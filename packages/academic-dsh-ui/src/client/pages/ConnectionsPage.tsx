@@ -859,6 +859,12 @@ const CANDIDATE_STAGE_LABELS: Record<AdapterCandidateCheckStage, string> = {
   'sample-replay': '样本回放',
 }
 
+const CANDIDATE_STATUS_LABELS: Record<string, string> = {
+  candidate: '待验证',
+  validated: '已验证',
+  revoked: '已撤销',
+}
+
 function CandidatePanel({
   ctx,
   active,
@@ -967,10 +973,24 @@ function CandidatePanel({
                     {candidate.displayName} · {candidate.adapterId}@{candidate.version}
                   </strong>
                   <span className="ac-muted">
-                    {candidate.status}
+                    {CANDIDATE_STATUS_LABELS[candidate.status] ?? candidate.status}
                     {activeVersion === candidate.version ? ' · 当前启用' : ''} · 更新于{' '}
                     {candidate.updatedAt}
                   </span>
+                  {candidate.scope && (
+                    <>
+                      <span className="ac-muted">
+                        允许主机：{candidate.scope.allowedOrigins.join('、')} · 路径：
+                        {candidate.scope.allowedPathPrefixes.join('、')}
+                      </span>
+                      <span className="ac-muted">
+                        数据类型：{candidate.scope.dataTypes.join(' / ')}；字段：
+                        {Object.entries(candidate.scope.fields)
+                          .map(([name, fields]) => `${name}[${fields.join(', ')}]`)
+                          .join('；')}
+                      </span>
+                    </>
+                  )}
                 </div>
                 <div className="ac-source-actions">
                   {candidate.status === 'validated' &&

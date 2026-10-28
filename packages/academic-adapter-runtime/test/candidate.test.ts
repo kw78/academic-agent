@@ -307,6 +307,16 @@ describe('adapter candidate replay and registry', () => {
 
     const registered = await service.register(manifest, samples())
     expect(registered.summary.status).toBe('validated')
+    expect(registered.summary.scope).toEqual({
+      allowedOrigins: ['lms.example.edu'],
+      allowedPathPrefixes: ['/api/'],
+      dataTypes: ['courses', 'assignments', 'detail'],
+      fields: {
+        courses: ['externalCourseId', 'code', 'title', 'termId'],
+        assignments: ['externalItemId', 'title', 'sourceUrl'],
+        detail: ['title', 'due', 'description', 'kind'],
+      },
+    })
     expect(registry.get('demo-json')).toBeUndefined()
     expect(service.list('demo-json')).toHaveLength(1)
 

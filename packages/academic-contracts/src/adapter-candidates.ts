@@ -41,6 +41,13 @@ export interface AdapterCandidateReport {
 
 export type AdapterCandidateStatus = 'candidate' | 'validated' | 'revoked'
 
+export interface AdapterCandidateScope {
+  allowedOrigins: string[]
+  allowedPathPrefixes: string[]
+  dataTypes: Array<'courses' | 'assignments' | 'detail'>
+  fields: Record<string, string[]>
+}
+
 export interface AdapterCandidateSummary {
   adapterId: string
   version: string
@@ -48,6 +55,7 @@ export interface AdapterCandidateSummary {
   status: AdapterCandidateStatus
   createdAt: string
   updatedAt: string
+  scope?: AdapterCandidateScope
 }
 
 export interface AdapterCandidatePort {
