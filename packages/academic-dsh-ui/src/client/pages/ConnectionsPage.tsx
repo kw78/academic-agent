@@ -13,6 +13,7 @@ import {
 } from '../components.js'
 import { useAction, useLoad } from '../hooks.js'
 import { viewState } from '../state.js'
+import { askAgent } from './types.js'
 import {
   formatDateTimeOrDash,
   sourceAuthenticationLabel,
@@ -120,6 +121,7 @@ function SourceCard({
   })
   const [preview, setPreview] = useState<SyncPreview>()
   const [probe, setProbe] = useState<SourceProbeEvidence>()
+  const [agentNote, setAgentNote] = useState<string>()
   const connection = source.connection
   const browserLogin = source.canLogin && source.loginMode === 'browser'
   const manualCredential = source.authKind !== 'none' && !browserLogin
@@ -136,6 +138,21 @@ function SourceCard({
         : source.adapterReady
           ? '下一步：预览同步并确认写入'
           : '下一步：配置或生成 Adapter（高级设置 / Agent）'
+
+  const askForAdapter = () => {
+    const ok = askAgent(
+      ctx,
+      `请为数据源 ${source.sourceId}（${source.displayName}）生成声明式 Adapter 候选。` +
+        '先调用只读工具 academic_probe_source 读取脱敏页面证据；' +
+        '只生成 Manifest 候选并用 academic_validate_adapter_candidate 做离线样本验证，' +
+        '不要注册、启用或扩大域名/路径范围。启用由我在“连接”页确认。',
+    )
+    setAgentNote(
+      ok
+        ? '已打开 Agent 会话；生成完成后回到“连接”页验证并启用候选。'
+        : '当前环境没有可用的 Agent 会话入口，请在 DSH 对话中发起。',
+    )
+  }
 
   const runProbe = async (): Promise<UiResult<SourceProbeEvidence>> => {
     const result = await callApi<SourceProbeEvidence>(ctx, 'probeSource', {
@@ -326,6 +343,7 @@ function SourceCard({
             </p>
           </div>
         )}
+        {agentNote && <p className="ac-muted">{agentNote}</p>}
         {browserLogin && (
           <div className="ac-secret-form">
             <p className="ac-muted">
@@ -383,6 +401,16 @@ function SourceCard({
         >
           {action.pending === 'probe' ? '探测中…' : '探测页面'}
         </button>
+        {connection && source.authKind !== 'none' && !source.adapterReady && (
+          <button
+            type="button"
+            className="ac-button"
+            disabled={action.pending !== undefined}
+            onClick={askForAdapter}
+          >
+            让 Agent 生成候选
+          </button>
+        )}
         <button
           type="button"
           className="ac-button"
