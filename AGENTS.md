@@ -155,12 +155,12 @@ docs/adr/                      # 架构决策记录
 | Gate | 内容 | 状态 |
 |---|---|---|
 | Gate 0 | 真实基线 | 已完成：typecheck、156 项测试/31 文件、两个构建、DSH selftest；桌面干净启动待复核 |
-| Gate 1 | 桌面端可启动、可操作 | 部分完成：本轮 DSH Web 独立库实测 UI/Host/同步；Desktop 手工复核仍需用户执行 |
+| Gate 1 | 桌面端可启动、可操作 | DSH Web 独立库实测 UI/Host/同步通过；Desktop 手工复核经用户选择跳过，保留为未验证 |
 | Gate 2 | 真实平台登录与会话 | 已完成：BB 与 USTC 教务真实登录/验证；正式同步新增“连接必须已验证”闸门；删除凭据不删学业数据 |
 | Gate 3 | 一个平台的数据同步闭环 | 已完成：BB 真实课程/作业/文件夹；考试/测验 fixture 验证并标注；JW 考试真实同步 |
 | Gate 4 | 学业任务与基本规划 | 已完成：任务/截止/计划/提醒/查询均有测试与 UI；常规路径零 LLM |
 | Gate 5 | 最小 Agent 适配流程 | 已完成：探测证据、Manifest 候选、离线回放、UI 审批、启用/回滚；生成仍需 DSH 对话，UI 已说明 |
-| Gate 6 | 发布前最小回归 | 已完成自动化、DSH Web UI 与真实临时库回归；DSH Desktop 手工路径仍待复核 |
+| Gate 6 | 发布前最小回归 | 已完成自动化、DSH Web UI 与真实临时库回归；DSH Desktop 手工路径按用户选择跳过、保留未验证 |
 
 仍有限制：DSH Desktop 文件级 HMR/真实 Session 手工复验、Blackboard 真实测试项样本、Manifest XML/复杂转换、任意脚本沙箱未完成。
 

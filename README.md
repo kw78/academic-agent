@@ -227,7 +227,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 ## 已知限制与后续
 
 - **Gate 0/2–6 已完成**：类型检查、156 项测试、构建、DSH selftest、DSH Web UI 独立库同步、真实 BB/JW 平台闭环均已实测；详见 [docs/mvp-verification.md](docs/mvp-verification.md)。
-- **Gate 1 剩余**：DSH Web 已验证 UI/Host/同步；DSH Desktop 本轮未重复手工复核，需要用户打开桌面端执行一次刷新与插件禁用/启用。
+- **Gate 1**：DSH Web 已验证 UI/Host/同步；DSH Desktop 手工复核经用户选择跳过，按未验证记录，不宣称通过。
 - 系统凭据库当前为 Windows DPAPI；Credential Manager/其他 OS vault 是后续可替换实现。
 - **接入流程**：给定 HTTPS 网址后可登录、验证、只读探测；Agent 可基于探测证据生成声明式 Manifest 候选，用户在“连接”页验证、启用/回滚。仍未实现任意站点全自动生成或任意 JavaScript。
 - 真实 Blackboard 只读同步已接入并验证课程/作业/文件夹；当前账号无测试项样本，考试/测验仍以 fixture 验证。
