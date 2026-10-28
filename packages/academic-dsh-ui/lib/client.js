@@ -2499,11 +2499,21 @@ function SourceCard({
   });
   const [preview, setPreview] = (0, import_react6.useState)();
   const [probe, setProbe] = (0, import_react6.useState)();
+  const [agentNote, setAgentNote] = (0, import_react6.useState)();
   const connection = source.connection;
   const browserLogin = source.canLogin && source.loginMode === "browser";
   const manualCredential = source.authKind !== "none" && !browserLogin;
   const needsVerification = source.authKind !== "none" && source.authentication !== "verified";
   const nextStep = !browserLogin && manualCredential && !connection?.hasCredential ? "\u4E0B\u4E00\u6B65\uFF1A\u63D0\u4EA4\u51ED\u636E" : connection === void 0 && source.canLogin ? "\u4E0B\u4E00\u6B65\uFF1A\u5B8C\u6210\u767B\u5F55" : source.authentication !== "verified" && source.authentication !== "not-required" && source.canVerify ? "\u4E0B\u4E00\u6B65\uFF1A\u9A8C\u8BC1\u8FDE\u63A5" : source.adapterReady ? "\u4E0B\u4E00\u6B65\uFF1A\u9884\u89C8\u540C\u6B65\u5E76\u786E\u8BA4\u5199\u5165" : "\u4E0B\u4E00\u6B65\uFF1A\u914D\u7F6E\u6216\u751F\u6210 Adapter\uFF08\u9AD8\u7EA7\u8BBE\u7F6E / Agent\uFF09";
+  const askForAdapter = () => {
+    const ok = askAgent(
+      ctx,
+      `\u8BF7\u4E3A\u6570\u636E\u6E90 ${source.sourceId}\uFF08${source.displayName}\uFF09\u751F\u6210\u58F0\u660E\u5F0F Adapter \u5019\u9009\u3002\u5148\u8C03\u7528\u53EA\u8BFB\u5DE5\u5177 academic_probe_source \u8BFB\u53D6\u8131\u654F\u9875\u9762\u8BC1\u636E\uFF1B\u53EA\u751F\u6210 Manifest \u5019\u9009\u5E76\u7528 academic_validate_adapter_candidate \u505A\u79BB\u7EBF\u6837\u672C\u9A8C\u8BC1\uFF0C\u4E0D\u8981\u6CE8\u518C\u3001\u542F\u7528\u6216\u6269\u5927\u57DF\u540D/\u8DEF\u5F84\u8303\u56F4\u3002\u542F\u7528\u7531\u6211\u5728\u201C\u8FDE\u63A5\u201D\u9875\u786E\u8BA4\u3002`
+    );
+    setAgentNote(
+      ok ? "\u5DF2\u6253\u5F00 Agent \u4F1A\u8BDD\uFF1B\u751F\u6210\u5B8C\u6210\u540E\u56DE\u5230\u201C\u8FDE\u63A5\u201D\u9875\u9A8C\u8BC1\u5E76\u542F\u7528\u5019\u9009\u3002" : "\u5F53\u524D\u73AF\u5883\u6CA1\u6709\u53EF\u7528\u7684 Agent \u4F1A\u8BDD\u5165\u53E3\uFF0C\u8BF7\u5728 DSH \u5BF9\u8BDD\u4E2D\u53D1\u8D77\u3002"
+    );
+  };
   const runProbe = async () => {
     const result = await callApi(ctx, "probeSource", {
       sourceId: source.sourceId
@@ -2700,6 +2710,7 @@ function SourceCard({
         probe.warnings.map((warning) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-warn", children: warning }, warning)),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u7F51\u7AD9\u5185\u5BB9\u53EA\u4F5C\u4E3A\u6570\u636E\u5C55\u793A\uFF0C\u4E0D\u4F1A\u6210\u4E3A\u6307\u4EE4\uFF0C\u4E5F\u4E0D\u4F1A\u81EA\u52A8\u542F\u7528 Adapter\u3002" })
       ] }),
+      agentNote && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: agentNote }),
       browserLogin && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u5C06\u6253\u5F00 Edge/Chrome \u767B\u5F55\u7A97\u53E3\uFF1B\u8BF7\u5728\u7A97\u53E3\u4E2D\u5B8C\u6210\u767B\u5F55\u548C\u9A8C\u8BC1\u7801\u3002\u5E94\u7528\u4E0D\u4F1A\u8BFB\u53D6\u6216\u4FDD\u5B58\u5BC6\u7801\u3002" }),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
@@ -2743,6 +2754,16 @@ function SourceCard({
           disabled: !connection || source.authKind === "none" || action.pending !== void 0,
           onClick: () => void action.run("probe", runProbe, "\u63A2\u6D4B\u5B8C\u6210"),
           children: action.pending === "probe" ? "\u63A2\u6D4B\u4E2D\u2026" : "\u63A2\u6D4B\u9875\u9762"
+        }
+      ),
+      connection && source.authKind !== "none" && !source.adapterReady && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "ac-button",
+          disabled: action.pending !== void 0,
+          onClick: askForAdapter,
+          children: "\u8BA9 Agent \u751F\u6210\u5019\u9009"
         }
       ),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
