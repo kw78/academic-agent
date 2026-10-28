@@ -1,0 +1,80 @@
+# 运维与故障排查
+
+## 1. 数据源接入流程
+
+1. 在“连接”页添加数据源，选择 engine（`fixture` / `browser-session` / `blackboard` / `declarative`）。
+2. 需要登录的 engine 选择 `browser` 登录方式；用户在 Edge/Chrome 中完成 SSO/验证码后，宿主把会话写入 DPAPI。
+3. 点击“预览同步”，确认新增/更新/未变/跳过数量和警告。
+4. 确认后点击“立即同步”；同步经 Adapter → Schema/标准化 → Connector → Kernel → Event Store。
+
+Blackboard 的配置示例、限制和真实页面结构见 [real-sources.md](real-sources.md)。声明式 Manifest 的示例见 `fixtures/declarative/`，候选流程见下文。
+
+## 2. 同步状态与错误
+
+| 状态/错误 | 含义 | 处理 |
+|---|---|---|
+| `success` | 全部读取并写入/无变化 | 无需操作 |
+| `partial` | 部分页面失败、分页/数量达到上限 | 查看 warnings；旧数据保留；缩小范围或补样本 |
+| `auth-required` | 会话过期或被平台拒绝 | 重新登录；不要无限重试 |
+| `failed` + `TRANSIENT` | 超时、网络、429/5xx 重试后仍失败 | 检查网络/平台状态后重新同步 |
+| `CONFLICT` | 同一 source 已有同步在运行 | 等待当前同步结束 |
+| `CAPABILITY_UNAVAILABLE` | engine/Adapter/planner 未加载 | 检查插件与 source 配置 |
+
+同步运行记录写入 `sync_runs`；失败不会清空已有学业数据。Adapter 对 5xx/429/超时会做一次有限重试，认证失败不重试。手动快速重复点击由 Host 的同源并发锁拒绝（`Sync already running`）。
+
+## 3. 备份、恢复与迁移
+
+- 备份：`ACADEMIC_DB=.data/academic.db npm run demo -- backup`，使用 SQLite `VACUUM INTO` 生成一致性快照。
+- 恢复：停止 Host（桌面端退出，或确保没有第二个 Host 使用同一 DB）→ 备份当前 DB → 恢复快照 → 重新启动；启动时会校验事件位置并可重建投影。
+- 迁移：`migrations/*.sql` 按编号执行；`0010_adapter_candidates.sql` 增加 Adapter 候选/激活表。升级前先备份，迁移后运行 `npm run typecheck` 与 `npm test`。
+- 不要在活跃写入时直接复制 SQLite 文件；不要同时启动两个使用同一 DB 的 Academic Host。
+
+## 4. 会话与凭据
+
+- Cookie/Token 只在 DPAPI；SQLite/事件/日志/Agent 结果中不出现明文。
+- 删除网站会话或连接凭据不会删除已同步的学业事件。
+- 会话过期：重新登录即可；旧会话不会自动续期。
+- 诊断 HTML 放在 `.data/`，查看后删除；不要把 Cookie 粘贴到聊天、Issue 或远端工具。
+
+## 5. Adapter 候选生命周期
+
+```bash
+# 离线校验：不联网，不执行生成代码
+ACADEMIC_DB=.data/academic.db npm run demo -- adapter validate manifest.json samples.json
+
+# 保存候选（报告失败也可保存为 candidate，但不可启用）
+ACADEMIC_DB=.data/academic.db npm run demo -- adapter register manifest.json samples.json
+
+# 只允许 validated 版本启用；旧版本保留用于回滚
+ACADEMIC_DB=.data/academic.db npm run demo -- adapter activate <adapterId> <version>
+ACADEMIC_DB=.data/academic.db npm run demo -- adapter rollback <adapterId> [version]
+ACADEMIC_DB=.data/academic.db npm run demo -- adapter list
+```
+
+- `samples.json` 是 `[{ "url": "https://...", "body": "..." }]`，必须覆盖 Manifest 会请求的每个 URL。
+- 候选不会自动进入同步；只有显式启用的 validated 版本会被 `engine=declarative` 使用。
+- Agent 的 `academic_validate_adapter_candidate` 只读；注册/启用需要可信宿主逐次授权。CLI 操作用户即授权者。
+- 当前只接受声明式 Manifest；不支持任意 JavaScript 生成/执行，因此没有候选代码进入主进程的路径。
+
+## 6. 可观测性与日志
+
+- 关注：最近成功同步、连续失败、`sync_runs` 错误码、Adapter warnings、未读提醒、投影位置。
+- 日志/错误消息不得包含 Cookie、Token、Authorization 或带敏感查询参数的 URL；UI 与 Agent 工具已做 URL 脱敏。
+- 诊断文件与数据库保留在本地 `.data/` 或 profile 目录；当前没有自动日志轮转，按需清理，保留期限由用户决定。
+
+## 7. 升级检查清单
+
+1. 备份数据库与 profile 配置。
+2. 固定/核对 DSH 版本（当前验证 `0.2.1-rc.3`）。
+3. `npm install` → `npm run typecheck` → `npm test`。
+4. `npm run build:dsh`、`npm run build:ui`；确认 `migrations/` 已复制到插件产物。
+5. 用独立测试数据库运行 `ACADEMIC_AGENT_SELFTEST=1 dsh academic --json "hello"`，确认 16 个工具、只读查询与写入拒绝。
+6. 桌面端重启后检查“学业”入口、Host 状态、后台作业与最近同步。
+
+## 8. 已知限制
+
+- DNS 在请求前解析并校验，但未固定解析结果；DNS rebinding 为已知残余风险。
+- Blackboard 只覆盖课程与作业区直接列出的作业；考试/测验、文件夹分页、附件、成绩未覆盖。
+- 声明式 Runtime 只支持 GET、CSS/JSON path 与 regex/trim；XPath、复杂字段转换与任意脚本沙箱未实现。
+- DSH 尚无用户审批 UI；Agent 的写入/启用工具会被拒绝，需通过 CLI 或后续审批适配器授权。
+- 本机 Desktop 占用默认数据库时，不应再启动使用同一数据库的第二个 Host。

@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**143 项测试通过**（30 个测试文件）。
+当前基线：**145 项测试通过**（31 个测试文件）。
 
 ## 分层
 
@@ -125,6 +125,13 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 - `packages/academic-adapter-runtime/test/manifest.test.ts`：Manifest Schema、版本注册/激活、HTML/JSON 字段提取、嵌套 JSON path。
 - `tests/integration/declarative.test.ts`：JSON 课程/作业/详情、作业分页、HTML CSS 提取、相对 URL、未授权响应、预览不写库、Connector/Kernel 同步与重复预览 no-op。
 - 已覆盖：允许域名、GET-only、分页上限、正则/trim、ISO/日期截止时间；XPath、字段级复杂转换和代码沙箱仍未实现。
+
+## 稳定性与运维
+
+- `tests/integration/sync-concurrency.test.ts`：同一 source 并发同步被拒绝；课程发现瞬时失败有限重试。
+- `tests/integration/blackboard.test.ts`：作业页 503 一次后重试成功；持续 5xx 保留 partial 或失败状态。
+- `tests/integration/web-sessions.test.ts`：429 映射为 `RATE_LIMITED`；超时与响应上限覆盖。
+- 备份/恢复、迁移、会话撤销、升级与故障排查见 [operations.md](operations.md)。
 
 ## AI 候选 Adapter
 
