@@ -10,6 +10,9 @@ const extractorSchema = z
     regex: z.string().min(1).max(500).optional(),
     group: z.number().int().min(0).max(20).optional(),
     trim: z.boolean().optional(),
+    type: z.enum(['string', 'number', 'boolean']).optional(),
+    default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    required: z.boolean().optional(),
   })
   .refine(
     (value) =>
@@ -20,6 +23,9 @@ const extractorSchema = z
       message: 'Each field needs exactly one of selector, path, constant or template',
     },
   )
+  .refine((value) => !value.attribute || Boolean(value.selector), {
+    message: 'attribute can only be used together with selector',
+  })
 
 const requestSchema = z.object({
   url: z.string().min(1).max(2000),

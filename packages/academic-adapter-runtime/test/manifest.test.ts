@@ -139,6 +139,80 @@ describe('declarative manifest', () => {
     })
   })
 
+  it('coerces types, applies defaults and reports missing fields', () => {
+    const manifest = parseManifest({
+      ...htmlManifest,
+      adapterId: 'conversion',
+      courses: {
+        url: '/portal.html',
+        responseType: 'html',
+        items: 'li.row',
+        fields: {
+          externalCourseId: {
+            selector: '.id',
+            attribute: 'data-id',
+            required: true,
+          },
+          title: { selector: '.title', required: true },
+          credits: { selector: '.credits', type: 'number' },
+          active: { selector: '.active', type: 'boolean' },
+          termId: { selector: '.term', default: '2026FA' },
+          note: { selector: '.note', required: true },
+        },
+      },
+    })
+    const payload = [
+      '<ul>',
+      '<li class="row"><span class="id" data-id="C1"></span><span class="title">Data</span><span class="credits">3</span><span class="active">yes</span></li>',
+      '<li class="row"><span class="id" data-id="C2"></span><span class="title">Math</span><span class="credits">n/a</span><span class="active">0</span></li>',
+      '</ul>',
+    ].join('')
+    const page = extractPage(payload, manifest.courses)
+    expect(page.rows[0]).toMatchObject({
+      externalCourseId: 'C1',
+      credits: 3,
+      active: true,
+      termId: '2026FA',
+    })
+    expect(page.rows[1]).toMatchObject({
+      externalCourseId: 'C2',
+      active: false,
+      termId: '2026FA',
+    })
+    expect(page.rows[1]?.credits).toBeUndefined()
+    expect(page.diagnostics).toEqual(
+      expect.arrayContaining([
+        { field: 'credits', missing: 0, invalid: 1 },
+        { field: 'note', missing: 2, invalid: 0 },
+      ]),
+    )
+  })
+
+  it('turns invalid selectors into controlled errors', () => {
+    const manifest = parseManifest({
+      ...htmlManifest,
+      adapterId: 'bad-selector',
+      courses: { ...htmlManifest.courses, items: 'li[' },
+    })
+    expect(() => extractPage('<ul></ul>', manifest.courses)).toThrow(/条目选择器/)
+
+    const fieldSelector = parseManifest({
+      ...htmlManifest,
+      adapterId: 'bad-field-selector',
+      courses: {
+        ...htmlManifest.courses,
+        fields: {
+          externalCourseId: { selector: 'a[' },
+          code: { selector: '.code' },
+          title: { selector: '.title' },
+        },
+      },
+    })
+    expect(() => extractPage(fixture('portal.html'), fieldSelector.courses)).toThrow(
+      /字段选择器/,
+    )
+  })
+
   it('rejects unsafe regex, encodes template values and caps extracted rows', () => {
     expect(regexSafetyError('(a+)+')).toBeTruthy()
     expect(regexSafetyError('(.*)*')).toBeTruthy()

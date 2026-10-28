@@ -31,7 +31,12 @@ import {
   type ResolveHost,
   type WebCookie,
 } from '@academic/web-sessions'
-import { extractPage, readJsonPath, regexSafetyError } from './extract.js'
+import {
+  extractPage,
+  readJsonPath,
+  regexSafetyError,
+  type FieldDiagnostic,
+} from './extract.js'
 import {
   ManifestRegistry,
   parseManifest,
@@ -99,6 +104,39 @@ export function renderManifestUrl(
   baseUrl: string,
 ): string {
   return absoluteUrl(renderTemplate(template, vars), baseUrl)
+}
+
+const STRUCTURAL_REQUIRED_FIELDS = new Set([
+  'externalCourseId',
+  'externalItemId',
+  'title',
+])
+
+function diagnosticWarnings(
+  label: string,
+  request: ManifestRequest,
+  diagnostics: FieldDiagnostic[],
+  rowCount: number,
+): string[] {
+  const warnings: string[] = []
+  for (const diagnostic of diagnostics) {
+    const required =
+      request.fields[diagnostic.field]?.required === true ||
+      STRUCTURAL_REQUIRED_FIELDS.has(diagnostic.field)
+    if (diagnostic.invalid > 0) {
+      warnings.push(
+        `${label}有 ${diagnostic.invalid} 行字段「${diagnostic.field}」类型转换失败`,
+      )
+    }
+    if (diagnostic.missing > 0 && required) {
+      warnings.push(
+        diagnostic.missing === rowCount
+          ? `${label}的所有行都缺少必需字段「${diagnostic.field}」；页面结构可能已变化`
+          : `${label}有 ${diagnostic.missing} 行缺少必需字段「${diagnostic.field}」`,
+      )
+    }
+  }
+  return warnings
 }
 
 function parseDue(
@@ -274,25 +312,47 @@ class ManifestClient {
   async loadRows(
     request: ManifestRequest,
     vars: Row,
-  ): Promise<{ rows: Row[]; complete: boolean }> {
+  ): Promise<{
+    rows: Row[]
+    complete: boolean
+    diagnostics: FieldDiagnostic[]
+  }> {
     const maxPages = request.maxPages ?? 1
     const rows: Row[] = []
+    const diagnostics = new Map<string, FieldDiagnostic>()
+    const collect = (page: FieldDiagnostic[]): void => {
+      for (const entry of page) {
+        const existing = diagnostics.get(entry.field)
+        if (existing) {
+          existing.missing += entry.missing
+          existing.invalid += entry.invalid
+        } else {
+          diagnostics.set(entry.field, { ...entry })
+        }
+      }
+    }
+    const result = (complete: boolean) => ({
+      rows,
+      complete,
+      diagnostics: [...diagnostics.values()],
+    })
     let currentUrl = renderManifestUrl(request.url, vars, this.#baseUrl)
     for (let page = 0; page < maxPages; page += 1) {
       const body = await this.get(currentUrl)
       const extracted = extractPage(body, request)
+      collect(extracted.diagnostics)
       const remaining = MAX_TOTAL_ROWS - rows.length
       if (extracted.rows.length > remaining) {
         rows.push(...extracted.rows.slice(0, Math.max(0, remaining)))
-        return { rows, complete: false }
+        return result(false)
       }
       rows.push(...extracted.rows)
-      if (extracted.truncated) return { rows, complete: false }
-      if (!extracted.next) return { rows, complete: true }
-      if (page + 1 >= maxPages) return { rows, complete: false }
+      if (extracted.truncated) return result(false)
+      if (!extracted.next) return result(true)
+      if (page + 1 >= maxPages) return result(false)
       currentUrl = absoluteUrl(extracted.next, currentUrl)
     }
-    return { rows, complete: true }
+    return result(true)
   }
 
   async delay(): Promise<void> {
@@ -348,6 +408,14 @@ class ManifestAdapter implements AcademicSourceAdapter {
     const warnings: string[] = []
     const loaded = await client.loadRows(this.#manifest.courses, {})
     if (!loaded.complete) warnings.push('课程列表达到分页上限')
+    warnings.push(
+      ...diagnosticWarnings(
+        '课程列表',
+        this.#manifest.courses,
+        loaded.diagnostics,
+        loaded.rows.length,
+      ),
+    )
     const terms = this.#config.termFilter?.map((term) => term.toUpperCase())
     const filters = this.#config.courseFilter?.map((value) => value.toLowerCase())
     const courses: Array<Row & {
@@ -423,6 +491,14 @@ class ManifestAdapter implements AcademicSourceAdapter {
         warnings.push(`课程「${course.title}」作业分页达到上限`)
         partial = true
       }
+      warnings.push(
+        ...diagnosticWarnings(
+          `课程「${course.title}」作业列表`,
+          this.#manifest.assignments,
+          assignments.diagnostics,
+          assignments.rows.length,
+        ),
+      )
       for (const assignment of assignments.rows) {
         if (items.length >= maxAssignments) {
           truncatedAssignments = true
@@ -447,6 +523,15 @@ class ManifestAdapter implements AcademicSourceAdapter {
             if (!loaded.rows[0]) {
               warnings.push(`作业「${title}」详情为空`)
               partial = true
+            } else {
+              warnings.push(
+                ...diagnosticWarnings(
+                  `作业「${title}」详情`,
+                  this.#manifest.detail,
+                  loaded.diagnostics,
+                  loaded.rows.length,
+                ),
+              )
             }
           } catch (error) {
             if (error instanceof AdapterAuthError) throw error

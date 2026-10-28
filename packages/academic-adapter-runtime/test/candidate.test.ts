@@ -108,6 +108,32 @@ describe('adapter candidate replay and registry', () => {
     expect(incomplete.errors.join(' ')).toMatch(/未完整|失败/)
   })
 
+  it('reports structure degradation when required fields disappear', async () => {
+    const brokenSamples = samples().map((sample) =>
+      sample.url.endsWith('/api/courses')
+        ? {
+            ...sample,
+            body: JSON.stringify({
+              data: [{ id: 'C1', code: 'CS101', term: '2026FA' }],
+            }),
+          }
+        : sample,
+    )
+    const broken = {
+      ...manifest,
+      courses: {
+        ...manifest.courses,
+        fields: {
+          ...manifest.courses.fields,
+          title: { ...manifest.courses.fields.title, required: true },
+        },
+      },
+    }
+    const report = await replayManifest(broken, brokenSamples)
+    expect(report.ok).toBe(false)
+    expect(report.warnings.join(' ')).toMatch(/页面结构可能已变化/)
+  })
+
   it('rejects unsafe regex and HTTP manifests before any replay', async () => {
     const unsafeRegex = {
       ...manifest,
