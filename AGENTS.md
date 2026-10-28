@@ -154,6 +154,8 @@ docs/adr/                      # 架构决策记录
 
 首个真实平台只读 Adapter 已落地在 `adapters/ustc-blackboard`：只读取课程和作业，不提交作业；`engine=blackboard` 复用通用浏览器登录/会话，解析器有脱敏 fixture 与真实页面验证。考试/测验、文件夹分页、附件与成绩尚未覆盖，不得声称已完整同步 Blackboard。
 
+声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、分页、字段映射、允许域名、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选生成/审批流水线属于 M4，尚未完成。
+
 架构测试矩阵进度：
 
 | 编号 | 状态 | 覆盖位置 |
@@ -179,7 +181,7 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（129 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（136 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 

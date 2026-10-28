@@ -103,7 +103,7 @@ npm test
 - `tests/integration/ui-api.test.ts`：Query API 读取、Command API 任务变更、候选/确认分离、防篡改确认、凭据引用不泄露、未支持 Adapter 拒绝认证、输入校验、作业暂停/恢复、可用时间与提醒设置、通知已读、同步结果。
 - `tests/integration/web-sessions.test.ts`、`source-browser.test.ts`：Cookie 作用域、逐跳重定向、SSRF、超时与流式响应上限。
 
-当前基线：129 项测试通过（26 个测试文件）。
+当前基线：136 项测试通过（28 个测试文件）。
 
 ## 未完成/未验证
 

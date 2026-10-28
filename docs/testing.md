@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**129 项测试通过**（26 个测试文件）。
+当前基线：**136 项测试通过**（28 个测试文件）。
 
 ## 分层
 
@@ -119,6 +119,12 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 
 - `tests/integration/ui-api.test.ts` 覆盖：未传 ID 时返回生成的 `sourceId`；拒绝 engine 不支持的 `authKind` / `loginMode`；engine 配置校验失败返回 `VALIDATION`；配置、认证、同步健康与 Adapter 就绪度分别返回，fixture 同步后为 `connected/healthy`，browser-session 未登录为 `missing/never-synced`。
 - `tests/unit/ui-view.test.ts` 覆盖各维度标签与颜色语义。
+
+## 声明式 Adapter
+
+- `packages/academic-adapter-runtime/test/manifest.test.ts`：Manifest Schema、版本注册/激活、HTML/JSON 字段提取、嵌套 JSON path。
+- `tests/integration/declarative.test.ts`：JSON 课程/作业/详情、作业分页、HTML CSS 提取、相对 URL、未授权响应、预览不写库、Connector/Kernel 同步与重复预览 no-op。
+- 已覆盖：允许域名、GET-only、分页上限、正则/trim、ISO/日期截止时间；XPath、字段级复杂转换和代码沙箱仍未实现。
 
 ## Blackboard 只读切片
 
