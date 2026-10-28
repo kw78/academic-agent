@@ -226,14 +226,13 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 
 ## 已知限制与后续
 
-- **M0 剩余**：profile 级 HMR、真实 Session 生命周期、通用 Agent 写审批适配器（当前 Agent 写入仍需可信授权）。
-- **R4 未完成**：真实 DSH Session 生命周期与文件级 HMR 仍需在实际桌面进程手工验收；真实平台接入状态详见 [docs/real-sources.md](docs/real-sources.md)。
+- **Gate 0/2–6 已完成**：类型检查、156 项测试、构建、DSH selftest、DSH Web UI 独立库同步、真实 BB/JW 平台闭环均已实测；详见 [docs/mvp-verification.md](docs/mvp-verification.md)。
+- **Gate 1 剩余**：DSH Web 已验证 UI/Host/同步；DSH Desktop 本轮未重复手工复核，需要用户打开桌面端执行一次刷新与插件禁用/启用。
 - 系统凭据库当前为 Windows DPAPI；Credential Manager/其他 OS vault 是后续可替换实现。
 - **接入流程**：给定 HTTPS 网址后可登录、验证、只读探测；Agent 可基于探测证据生成声明式 Manifest 候选，用户在“连接”页验证、启用/回滚。仍未实现任意站点全自动生成或任意 JavaScript。
-- **M4 剩余**：真实 DSH Session 与文件级 HMR 手工验收；更完整的故障注入扩展。性能基线（1000 事项）与备份恢复演练已记录在 docs/operations.md。
 - 真实 Blackboard 只读同步已接入并验证课程/作业/文件夹；当前账号无测试项样本，考试/测验仍以 fixture 验证。
-- **M6**：USTC 综合教务系统用 Manifest 真实同步考试表（1 门课程/1 个考试，重复同步 no-op）；课表、成绩、作业未覆盖，平台无 ICS 订阅，Manifest 暂不支持 XML。
-- Desktop profile 已安装 `@academic/dsh-plugin` 与 `@academic/dsh-ui`；DSH `web` profile 未改动。
+- **第二平台**：USTC 综合教务系统用 Manifest 真实同步考试表（1 门课程/1 个考试，重复同步 no-op）；课表、成绩、作业未覆盖，平台无 ICS 订阅，Manifest 暂不支持 XML。
+- Desktop profile 已安装 `@academic/dsh-plugin` 与 `@academic/dsh-ui`；`academic-web` profile 已用独立数据库实测。
 - `node:sqlite` 为实验性 API，升级 Node/DSH 时需重新验证。
 
 ## 测试

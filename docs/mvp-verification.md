@@ -13,11 +13,16 @@
 | UI 构建 | `npm run build:ui` | 通过 |
 | DSH 自测 | `ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=.data/dsh-academic.db dsh academic --json "hello"` | 通过：host/planner/tools 加载，`tools=17 registered=true`，只读查询成功，未授权写入 `FORBIDDEN` |
 
-## Gate 1 — 桌面端
+## Gate 1 — 桌面端可启动、可操作
 
+本轮实际执行：
+
+- 用独立数据库 `.data/mvp-web.db` 启动 `academic-web` profile，确认 Academic Host、planner、tools（17 个）加载。
+- 在真实 DSH Web UI 打开“学业”，显示“Host 已连接”；连接页显示快速添加平台、数据源状态、Adapter 候选、网站登录和同步记录。
+- 在 UI 对 Fixture LMS 点击“立即同步”，Host 执行成功，课程 CS101 出现、同步记录成功（2 抓取/2 新增/0 更新）。
 - 此前已实测 Desktop profile 加载 UI/Host、创建默认数据库与 3 个后台作业、禁用/启用 UI 后入口恢复且不重复创建资源。
-- **本轮未重复启动 DSH Desktop 手工验收**；原因是避免与桌面默认数据库产生第二个 Host。需要用户在桌面端重新执行一次“打开学业面板 → 刷新 → 禁用/启用插件”。
-- DSH Web/Cordis 生命周期自动化测试仍通过。
+
+未完成：**本轮未重复启动 DSH Desktop 手工验收**。CLI 无法启动 desktop profile（Electron 独占管理），且默认库可能被桌面占用；需要用户在桌面端执行一次“打开学业面板 → 刷新 → 禁用/启用插件”。DSH Web 的 UI/Host 实测不能替代 Desktop 验收。
 
 ## Gate 2 — 登录与会话
 
