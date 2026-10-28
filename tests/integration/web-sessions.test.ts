@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it } from 'vitest'
 import { InMemoryCredentialVault } from '@academic/connections'
 import {
@@ -327,6 +328,27 @@ describe('safe session fetch', () => {
         allowedPathPrefixes: ['/app'],
       }),
     ).toMatchObject({ code: 'UNSAFE_PATH' })
+  })
+
+  it('requests identity encoding and decodes gzip responses', async () => {
+    let acceptEncoding: string | undefined
+    const compressed = gzipSync(Buffer.from('<html>课程</html>'))
+    const result = await safeFetch('https://public.example.com/', {
+      allowedHosts: ['example.com'],
+      resolveHost: publicResolver,
+      requestImpl: async (_url, init) => {
+        acceptEncoding = init.headers['Accept-Encoding']
+        return new Response(compressed, {
+          status: 200,
+          headers: {
+            'content-encoding': 'gzip',
+            'content-type': 'text/html; charset=utf-8',
+          },
+        })
+      },
+    })
+    expect(acceptEncoding).toBe('identity')
+    expect(result.body).toContain('课程')
   })
 
   it('caps response bytes and times out slow requests', async () => {

@@ -463,7 +463,24 @@ async function readBody(
     }
   }
 
-  const reader = response.body.getReader()
+  const encoding = response.headers.get('content-encoding')?.trim().toLowerCase()
+  let stream = response.body
+  try {
+    if (encoding === 'gzip' || encoding === 'x-gzip') {
+      stream = stream.pipeThrough(new DecompressionStream('gzip'))
+    } else if (encoding === 'deflate') {
+      stream = stream.pipeThrough(new DecompressionStream('deflate'))
+    }
+  } catch (error) {
+    throw new SafeFetchError(
+      'NETWORK',
+      `响应解压失败：${sanitizeErrorText(
+        error instanceof Error ? error.message : String(error),
+      )}`,
+    )
+  }
+
+  const reader = stream.getReader()
   const decoder = new TextDecoder()
   let text = ''
   let bytes = 0
@@ -564,6 +581,7 @@ export async function safeFetch(
             headers: {
               Accept:
                 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+              'Accept-Encoding': 'identity',
               ...(cookie ? { Cookie: cookie } : {}),
             },
             signal: controller.signal,
