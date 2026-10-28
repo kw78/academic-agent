@@ -26852,7 +26852,7 @@ var ProbeRateLimiter = class {
   #sleep;
   #last = /* @__PURE__ */ new Map();
   constructor(options = {}) {
-    this.#minIntervalMs = options.minIntervalMs ?? 3e4;
+    this.#minIntervalMs = options.minIntervalMs ?? 2e4;
     this.#now = options.now ?? (() => Date.now());
     this.#sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   }
