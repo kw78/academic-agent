@@ -14,6 +14,7 @@ import {
   type ReplanRequestPort,
   type SourceConfigStoreApi,
   type SourceEngineRegistryApi,
+  type SourceProbeEvidence,
   type AdapterCandidatePort,
 } from '@academic/contracts'
 
@@ -25,6 +26,7 @@ export type ToolFailureCode =
   | 'CAPABILITY_UNAVAILABLE'
   | 'CONFLICT'
   | 'UNAVAILABLE'
+  | 'AUTH_REQUIRED'
 
 export type ToolResult =
   | { ok: true; data: unknown }
@@ -64,6 +66,7 @@ export interface AcademicToolDependencies {
   sourceEngines?: SourceEngineRegistryApi
   webSessions?: WebSessionStore
   adapterCandidates?: AdapterCandidatePort
+  probeSource?: (sourceId: string) => Promise<SourceProbeEvidence>
 }
 
 export const ACADEMIC_TOOL_NAMES = {
@@ -73,6 +76,7 @@ export const ACADEMIC_TOOL_NAMES = {
   GetStudyPlan: 'academic_get_study_plan',
   ListSources: 'academic_list_sources',
   ListSourceEngines: 'academic_list_source_engines',
+  ProbeSource: 'academic_probe_source',
   CreateSource: 'academic_create_source',
   ListWebSessions: 'academic_list_web_sessions',
   FetchWebSession: 'academic_fetch_web_session',
@@ -397,6 +401,26 @@ export function createAcademicTools(
                 engines: dependencies.sourceEngines!.list().map((engine) => engine.descriptor),
               }),
           ),
+
+          ...(dependencies.probeSource
+            ? [
+                defineTool(
+                  ACADEMIC_TOOL_NAMES.ProbeSource,
+                  'Read one authorized page from a saved session and return sanitized evidence (title, headings, links, forms). Read-only; never returns cookies or URL query strings.',
+                  z.object({ sourceId: z.string().min(1).max(200) }),
+                  async (input) => {
+                    const evidence = await dependencies.probeSource!(input.sourceId)
+                    if (evidence.loginLike) {
+                      return failure(
+                        'AUTH_REQUIRED',
+                        'Session appears expired; the user must log in again.',
+                      )
+                    }
+                    return success({ evidence })
+                  },
+                ),
+              ]
+            : []),
 
           defineTool(
             ACADEMIC_TOOL_NAMES.CreateSource,

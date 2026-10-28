@@ -136,6 +136,33 @@ export interface SourceEngineRegistryApi {
   list(): SourceEngine[]
 }
 
+export interface SourceProbeLink {
+  text: string
+  url: string
+}
+
+/** Sanitized read-only evidence for onboarding and adapter candidates. */
+export interface SourceProbeEvidence {
+  sourceId: string
+  url: string
+  finalUrl: string
+  status: number
+  title?: string
+  contentType?: string
+  bytes: number
+  truncated: boolean
+  headings: string[]
+  links: SourceProbeLink[]
+  paginationLinks: SourceProbeLink[]
+  formCount: number
+  tableCount: number
+  jsonPreview?: string
+  jsonShape?: string
+  loginLike: boolean
+  warnings: string[]
+  probedAt: string
+}
+
 export class SourceEngineRegistry implements SourceEngineRegistryApi {
   readonly #engines = new Map<string, SourceEngine>()
 

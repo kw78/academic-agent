@@ -26,6 +26,7 @@ import {
   type Range,
   type ReplanReason,
   type SourceEngine,
+  type SourceProbeEvidence,
   type StudyPlanView,
   type SyncPreview,
   type SyncRunSummary,
@@ -35,8 +36,11 @@ import {
   createDefaultCredentialVault,
   type CredentialVault,
 } from '@academic/connections'
-import { SourceConfigStore } from '@academic/sources'
-import { WebSessionStore } from '@academic/web-sessions'
+import { SourceConfigStore, probeSourcePage } from '@academic/sources'
+import {
+  WebSessionStore,
+  type ResolveHost,
+} from '@academic/web-sessions'
 import { createBrowserSessionEngine } from '@academic/source-browser'
 import {
   DEFAULT_FIXTURE_COURSE,
@@ -135,6 +139,9 @@ export interface AcademicAppOptions {
   /** Additional vendor-neutral engines (tests or reviewed extensions). */
   sourceEngines?: SourceEngine[]
   manifestRegistry?: ManifestRegistry
+  /** Test seams for the read-only source probe. */
+  probeFetch?: typeof fetch
+  probeResolveHost?: ResolveHost
 }
 
 export interface AutomationStatus {
@@ -203,6 +210,7 @@ export interface AcademicApp {
     connectionId: string,
     adapter: AcademicSourceAdapter,
   ): Promise<SyncRunSummary>
+  probeSource(sourceId: string): Promise<SourceProbeEvidence>
   previewSourceSync(sourceId: string, connectionId?: string): Promise<SyncPreview>
   syncSource(sourceId: string, connectionId?: string): Promise<SyncRunSummary>
   previewPlan(
@@ -412,6 +420,38 @@ export async function createAcademicApp(
     config: {},
   })
 
+  const probeSourceById = async (
+    sourceId: string,
+  ): Promise<SourceProbeEvidence> => {
+    const source = sources.get(sourceId)
+    if (!source || source.archived) {
+      throw new CapabilityUnavailableError(`source.${sourceId}`)
+    }
+    if (source.authKind === 'none') {
+      throw new CapabilityUnavailableError(`source.session.${sourceId}`)
+    }
+    const connection = connections
+      .list()
+      .find((entry) => entry.sourceId === sourceId)
+    if (!connection) {
+      throw new CapabilityUnavailableError(`source.session.${sourceId}`)
+    }
+    const credentials = await connections.openCredential(
+      connection.connectionId,
+      sourceId,
+    )
+    return probeSourcePage({
+      sourceId,
+      config: source.config,
+      secret: await credentials.getSecret(),
+      probedAt: clock.now(),
+      ...(options.probeFetch ? { fetchImpl: options.probeFetch } : {}),
+      ...(options.probeResolveHost
+        ? { resolveHost: options.probeResolveHost }
+        : {}),
+    })
+  }
+
   const host = new InMemoryToolHost()
   const agentRegistration = registerAcademicTools(host, {
     queries: store.queries,
@@ -423,6 +463,7 @@ export async function createAcademicApp(
     sourceEngines,
     webSessions,
     adapterCandidates,
+    probeSource: probeSourceById,
     allowWrites: options.agentWrites ?? false,
     ...(options.authorizeAgentWrite
       ? { authorizeWrite: options.authorizeAgentWrite }
@@ -677,6 +718,8 @@ export async function createAcademicApp(
       await dispatcher.processOnce()
       return summary
     },
+
+    probeSource: probeSourceById,
 
     async previewSourceSync(sourceId, connectionId) {
       const source = sources.get(sourceId)

@@ -340,3 +340,9 @@ export class SourceConfigStore implements SourceConfigStoreApi {
     }
   }
 }
+
+export {
+  probeSourcePage,
+  probeUrlFor,
+  type ProbeSourcePageInput,
+} from './probe.js'

@@ -110,6 +110,19 @@ const TOOL_SPECS: ToolSpec[] = [
     write: false,
   },
   {
+    name: ACADEMIC_TOOL_NAMES.ProbeSource,
+    description:
+      'Read one authorized page from a saved source session and return sanitized evidence (title, headings, links, forms) for adapter candidates. Read-only; never returns cookies or URL query strings.',
+    parameters: {
+      sourceId: {
+        type: 'string',
+        required: true,
+        description: 'Source id with a saved session',
+      },
+    },
+    write: false,
+  },
+  {
     name: ACADEMIC_TOOL_NAMES.CreateSource,
     description:
       'Create a database-backed source definition from a known engine and non-secret JSON config. Write; requires trusted host approval. Cannot install code.',
