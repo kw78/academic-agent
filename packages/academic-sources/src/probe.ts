@@ -70,12 +70,20 @@ function loginLikePage(
   finalUrl: string,
   body: string,
   patterns: unknown,
+  contentType?: string,
 ): boolean {
   if (/\/login|\/signin|\/cas\/login/i.test(finalUrl)) return true
+  // JS/JSON bundles commonly contain route strings such as "/login"; matching
+  // their body would turn a healthy asset into a false AUTH_REQUIRED.
+  const isHtml =
+    contentType === undefined ||
+    contentType.toLowerCase().includes('html')
+  if (!isHtml) return false
   const title = plainText(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(body)?.[1] ?? '')
   if (/登录|sign in|log in/i.test(title)) return true
   if (!Array.isArray(patterns)) return false
-  const haystack = `${finalUrl}\n${body.slice(0, 20_000)}`
+  // Patterns are URL/title hints, not arbitrary body grep rules.
+  const haystack = `${finalUrl}\n${title}`
   return patterns.some((pattern) => {
     if (typeof pattern !== 'string') return false
     try {
@@ -337,7 +345,12 @@ export function buildEvidence(
     ...(contentType?.includes('json') && jsonShapeText
       ? { jsonShape: jsonShapeText }
       : {}),
-    loginLike: loginLikePage(result.finalUrl, result.body, patterns),
+    loginLike: loginLikePage(
+      result.finalUrl,
+      result.body,
+      patterns,
+      result.contentType,
+    ),
     warnings: result.truncated ? ['响应超过大小上限，仅分析前 512KB'] : [],
     probedAt,
     digest: createHash('sha256').update(result.body).digest('hex'),

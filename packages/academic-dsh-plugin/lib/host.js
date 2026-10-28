@@ -26534,13 +26534,15 @@ function cookiesFromSecret(secret) {
   }
   return parsed.cookies;
 }
-function loginLikePage(finalUrl, body, patterns) {
+function loginLikePage(finalUrl, body, patterns, contentType) {
   if (/\/login|\/signin|\/cas\/login/i.test(finalUrl)) return true;
+  const isHtml = contentType === void 0 || contentType.toLowerCase().includes("html");
+  if (!isHtml) return false;
   const title = plainText(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(body)?.[1] ?? "");
   if (/登录|sign in|log in/i.test(title)) return true;
   if (!Array.isArray(patterns)) return false;
   const haystack = `${finalUrl}
-${body.slice(0, 2e4)}`;
+${title}`;
   return patterns.some((pattern) => {
     if (typeof pattern !== "string") return false;
     try {
@@ -26758,7 +26760,12 @@ ${match[2] ?? ""}`;
     formCount: (result.body.match(/<form\b/gi) ?? []).length,
     tableCount: (result.body.match(/<table\b/gi) ?? []).length,
     ...contentType?.includes("json") && jsonShapeText ? { jsonShape: jsonShapeText } : {},
-    loginLike: loginLikePage(result.finalUrl, result.body, patterns),
+    loginLike: loginLikePage(
+      result.finalUrl,
+      result.body,
+      patterns,
+      result.contentType
+    ),
     warnings: result.truncated ? ["\u54CD\u5E94\u8D85\u8FC7\u5927\u5C0F\u4E0A\u9650\uFF0C\u4EC5\u5206\u6790\u524D 512KB"] : [],
     probedAt,
     digest: createHash3("sha256").update(result.body).digest("hex")

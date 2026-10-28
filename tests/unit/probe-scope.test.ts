@@ -49,6 +49,49 @@ describe('source probe host scope', () => {
     expect(calls).toBe(0)
   })
 
+  it('does not treat a JS bundle containing /login as a login page', async () => {
+    const fetchImpl = (async () =>
+      new Response('const route = "/login"; const api = "/api/courses";', {
+        status: 200,
+        headers: { 'content-type': 'application/javascript' },
+      })) as typeof fetch
+    const evidence = await probeSourcePage({
+      sourceId: 'source-1',
+      config: {
+        ...config(),
+        loggedOutPatterns: ['/login'],
+      },
+      secret: secret(),
+      probedAt: '2026-10-28T10:00:00.000Z',
+      url: 'https://i.chaoxing.com/app.js',
+      fetchImpl,
+      resolveHost: publicAddress,
+    })
+    expect(evidence.loginLike).toBe(false)
+    expect(evidence.endpointCandidates.some((link) => link.url.includes('/api/courses'))).toBe(true)
+  })
+
+  it('still detects an HTML login page by title', async () => {
+    const fetchImpl = (async () =>
+      new Response('<html><head><title>统一身份登录</title></head><body></body></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      })) as typeof fetch
+    const evidence = await probeSourcePage({
+      sourceId: 'source-1',
+      config: {
+        ...config(),
+        loggedOutPatterns: ['/login'],
+      },
+      secret: secret(),
+      probedAt: '2026-10-28T10:00:00.000Z',
+      url: 'https://i.chaoxing.com/page',
+      fetchImpl,
+      resolveHost: publicAddress,
+    })
+    expect(evidence.loginLike).toBe(true)
+  })
+
   it('crawls a bounded section without leaving the allowed host or path prefix', async () => {
     const urls: string[] = []
     const fetchImpl = (async (input: string | URL | Request) => {
