@@ -19987,6 +19987,7 @@ var ACADEMIC_TOOL_NAMES = {
   GetStudyPlan: "academic_get_study_plan",
   ListSources: "academic_list_sources",
   ListSourceEngines: "academic_list_source_engines",
+  ProbeSource: "academic_probe_source",
   CreateSource: "academic_create_source",
   ListWebSessions: "academic_list_web_sessions",
   FetchWebSession: "academic_fetch_web_session",
@@ -20157,6 +20158,18 @@ var TOOL_SPECS = [
     name: ACADEMIC_TOOL_NAMES.ListSourceEngines,
     description: "List generic source engines available in this Host. Read-only.",
     parameters: {},
+    write: false
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.ProbeSource,
+    description: "Read one authorized page from a saved source session and return sanitized evidence (title, headings, links, forms) for adapter candidates. Read-only; never returns cookies or URL query strings.",
+    parameters: {
+      sourceId: {
+        type: "string",
+        required: true,
+        description: "Source id with a saved session"
+      }
+    },
     write: false
   },
   {

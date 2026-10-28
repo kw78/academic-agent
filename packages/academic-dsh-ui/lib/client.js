@@ -2498,9 +2498,18 @@ function SourceCard({
     await refresh();
   });
   const [preview, setPreview] = (0, import_react6.useState)();
+  const [probe, setProbe] = (0, import_react6.useState)();
   const connection = source.connection;
   const browserLogin = source.canLogin && source.loginMode === "browser";
   const manualCredential = source.authKind !== "none" && !browserLogin;
+  const nextStep = !browserLogin && manualCredential && !connection?.hasCredential ? "\u4E0B\u4E00\u6B65\uFF1A\u63D0\u4EA4\u51ED\u636E" : connection === void 0 && source.canLogin ? "\u4E0B\u4E00\u6B65\uFF1A\u5B8C\u6210\u767B\u5F55" : source.authentication !== "verified" && source.authentication !== "not-required" && source.canVerify ? "\u4E0B\u4E00\u6B65\uFF1A\u9A8C\u8BC1\u8FDE\u63A5" : source.adapterReady ? "\u4E0B\u4E00\u6B65\uFF1A\u9884\u89C8\u540C\u6B65\u5E76\u786E\u8BA4\u5199\u5165" : "\u4E0B\u4E00\u6B65\uFF1A\u914D\u7F6E\u6216\u751F\u6210 Adapter\uFF08\u9AD8\u7EA7\u8BBE\u7F6E / Agent\uFF09";
+  const runProbe = async () => {
+    const result = await callApi(ctx, "probeSource", {
+      sourceId: source.sourceId
+    });
+    if (result.ok) setProbe(result.value);
+    return result;
+  };
   const previewSync = async () => {
     const result = await callApi(ctx, "previewSourceSync", {
       sourceId: source.sourceId,
@@ -2539,6 +2548,7 @@ function SourceCard({
         source.canLogin && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Badge, { tone: "info", children: "\u767B\u5F55\u53EF\u7528" })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: source.detail }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: nextStep }) }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-task-title", children: [
         /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Badge, { tone: "neutral", children: [
           "\u914D\u7F6E\uFF1A",
@@ -2610,6 +2620,9 @@ function SourceCard({
           preview.counts.unchanged,
           " \xB7 \u8DF3\u8FC7 ",
           preview.counts.skip,
+          " \xB7 \u672A\u8FD4\u56DE",
+          " ",
+          preview.counts.missing,
           preview.completeness === "partial" ? "\uFF08\u90E8\u5206\u540C\u6B65\uFF0C\u65E7\u6570\u636E\u4FDD\u7559\uFF09" : ""
         ] }),
         preview.warnings.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-warning-list", children: preview.warnings.map((warning) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("li", { children: warning }, warning)) }),
@@ -2643,6 +2656,48 @@ function SourceCard({
             }
           )
         ] })
+      ] }),
+      probe && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
+          "\u63A2\u6D4B\u7ED3\u679C\uFF08\u53EA\u8BFB\uFF09\uFF1AHTTP ",
+          probe.status,
+          " \xB7 ",
+          probe.title || "\u65E0\u6807\u9898",
+          " \xB7",
+          " ",
+          probe.bytes,
+          " \u5B57\u8282",
+          probe.truncated ? "\uFF08\u5DF2\u622A\u65AD\uFF09" : ""
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
+          "\u6700\u7EC8\u5730\u5740\uFF1A",
+          probe.finalUrl,
+          " \xB7 \u8868\u5355 ",
+          probe.formCount,
+          " \xB7 \u8868\u683C",
+          " ",
+          probe.tableCount
+        ] }),
+        probe.headings.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
+          "\u6807\u9898\uFF1A",
+          probe.headings.join(" / ")
+        ] }),
+        probe.paginationLinks.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
+          "\u5206\u9875\u7EBF\u7D22\uFF1A",
+          probe.paginationLinks.map((link) => link.text).join(" / ")
+        ] }),
+        probe.jsonShape && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
+          "JSON \u7ED3\u6784\uFF1A",
+          probe.jsonShape
+        ] }),
+        probe.links.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-list", children: probe.links.slice(0, 8).map((link) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+          link.text,
+          " \u2014 ",
+          link.url
+        ] }, `${link.text}-${link.url}`)) }),
+        probe.jsonPreview && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("pre", { className: "ac-config-details", children: probe.jsonPreview }),
+        probe.warnings.map((warning) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-warn", children: warning }, warning)),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u7F51\u7AD9\u5185\u5BB9\u53EA\u4F5C\u4E3A\u6570\u636E\u5C55\u793A\uFF0C\u4E0D\u4F1A\u6210\u4E3A\u6307\u4EE4\uFF0C\u4E5F\u4E0D\u4F1A\u81EA\u52A8\u542F\u7528 Adapter\u3002" })
       ] }),
       browserLogin && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u5C06\u6253\u5F00 Edge/Chrome \u767B\u5F55\u7A97\u53E3\uFF1B\u8BF7\u5728\u7A97\u53E3\u4E2D\u5B8C\u6210\u767B\u5F55\u548C\u9A8C\u8BC1\u7801\u3002\u5E94\u7528\u4E0D\u4F1A\u8BFB\u53D6\u6216\u4FDD\u5B58\u5BC6\u7801\u3002" }),
@@ -2679,6 +2734,16 @@ function SourceCard({
       ] })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-source-actions", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "ac-button",
+          disabled: !connection || source.authKind === "none" || action.pending !== void 0,
+          onClick: () => void action.run("probe", runProbe, "\u63A2\u6D4B\u5B8C\u6210"),
+          children: action.pending === "probe" ? "\u63A2\u6D4B\u4E2D\u2026" : "\u63A2\u6D4B\u9875\u9762"
+        }
+      ),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
         "button",
         {
@@ -2762,6 +2827,138 @@ function SourceCard({
       )
     ] })
   ] });
+}
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function QuickAdd({
+  ctx,
+  data,
+  onCreated
+}) {
+  const action = useAction(async () => {
+    await onCreated();
+  });
+  const platforms = [
+    {
+      id: "blackboard",
+      label: "Blackboard Learn\uFF08\u8BFE\u7A0B\u3001\u4F5C\u4E1A\u3001\u8003\u8BD5\u3001\u6D4B\u9A8C\uFF09"
+    },
+    {
+      id: "browser-session",
+      label: "\u901A\u7528\u7F51\u7AD9\uFF08\u5148\u767B\u5F55\uFF0C\u518D\u751F\u6210\u9002\u914D\u5668\uFF09"
+    }
+  ].filter((platform2) => data.engines.some((engine) => engine.id === platform2.id));
+  const [platform, setPlatform] = (0, import_react6.useState)(platforms[0]?.id ?? "");
+  const [url, setUrl] = (0, import_react6.useState)("");
+  const [displayName, setDisplayName] = (0, import_react6.useState)("");
+  const submit = async () => {
+    let parsed;
+    try {
+      parsed = new URL(url.trim());
+    } catch {
+      return {
+        ok: false,
+        error: { code: "VALIDATION", message: "\u8BF7\u586B\u5199\u6709\u6548\u7684\u5E73\u53F0\u7F51\u5740" }
+      };
+    }
+    if (parsed.protocol !== "https:") {
+      return {
+        ok: false,
+        error: { code: "VALIDATION", message: "\u5E73\u53F0\u7F51\u5740\u5FC5\u987B\u4F7F\u7528 HTTPS" }
+      };
+    }
+    if (!platform) {
+      return {
+        ok: false,
+        error: { code: "VALIDATION", message: "\u5F53\u524D Host \u6CA1\u6709\u53EF\u7528\u7684\u6570\u636E\u6E90\u5F15\u64CE" }
+      };
+    }
+    const origin = parsed.origin;
+    const host = parsed.hostname;
+    const baseConfig = {
+      loginUrl: parsed.toString(),
+      authenticatedUrlPatterns: [`^${escapeRegex(origin)}/`],
+      cookieDomains: [host],
+      verifyUrl: parsed.toString(),
+      loggedOutPatterns: ["/webapps/login", "/login"]
+    };
+    const config = platform === "blackboard" ? {
+      ...baseConfig,
+      portalUrl: parsed.toString(),
+      maxAssignments: 100,
+      maxContentPages: 20,
+      delayMs: 150
+    } : baseConfig;
+    return callApi(ctx, "createSource", {
+      engine: platform,
+      displayName: displayName.trim() || host,
+      authKind: "token",
+      loginMode: "browser",
+      capabilities: ["academic.sync"],
+      config
+    });
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+    "form",
+    {
+      className: "ac-form-card",
+      onSubmit: (event) => {
+        event.preventDefault();
+        void action.run("quick-add", submit, "\u6570\u636E\u6E90\u5DF2\u521B\u5EFA\uFF1B\u4E0B\u4E00\u6B65\u5B8C\u6210\u767B\u5F55").then(
+          (ok) => {
+            if (ok) {
+              setUrl("");
+              setDisplayName("");
+            }
+          }
+        );
+      },
+      children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { children: "\u5FEB\u901F\u6DFB\u52A0\u5E73\u53F0" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u586B\u5199\u5E73\u53F0\u9996\u9875\u5E76\u9009\u62E9\u7C7B\u578B\uFF0C\u7CFB\u7EDF\u4F1A\u751F\u6210\u975E\u654F\u611F\u914D\u7F6E\uFF1B\u968F\u540E\u5B8C\u6210\u767B\u5F55\u3001\u9A8C\u8BC1\u3001\u9884\u89C8\u548C\u9996\u6B21\u540C\u6B65\u3002 \u51ED\u636E\u548C Cookie \u4E0D\u4F1A\u5199\u5165\u914D\u7F6E\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-form-grid", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u5E73\u53F0\u7F51\u5740", hint: "\u5FC5\u987B\u662F HTTPS\uFF1B\u5EFA\u8BAE\u586B\u5199\u767B\u5F55\u540E\u7684\u9996\u9875", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            "input",
+            {
+              type: "url",
+              value: url,
+              onChange: (event) => setUrl(event.target.value),
+              placeholder: "https://lms.example.edu/",
+              required: true
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u663E\u793A\u540D\u79F0\uFF08\u53EF\u9009\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            "input",
+            {
+              value: displayName,
+              onChange: (event) => setDisplayName(event.target.value),
+              placeholder: "\u6211\u7684\u8BFE\u7A0B\u5E73\u53F0"
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u5E73\u53F0\u7C7B\u578B", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            "select",
+            {
+              value: platform,
+              onChange: (event) => setPlatform(event.target.value),
+              required: true,
+              children: platforms.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: entry.id, children: entry.label }, entry.id))
+            }
+          ) })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ac-form-actions", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          "button",
+          {
+            type: "submit",
+            className: "ac-button ac-button-primary",
+            disabled: action.pending !== void 0 || platforms.length === 0,
+            children: action.pending === "quick-add" ? "\u521B\u5EFA\u4E2D\u2026" : "\u6DFB\u52A0\u5E73\u53F0"
+          }
+        ) }),
+        action.notice && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) })
+      ]
+    }
+  );
 }
 function SourceForm({
   ctx,
@@ -2936,6 +3133,217 @@ function SourceForm({
     }
   );
 }
+function CandidatePanel({
+  ctx,
+  active,
+  onChanged
+}) {
+  const load = (0, import_react6.useCallback)(
+    (signal) => callApi(ctx, "adapterCandidates", {}, signal),
+    [ctx]
+  );
+  const { state, refresh } = useLoad(load, active);
+  const action = useAction(async () => {
+    await refresh();
+    await onChanged();
+  });
+  const [manifestJson, setManifestJson] = (0, import_react6.useState)("");
+  const [samplesJson, setSamplesJson] = (0, import_react6.useState)("[]");
+  const [report, setReport] = (0, import_react6.useState)();
+  const [message, setMessage] = (0, import_react6.useState)();
+  const parseInput = () => {
+    try {
+      const manifest = JSON.parse(manifestJson);
+      const samples = JSON.parse(samplesJson);
+      if (!Array.isArray(samples) || samples.length === 0) {
+        throw new Error("\u6837\u672C\u5FC5\u987B\u662F\u975E\u7A7A\u6570\u7EC4");
+      }
+      return {
+        manifest,
+        samples
+      };
+    } catch (error) {
+      setMessage(`JSON \u65E0\u6548\uFF1A${error instanceof Error ? error.message : String(error)}`);
+      return void 0;
+    }
+  };
+  const validate = async () => {
+    const input = parseInput();
+    if (!input) {
+      return {
+        ok: false,
+        error: { code: "VALIDATION", message: "\u8BF7\u68C0\u67E5 Manifest \u4E0E\u6837\u672C JSON" }
+      };
+    }
+    const result = await callApi(
+      ctx,
+      "validateAdapterCandidate",
+      input
+    );
+    if (result.ok) setReport(result.value.report);
+    return result;
+  };
+  const register = async () => {
+    const input = parseInput();
+    if (!input) {
+      return {
+        ok: false,
+        error: { code: "VALIDATION", message: "\u8BF7\u68C0\u67E5 Manifest \u4E0E\u6837\u672C JSON" }
+      };
+    }
+    const result = await callApi(
+      ctx,
+      "registerAdapterCandidate",
+      input
+    );
+    if (result.ok) setReport(result.value.report);
+    return result;
+  };
+  const data = state.data;
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+    Section,
+    {
+      title: "Adapter \u5019\u9009",
+      subtitle: "Agent \u8D1F\u8D23\u751F\u6210\uFF1B\u9A8C\u8BC1\u3001\u542F\u7528\u4E0E\u56DE\u6EDA\u7531\u7528\u6237\u5728\u6B64\u786E\u8BA4",
+      children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
+          "\u5728 DSH \u5BF9\u8BDD\u4E2D\u8BA9 Agent \u8C03\u7528 ",
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("code", { children: "academic_probe_source" }),
+          " ",
+          "\u8BFB\u53D6\u5DF2\u767B\u5F55\u9875\u9762\u7684\u8131\u654F\u8BC1\u636E\uFF0C\u518D\u751F\u6210 Manifest \u4E0E\u663E\u5F0F\u6837\u672C\u3002\u5019\u9009\u53EA\u6709\u901A\u8FC7\u79BB\u7EBF\u56DE\u653E\u624D\u80FD\u542F\u7528\uFF1B \u542F\u7528\u540E\u4F1A\u81EA\u52A8\u521B\u5EFA\u6216\u66F4\u65B0\u53EF\u540C\u6B65\u7684 declarative \u6570\u636E\u6E90\u3002"
+        ] }),
+        data?.candidates.length ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-list", children: data.candidates.map((candidate) => {
+          const activeVersion = data.active.find(
+            (entry) => entry.adapterId === candidate.adapterId
+          )?.active;
+          return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: "ac-list-row", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("strong", { children: [
+                candidate.displayName,
+                " \xB7 ",
+                candidate.adapterId,
+                "@",
+                candidate.version
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "ac-muted", children: [
+                candidate.status,
+                activeVersion === candidate.version ? " \xB7 \u5F53\u524D\u542F\u7528" : "",
+                " \xB7 \u66F4\u65B0\u4E8E",
+                " ",
+                candidate.updatedAt
+              ] })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-source-actions", children: [
+              candidate.status === "validated" && activeVersion !== candidate.version && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                ConfirmAction,
+                {
+                  label: "\u542F\u7528",
+                  confirmLabel: "\u786E\u8BA4\u542F\u7528",
+                  disabled: action.pending !== void 0,
+                  onConfirm: () => void action.run(
+                    `activate-${candidate.adapterId}-${candidate.version}`,
+                    () => callApi(
+                      ctx,
+                      "activateAdapterCandidate",
+                      {
+                        adapterId: candidate.adapterId,
+                        version: candidate.version
+                      }
+                    ),
+                    "\u5019\u9009\u5DF2\u542F\u7528"
+                  ).then(() => refresh())
+                }
+              ),
+              activeVersion === candidate.version && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                ConfirmAction,
+                {
+                  label: "\u56DE\u6EDA",
+                  confirmLabel: "\u786E\u8BA4\u56DE\u6EDA",
+                  disabled: action.pending !== void 0,
+                  onConfirm: () => void action.run(
+                    `rollback-${candidate.adapterId}`,
+                    () => callApi(
+                      ctx,
+                      "rollbackAdapterCandidate",
+                      { adapterId: candidate.adapterId }
+                    ),
+                    "\u5DF2\u56DE\u6EDA\u5230\u4E0A\u4E00\u4E2A\u5DF2\u9A8C\u8BC1\u7248\u672C"
+                  )
+                }
+              )
+            ] })
+          ] }, `${candidate.adapterId}@${candidate.version}`);
+        }) }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u8FD8\u6CA1\u6709\u4FDD\u5B58\u7684\u5019\u9009\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("details", { className: "ac-advanced", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("summary", { children: "\u5BFC\u5165\u5019\u9009\uFF08Manifest + \u79BB\u7EBF\u6837\u672C\uFF09" }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "Manifest JSON", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            "textarea",
+            {
+              rows: 8,
+              value: manifestJson,
+              onChange: (event) => setManifestJson(event.target.value),
+              spellCheck: false,
+              placeholder: '{"schemaVersion":1,...}'
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            Field,
+            {
+              label: "\u6837\u672C JSON",
+              hint: '[{"url":"https://...","body":"...","contentType":"text/html"}]',
+              children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                "textarea",
+                {
+                  rows: 6,
+                  value: samplesJson,
+                  onChange: (event) => setSamplesJson(event.target.value),
+                  spellCheck: false
+                }
+              )
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-form-actions", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "ac-button",
+                disabled: action.pending !== void 0,
+                onClick: () => void action.run("validate-candidate", validate, "\u9A8C\u8BC1\u5B8C\u6210"),
+                children: action.pending === "validate-candidate" ? "\u9A8C\u8BC1\u4E2D\u2026" : "\u79BB\u7EBF\u9A8C\u8BC1"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "ac-button",
+                disabled: action.pending !== void 0 || !report?.ok,
+                onClick: () => void action.run("register-candidate", register, "\u5019\u9009\u5DF2\u4FDD\u5B58"),
+                children: action.pending === "register-candidate" ? "\u4FDD\u5B58\u4E2D\u2026" : "\u4FDD\u5B58\u5019\u9009"
+              }
+            )
+          ] })
+        ] }),
+        report && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: report.ok ? "ac-muted" : "ac-text-bad", children: [
+            "\u9A8C\u8BC1",
+            report.ok ? "\u901A\u8FC7" : "\u5931\u8D25",
+            "\uFF1A\u8BFE\u7A0B ",
+            report.courses.length,
+            " \xB7 \u4E8B\u9879",
+            " ",
+            report.items.length
+          ] }),
+          report.errors.map((error) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-bad", children: error }, error)),
+          report.warnings.map((warning) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-warn", children: warning }, warning))
+        ] }),
+        action.notice && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) }),
+        message && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-bad", children: message })
+      ]
+    }
+  );
+}
 function ConnectionsPage({ ctx, active }) {
   const load = (0, import_react6.useCallback)(
     (signal) => callApi(ctx, "connections", {}, signal),
@@ -3054,10 +3462,15 @@ function ConnectionsPage({ ctx, active }) {
               },
               source.sourceId
             )) }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(SourceForm, { ctx, data, onCreated: refresh })
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(QuickAdd, { ctx, data, onCreated: refresh }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("details", { className: "ac-advanced", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("summary", { children: "\u9AD8\u7EA7\uFF1A\u624B\u52A8\u914D\u7F6E Engine \u4E0E JSON" }),
+              /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(SourceForm, { ctx, data, onCreated: refresh })
+            ] })
           ]
         }
       ),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(CandidatePanel, { ctx, active, onChanged: refresh }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(WebSessionPanel, { ctx }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Section, { title: "\u540C\u6B65\u8BB0\u5F55", subtitle: "\u5931\u8D25\u4E0D\u4F1A\u6E05\u7A7A\u5DF2\u6709\u5B66\u4E1A\u6570\u636E", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(SyncRunTable, { runs: data.syncRuns, timeZone }) })
     ] })

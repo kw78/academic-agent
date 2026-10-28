@@ -20314,6 +20314,20 @@ var updateSourceSchema = external_exports.object({
   expectedVersion: external_exports.number().int().min(1).optional()
 });
 var sourceIdSchema = external_exports.object({ sourceId: external_exports.string().min(1) });
+var candidateManifestSchema = external_exports.object({
+  manifest: external_exports.unknown(),
+  samples: external_exports.array(
+    external_exports.object({
+      url: external_exports.string().url().max(2e3),
+      body: external_exports.string().max(2e6),
+      contentType: external_exports.string().max(200).optional()
+    })
+  ).min(1).max(20)
+});
+var candidateVersionSchema = external_exports.object({
+  adapterId: external_exports.string().min(1).max(200),
+  version: external_exports.string().min(1).max(50).optional()
+});
 var webLoginSchema = external_exports.object({
   url: external_exports.string().url(),
   label: external_exports.string().min(1).max(200).optional()
@@ -20685,6 +20699,97 @@ function sourceStatusFor(app, sourceId) {
     (source) => source.sourceId === sourceId
   );
 }
+function escapePattern(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function candidateSourceId(adapterId) {
+  const slug = adapterId.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 80);
+  return `adapter-${slug}`;
+}
+function configAllowsHost(config2, host) {
+  const domains = Array.isArray(config2.cookieDomains) ? config2.cookieDomains.filter(
+    (entry) => typeof entry === "string"
+  ) : [];
+  const target = host.toLowerCase();
+  return domains.some((entry) => {
+    const domain2 = entry.toLowerCase().replace(/^\./, "");
+    return target === domain2 || target.endsWith(`.${domain2}`);
+  });
+}
+async function ensureCandidateSource(app, candidate) {
+  const manifest = app.manifestRegistry.get(candidate.adapterId, candidate.version);
+  if (!manifest) return { warning: "Manifest \u672A\u6CE8\u518C\uFF0C\u65E0\u6CD5\u521B\u5EFA\u540C\u6B65\u6570\u636E\u6E90" };
+  if (!app.sourceEngines.get("declarative")) {
+    return { warning: "declarative engine \u672A\u52A0\u8F7D\uFF0C\u65E0\u6CD5\u521B\u5EFA\u540C\u6B65\u6570\u636E\u6E90" };
+  }
+  const base = new URL(manifest.baseUrl);
+  const host = base.hostname;
+  const config2 = {
+    manifestId: candidate.adapterId,
+    manifestVersion: candidate.version,
+    baseUrl: base.toString(),
+    loginUrl: base.toString(),
+    authenticatedUrlPatterns: [`^${escapePattern(base.origin)}/`],
+    cookieDomains: [host],
+    verifyUrl: base.toString(),
+    loggedOutPatterns: ["/login"]
+  };
+  let sourceId = candidateSourceId(candidate.adapterId);
+  let existing = app.sources.get(sourceId);
+  if (existing?.archived) {
+    sourceId = `${sourceId}-${candidate.version}`.slice(0, 200);
+    existing = app.sources.get(sourceId);
+  }
+  if (!existing) {
+    app.sources.create({
+      sourceId,
+      engine: "declarative",
+      displayName: manifest.displayName,
+      authKind: "token",
+      loginMode: "browser",
+      capabilities: ["academic.sync"],
+      config: config2
+    });
+  } else {
+    app.sources.update(sourceId, {
+      displayName: manifest.displayName,
+      authKind: "token",
+      loginMode: "browser",
+      capabilities: ["academic.sync"],
+      config: config2
+    });
+  }
+  let warning;
+  const loginSource = app.sources.list().find(
+    (source) => source.sourceId !== sourceId && source.engine !== "fixture" && source.engine !== "declarative" && source.authKind !== "none" && configAllowsHost(source.config, host)
+  );
+  const loginConnection = loginSource ? app.connections.list().find(
+    (connection) => connection.sourceId === loginSource.sourceId && connection.hasCredential && (connection.status === "connected" || connection.status === "configured")
+  ) : void 0;
+  if (loginSource && loginConnection) {
+    try {
+      const lease = await app.connections.openCredential(
+        loginConnection.connectionId,
+        loginSource.sourceId
+      );
+      const secret = await lease.getSecret();
+      const target = app.connections.list().find((connection) => connection.sourceId === sourceId) ?? app.connections.create({
+        sourceId,
+        displayName: manifest.displayName,
+        authKind: "token"
+      });
+      await app.connections.setSecret(target.connectionId, secret);
+    } catch {
+      warning = "\u5DF2\u6709\u4F1A\u8BDD\u65E0\u6CD5\u590D\u5236\uFF1B\u8BF7\u5728\u8BE5\u6570\u636E\u6E90\u4E0A\u91CD\u65B0\u767B\u5F55";
+    }
+  } else {
+    warning = "\u8BF7\u5728\u8BE5\u6570\u636E\u6E90\u4E0A\u5B8C\u6210\u767B\u5F55\u540E\u518D\u540C\u6B65";
+  }
+  return {
+    ...sourceStatusFor(app, sourceId) ? { source: sourceStatusFor(app, sourceId) } : {},
+    ...warning ? { warning } : {}
+  };
+}
 function syncHealth(lastSync, now, staleAfterMs) {
   if (!lastSync) return "unknown";
   if (lastSync.status === "auth-required") return "auth-required";
@@ -21042,6 +21147,8 @@ function createAcademicUiApi(app) {
       if (source.authKind !== "unknown" && source.authKind !== body.authKind) {
         return failure2("VALIDATION", "\u8BA4\u8BC1\u65B9\u5F0F\u4E0E\u6570\u636E\u6E90\u80FD\u529B\u4E0D\u5339\u914D");
       }
+      const existing = app.connections.list().find((entry) => entry.sourceId === body.sourceId);
+      if (existing) return ok(existing);
       try {
         return ok(app.connections.create(body));
       } catch (error62) {
@@ -21052,6 +21159,14 @@ function createAcademicUiApi(app) {
       const parsed = parse3(createSourceSchema, request);
       if (!parsed.ok) return parsed;
       const body = parsed.value;
+      const configJson = JSON.stringify(body.config ?? {});
+      const existing = app.sources.list().find(
+        (entry) => entry.engine === body.engine && entry.displayName === body.displayName && JSON.stringify(entry.config) === configJson
+      );
+      if (existing) {
+        const source = sourceStatusFor(app, existing.sourceId);
+        return source ? ok(source) : failure2("NOT_FOUND", "\u6570\u636E\u6E90\u5B58\u5728\u4F46\u672A\u80FD\u8BFB\u53D6");
+      }
       const engine = app.sourceEngines.get(body.engine);
       if (!engine) {
         return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u5F15\u64CE\u5C1A\u672A\u52A0\u8F7D");
@@ -21149,6 +21264,101 @@ function createAcademicUiApi(app) {
           return failure2("AUTH_REQUIRED", verified.lastError ?? "\u767B\u5F55\u4F1A\u8BDD\u9A8C\u8BC1\u5931\u8D25");
         }
         return ok(verified);
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async probeSource(request) {
+      const parsed = parse3(sourceIdSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      const source = app.sources.get(body.sourceId);
+      if (!source) return failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
+      if (source.authKind === "none") {
+        return failure2("VALIDATION", "\u8BE5\u6570\u636E\u6E90\u4E0D\u9700\u8981\u4F1A\u8BDD\u63A2\u6D4B");
+      }
+      try {
+        const evidence = await app.probeSource(source.sourceId);
+        if (evidence.loginLike) {
+          return failure2("AUTH_REQUIRED", "\u4F1A\u8BDD\u53EF\u80FD\u5DF2\u5931\u6548\uFF1B\u8BF7\u91CD\u65B0\u767B\u5F55\u540E\u518D\u63A2\u6D4B");
+        }
+        return ok(evidence);
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async adapterCandidates() {
+      return ok({
+        candidates: app.adapterCandidates.list(),
+        active: app.manifestRegistry.list().map((entry) => ({
+          adapterId: entry.adapterId,
+          ...entry.active ? { active: entry.active } : {}
+        }))
+      });
+    },
+    async validateAdapterCandidate(request) {
+      const parsed = parse3(candidateManifestSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        const report = await app.adapterCandidates.validate(
+          body.manifest,
+          body.samples
+        );
+        return ok({ report });
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async registerAdapterCandidate(request) {
+      const parsed = parse3(candidateManifestSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        const result = await app.adapterCandidates.register(
+          body.manifest,
+          body.samples
+        );
+        return ok({
+          candidate: result.summary,
+          report: result.report
+        });
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async activateAdapterCandidate(request) {
+      const parsed = parse3(candidateVersionSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      if (!body.version) {
+        return failure2("VALIDATION", "\u542F\u7528\u5019\u9009\u9700\u8981\u660E\u786E\u7248\u672C");
+      }
+      try {
+        const candidate = app.adapterCandidates.activate(
+          body.adapterId,
+          body.version
+        );
+        const activation = await ensureCandidateSource(app, candidate);
+        return ok({
+          candidate,
+          ...activation
+        });
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async rollbackAdapterCandidate(request) {
+      const parsed = parse3(candidateVersionSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        const candidate = app.adapterCandidates.rollback(
+          body.adapterId,
+          body.version
+        );
+        await ensureCandidateSource(app, candidate);
+        return ok(candidate);
       } catch (error62) {
         return fromError(error62);
       }
@@ -21497,6 +21707,12 @@ var REMOTE_METHODS = [
   "updateSource",
   "archiveSource",
   "sourceLogin",
+  "probeSource",
+  "adapterCandidates",
+  "validateAdapterCandidate",
+  "registerAdapterCandidate",
+  "activateAdapterCandidate",
+  "rollbackAdapterCandidate",
   "sourceSetSecret",
   "setConnectionSecret",
   "webSessions",
@@ -21600,6 +21816,24 @@ var AcademicUiService = class extends TypertRemoteService {
   }
   async sourceLogin(request) {
     return (await this.apiReady).sourceLogin(request);
+  }
+  async probeSource(request) {
+    return (await this.apiReady).probeSource(request);
+  }
+  async adapterCandidates(request) {
+    return (await this.apiReady).adapterCandidates(request);
+  }
+  async validateAdapterCandidate(request) {
+    return (await this.apiReady).validateAdapterCandidate(request);
+  }
+  async registerAdapterCandidate(request) {
+    return (await this.apiReady).registerAdapterCandidate(request);
+  }
+  async activateAdapterCandidate(request) {
+    return (await this.apiReady).activateAdapterCandidate(request);
+  }
+  async rollbackAdapterCandidate(request) {
+    return (await this.apiReady).rollbackAdapterCandidate(request);
   }
   async sourceSetSecret(request) {
     return (await this.apiReady).sourceSetSecret(request);

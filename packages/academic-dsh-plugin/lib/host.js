@@ -25740,194 +25740,15 @@ var ConnectionManager = class {
   }
 };
 
-// packages/academic-sources/src/index.ts
-var AUTH_KINDS = ["none", "password", "token", "oauth"];
-var MAX_CONFIG_BYTES = 64 * 1024;
-var FORBIDDEN_CONFIG_KEYS = /* @__PURE__ */ new Set([
-  "password",
-  "token",
-  "access_token",
-  "refresh_token",
-  "cookie",
-  "authorization",
-  "secret",
-  "credential",
-  "apikey",
-  "api_key"
-]);
-var sourceInputSchema = external_exports.object({
-  sourceId: external_exports.string().min(1).max(200).optional(),
-  engine: external_exports.string().min(1).max(100),
-  displayName: external_exports.string().min(1).max(200),
-  authKind: external_exports.enum(AUTH_KINDS),
-  loginMode: external_exports.enum(["browser", "manual"]).optional(),
-  config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
-  capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
-  enabled: external_exports.boolean().optional()
-});
-var sourceUpdateSchema = external_exports.object({
-  displayName: external_exports.string().min(1).max(200).optional(),
-  authKind: external_exports.enum(AUTH_KINDS).optional(),
-  loginMode: external_exports.enum(["browser", "manual"]).optional(),
-  config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
-  capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
-  enabled: external_exports.boolean().optional()
-});
-function assertNoSecrets(value, path = "config") {
-  if (Array.isArray(value)) {
-    value.forEach((entry, index) => assertNoSecrets(entry, `${path}[${index}]`));
-    return;
-  }
-  if (value === null || typeof value !== "object") return;
-  for (const [key2, entry] of Object.entries(value)) {
-    if (FORBIDDEN_CONFIG_KEYS.has(key2.toLowerCase())) {
-      throw new SourceConflictError(
-        `Source config must not contain credentials (${path}.${key2}); use the credential vault`
-      );
-    }
-    assertNoSecrets(entry, `${path}.${key2}`);
-  }
-}
-function parseConfig(value) {
-  const config2 = value ?? {};
-  const serialized = JSON.stringify(config2);
-  if (serialized.length > MAX_CONFIG_BYTES) {
-    throw new SourceConflictError("Source config is too large");
-  }
-  assertNoSecrets(config2);
-  return serialized;
-}
-var SourceConfigStore = class {
-  #db;
-  #clock;
-  #ids;
-  constructor(options) {
-    this.#db = options.db;
-    this.#clock = options.clock;
-    this.#ids = options.ids;
-  }
-  ensure(input2) {
-    const existing = this.get(input2.sourceId);
-    return existing ?? this.create(input2);
-  }
-  create(input2) {
-    const parsed = sourceInputSchema.parse(input2);
-    const sourceId = parsed.sourceId ?? this.#ids.next();
-    if (this.get(sourceId)) {
-      throw new SourceConflictError(`Source already exists: ${sourceId}`);
-    }
-    const now = this.#clock.now();
-    try {
-      this.#db.prepare(
-        `INSERT INTO academic_sources (
-             source_id, engine, display_name, auth_kind, login_mode,
-             config_json, capabilities_json, enabled, archived, version,
-             created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
-      ).run(
-        sourceId,
-        parsed.engine,
-        parsed.displayName,
-        parsed.authKind,
-        parsed.loginMode ?? null,
-        parseConfig(parsed.config),
-        JSON.stringify(parsed.capabilities ?? []),
-        parsed.enabled === false ? 0 : 1,
-        now,
-        now
-      );
-    } catch (error62) {
-      if (String(error62).includes("UNIQUE")) {
-        throw new SourceConflictError(`Source already exists: ${sourceId}`);
-      }
-      throw error62;
-    }
-    return this.get(sourceId);
-  }
-  get(sourceId) {
-    const row = this.#db.prepare("SELECT * FROM academic_sources WHERE source_id = ?").get(sourceId);
-    return row ? this.#toConfig(row) : void 0;
-  }
-  list(options = {}) {
-    const rows = options.includeArchived ? this.#db.prepare("SELECT * FROM academic_sources ORDER BY created_at ASC, rowid ASC").all() : this.#db.prepare(
-      "SELECT * FROM academic_sources WHERE archived = 0 ORDER BY created_at ASC, rowid ASC"
-    ).all();
-    return rows.map((row) => this.#toConfig(row));
-  }
-  update(sourceId, update2, expectedVersion) {
-    const current = this.get(sourceId);
-    if (!current) throw new SourceNotFoundError(sourceId);
-    if (current.archived) {
-      throw new SourceConflictError("Archived source cannot be updated");
-    }
-    if (expectedVersion !== void 0 && expectedVersion !== current.version) {
-      throw new SourceConflictError(
-        `Source version changed: expected ${expectedVersion}, got ${current.version}`
-      );
-    }
-    const parsed = sourceUpdateSchema.parse(update2);
-    const next = {
-      displayName: parsed.displayName ?? current.displayName,
-      authKind: parsed.authKind ?? current.authKind,
-      loginMode: parsed.loginMode ?? current.loginMode,
-      config: parsed.config ?? current.config,
-      capabilities: parsed.capabilities ?? current.capabilities,
-      enabled: parsed.enabled ?? current.enabled
-    };
-    const now = this.#clock.now();
-    this.#db.prepare(
-      `UPDATE academic_sources SET
-           display_name = ?, auth_kind = ?, login_mode = ?,
-           config_json = ?, capabilities_json = ?, enabled = ?,
-           version = version + 1, updated_at = ?
-         WHERE source_id = ?`
-    ).run(
-      next.displayName,
-      next.authKind,
-      next.loginMode ?? null,
-      parseConfig(next.config),
-      JSON.stringify(next.capabilities),
-      next.enabled ? 1 : 0,
-      now,
-      sourceId
-    );
-    return this.get(sourceId);
-  }
-  archive(sourceId) {
-    const current = this.get(sourceId);
-    if (!current) throw new SourceNotFoundError(sourceId);
-    const now = this.#clock.now();
-    this.#db.prepare(
-      `UPDATE academic_sources SET
-           archived = 1, enabled = 0, version = version + 1, updated_at = ?
-         WHERE source_id = ?`
-    ).run(now, sourceId);
-    return this.get(sourceId);
-  }
-  #toConfig(row) {
-    return {
-      sourceId: row.source_id,
-      engine: row.engine,
-      displayName: row.display_name,
-      authKind: row.auth_kind,
-      ...row.login_mode ? { loginMode: row.login_mode } : {},
-      config: JSON.parse(row.config_json),
-      capabilities: JSON.parse(row.capabilities_json),
-      enabled: Boolean(row.enabled),
-      archived: Boolean(row.archived),
-      version: Number(row.version),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    };
-  }
-};
-
 // packages/academic-web-sessions/src/index.ts
 import { chromium } from "playwright-core";
 
 // packages/academic-web-sessions/src/http.ts
 import { lookup as dnsLookup } from "node:dns/promises";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { BlockList, isIP } from "node:net";
+import { Readable } from "node:stream";
 var SafeFetchError = class extends Error {
   code;
   constructor(code, message) {
@@ -26051,7 +25872,33 @@ function prepareUrl(value) {
   url2.hash = "";
   return url2;
 }
-async function assertSafeTarget(url2, allowedHosts, resolveHost, signal) {
+function targetPort(url2) {
+  if (url2.port) return Number(url2.port);
+  return url2.protocol === "https:" ? 443 : 80;
+}
+function pathAllowed(pathname, prefixes) {
+  if (!prefixes || prefixes.length === 0) return true;
+  const path = pathname || "/";
+  return prefixes.some((prefix) => {
+    const base = prefix.startsWith("/") ? prefix : `/${prefix}`;
+    if (path === base) return true;
+    return path.startsWith(base.endsWith("/") ? base : `${base}/`);
+  });
+}
+function assertUrlPolicy(url2, allowedProtocols, allowedPorts, allowedPathPrefixes) {
+  if (!allowedProtocols.includes(url2.protocol)) {
+    throw new SafeFetchError("UNSAFE_PROTOCOL", `\u76EE\u6807\u534F\u8BAE\u4E0D\u5141\u8BB8\uFF1A${url2.protocol}`);
+  }
+  const port = targetPort(url2);
+  if (!allowedPorts.includes(port)) {
+    throw new SafeFetchError("UNSAFE_PORT", `\u76EE\u6807\u7AEF\u53E3\u4E0D\u5141\u8BB8\uFF1A${port}`);
+  }
+  if (!pathAllowed(url2.pathname, allowedPathPrefixes)) {
+    throw new SafeFetchError("UNSAFE_PATH", `\u76EE\u6807\u8DEF\u5F84\u4E0D\u5728\u6388\u6743\u8303\u56F4\u5185\uFF1A${url2.pathname}`);
+  }
+}
+async function assertSafeTarget(url2, allowedHosts, resolveHost, signal, allowedProtocols, allowedPorts, allowedPathPrefixes) {
+  assertUrlPolicy(url2, allowedProtocols, allowedPorts, allowedPathPrefixes);
   const host = normalizeHostname(url2.hostname);
   if (!allowedHosts.some((allowed) => hostMatches(host, allowed))) {
     throw new SafeFetchError("UNSAFE_HOST", `\u76EE\u6807\u4E3B\u673A\u4E0D\u5728\u6388\u6743\u8303\u56F4\u5185\uFF1A${host}`);
@@ -26085,6 +25932,64 @@ async function assertSafeTarget(url2, allowedHosts, resolveHost, signal) {
       throw new SafeFetchError("UNSAFE_HOST", `\u76EE\u6807\u4E3B\u673A\u89E3\u6790\u5230\u53D7\u9650\u5730\u5740\uFF1A${host}`);
     }
   }
+  const preferred = addresses.find((entry) => entry.family === 4) ?? addresses[0];
+  return { address: preferred.address, family: preferred.family };
+}
+function toResponseHeaders(headers) {
+  const result = new Headers();
+  for (const [name, values] of Object.entries(headers)) {
+    if (!values) continue;
+    for (const value of values) result.append(name, value);
+  }
+  return result;
+}
+var pinnedNodeRequest = (url2, init, target) => new Promise((resolve, reject) => {
+  const send = url2.protocol === "https:" ? httpsRequest : httpRequest;
+  const request = send(
+    url2,
+    {
+      method: "GET",
+      headers: init.headers,
+      signal: init.signal,
+      lookup: (_hostname, options, callback) => {
+        const wantsAll = typeof options === "object" && options !== null && options.all === true;
+        if (wantsAll) {
+          ;
+          callback(
+            null,
+            [{ address: target.address, family: target.family }]
+          );
+          return;
+        }
+        ;
+        callback(
+          null,
+          target.address,
+          target.family
+        );
+      }
+    },
+    (response) => {
+      const status = response.statusCode ?? 0;
+      const body = status === 204 || status === 304 ? null : Readable.toWeb(response);
+      resolve(
+        new Response(body, {
+          status,
+          headers: toResponseHeaders(response.headersDistinct)
+        })
+      );
+    }
+  );
+  request.on("error", reject);
+  request.end();
+});
+function injectedFetch(fetchImpl) {
+  return (url2, init) => fetchImpl(url2.toString(), {
+    method: "GET",
+    redirect: "manual",
+    headers: init.headers,
+    signal: init.signal
+  });
 }
 function cookieDomainMatches(hostname3, domain2) {
   const host = normalizeHostname(hostname3);
@@ -26199,7 +26104,9 @@ async function safeFetch(input2, options) {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
   const maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_MAX_BYTES);
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const allowedProtocols = options.allowedProtocols ?? ["https:"];
+  const allowedPorts = options.allowedPorts ?? (allowedProtocols.includes("http:") ? [80, 443] : [443]);
+  const request = options.requestImpl ?? (options.fetchImpl ? injectedFetch(options.fetchImpl) : pinnedNodeRequest);
   const resolveHost = options.resolveHost ?? defaultResolveHost;
   const now = options.now ?? Date.now;
   const cookies = options.cookies ?? [];
@@ -26214,19 +26121,29 @@ async function safeFetch(input2, options) {
     let current = prepareUrl(input2);
     const redirects = [];
     for (let hop = 0; ; hop += 1) {
-      await assertSafeTarget(current, options.allowedHosts, resolveHost, controller.signal);
+      const target = await assertSafeTarget(
+        current,
+        options.allowedHosts,
+        resolveHost,
+        controller.signal,
+        allowedProtocols,
+        allowedPorts,
+        options.allowedPathPrefixes
+      );
       const cookie = cookieHeaderFor(cookies, current, now());
       let response;
       try {
-        response = await fetchImpl(current.toString(), {
-          method: "GET",
-          redirect: "manual",
-          headers: {
-            Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
-            ...cookie ? { Cookie: cookie } : {}
+        response = await request(
+          current,
+          {
+            headers: {
+              Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+              ...cookie ? { Cookie: cookie } : {}
+            },
+            signal: controller.signal
           },
-          signal: controller.signal
-        });
+          target
+        );
       } catch (error62) {
         if (timedOut || controller.signal.aborted) {
           throw new SafeFetchError("TIMEOUT", `\u8BF7\u6C42\u8D85\u65F6\uFF08${timeoutMs}ms\uFF09`);
@@ -26314,21 +26231,35 @@ var WebSessionStore = class {
   #clock;
   #ids;
   #fetch;
+  #request;
   #resolveHost;
   #timeoutMs;
   #maxBytes;
+  #allowedProtocols;
+  #allowedPorts;
+  #allowedPathPrefixes;
   constructor(options) {
     this.#db = options.db;
     this.#vault = options.vault;
     this.#clock = options.clock;
     this.#ids = options.ids;
-    this.#fetch = options.fetchImpl ?? fetch;
+    this.#fetch = options.fetchImpl;
+    this.#request = options.requestImpl;
     this.#resolveHost = options.resolveHost;
     this.#timeoutMs = options.timeoutMs;
     this.#maxBytes = options.maxBytes;
+    this.#allowedProtocols = options.allowedProtocols ?? ["https:"];
+    this.#allowedPorts = options.allowedPorts;
+    this.#allowedPathPrefixes = options.allowedPathPrefixes;
   }
   async create(input2) {
     const url2 = assertHttpUrl(input2.loginUrl);
+    if (!this.#allowedProtocols.includes(url2.protocol)) {
+      throw new SafeFetchError(
+        "UNSAFE_PROTOCOL",
+        `\u767B\u5F55\u7AD9\u70B9\u534F\u8BAE\u672A\u6388\u6743\uFF1A${url2.protocol}`
+      );
+    }
     const cookies = input2.cookies.filter((cookie) => cookie.name && cookie.value).map((cookie) => ({
       ...cookie,
       domain: cookie.domain || url2.hostname,
@@ -26389,10 +26320,14 @@ var WebSessionStore = class {
     const result = await safeFetch(targetUrl, {
       cookies,
       allowedHosts: [row.domain],
+      allowedProtocols: this.#allowedProtocols,
+      ...this.#allowedPorts ? { allowedPorts: this.#allowedPorts } : {},
+      ...this.#allowedPathPrefixes ? { allowedPathPrefixes: this.#allowedPathPrefixes } : {},
       ...this.#resolveHost ? { resolveHost: this.#resolveHost } : {},
       ...this.#timeoutMs ? { timeoutMs: this.#timeoutMs } : {},
       ...this.#maxBytes ? { maxBytes: this.#maxBytes } : {},
-      fetchImpl: this.#fetch
+      ...this.#fetch ? { fetchImpl: this.#fetch } : {},
+      ...this.#request ? { requestImpl: this.#request } : {}
     });
     const now = this.#clock.now();
     this.#db.prepare("UPDATE web_sessions SET last_used_at = ?, updated_at = ? WHERE session_id = ?").run(now, now, sessionId);
@@ -26408,6 +26343,416 @@ var WebSessionStore = class {
   }
 };
 
+// packages/academic-sources/src/probe.ts
+function plainText(html) {
+  return html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/\s+/g, " ").trim();
+}
+function probeUrlFor(config2) {
+  for (const key2 of ["portalUrl", "baseUrl", "verifyUrl", "loginUrl"]) {
+    const value = config2[key2];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return void 0;
+}
+function hostAllowed(host, allowed) {
+  const value = host.toLowerCase();
+  return allowed.some((entry) => {
+    const base = entry.toLowerCase().replace(/^\./, "");
+    return value === base || value.endsWith(`.${base}`);
+  });
+}
+function cookiesFromSecret(secret) {
+  const parsed = JSON.parse(secret);
+  if (!Array.isArray(parsed.cookies) || parsed.cookies.length === 0) {
+    throw new Error("\u4F1A\u8BDD\u683C\u5F0F\u65E0\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
+  }
+  return parsed.cookies;
+}
+function loginLikePage(finalUrl, body, patterns) {
+  if (/\/login|\/signin|\/cas\/login/i.test(finalUrl)) return true;
+  const title = plainText(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(body)?.[1] ?? "");
+  if (/登录|sign in|log in/i.test(title)) return true;
+  if (!Array.isArray(patterns)) return false;
+  const haystack = `${finalUrl}
+${body.slice(0, 2e4)}`;
+  return patterns.some((pattern) => {
+    if (typeof pattern !== "string") return false;
+    try {
+      return new RegExp(pattern).test(haystack);
+    } catch {
+      return false;
+    }
+  });
+}
+function jsonShape(value, depth = 0) {
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return `array(${value.length}${first !== void 0 && depth < 1 ? ` of ${jsonShape(first, depth + 1)}` : ""})`;
+  }
+  if (value && typeof value === "object") {
+    const entries2 = Object.entries(value).slice(0, 8);
+    return `{${entries2.map(([key2, entry]) => `${key2}: ${jsonShape(entry, depth + 1)}`).join(", ")}}`;
+  }
+  if (value === null) return "null";
+  return typeof value;
+}
+function buildEvidence(sourceId, url2, result, allowedHosts, patterns, probedAt) {
+  const title = plainText(
+    /<title[^>]*>([\s\S]*?)<\/title>/i.exec(result.body)?.[1] ?? ""
+  );
+  const headings = [];
+  for (const match of result.body.matchAll(/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi)) {
+    const text2 = plainText(match[1] ?? "").slice(0, 120);
+    if (text2 && !headings.includes(text2)) headings.push(text2);
+    if (headings.length >= 10) break;
+  }
+  const links = [];
+  const paginationLinks = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const match of result.body.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+    const href = /href\s*=\s*["']([^"']+)["']/i.exec(match[1] ?? "")?.[1];
+    if (!href) continue;
+    let target;
+    try {
+      target = new URL(href, result.finalUrl);
+    } catch {
+      continue;
+    }
+    if (target.protocol !== "http:" && target.protocol !== "https:") continue;
+    if (!hostAllowed(target.hostname, allowedHosts)) continue;
+    const text2 = plainText(match[2] ?? "").slice(0, 80);
+    const safe = safeUrlForDisplay(target.toString());
+    if (!safe || seen.has(`${safe}
+${text2}`)) continue;
+    seen.add(`${safe}
+${text2}`);
+    const entry = { text: text2 || safe, url: safe };
+    if (paginationLinks.length < 10 && (/下一页|下页|next|»|›/i.test(text2) || /(?:startIndex|page|offset)=/i.test(target.search))) {
+      paginationLinks.push(entry);
+    }
+    if (links.length < 20) links.push(entry);
+  }
+  const contentType = result.contentType;
+  let jsonShapeText;
+  if (contentType?.includes("json")) {
+    try {
+      jsonShapeText = jsonShape(JSON.parse(result.body)).slice(0, 500);
+    } catch {
+      jsonShapeText = void 0;
+    }
+  }
+  return {
+    sourceId,
+    url: safeUrlForDisplay(url2),
+    finalUrl: safeUrlForDisplay(result.finalUrl),
+    status: result.status,
+    ...title ? { title } : {},
+    ...contentType ? { contentType } : {},
+    bytes: result.body.length,
+    truncated: result.truncated,
+    headings,
+    links,
+    paginationLinks,
+    formCount: (result.body.match(/<form\b/gi) ?? []).length,
+    tableCount: (result.body.match(/<table\b/gi) ?? []).length,
+    ...contentType?.includes("json") ? {
+      jsonPreview: result.body.slice(0, 2e3),
+      ...jsonShapeText ? { jsonShape: jsonShapeText } : {}
+    } : {},
+    loginLike: loginLikePage(result.finalUrl, result.body, patterns),
+    warnings: result.truncated ? ["\u54CD\u5E94\u8D85\u8FC7\u5927\u5C0F\u4E0A\u9650\uFF0C\u4EC5\u5206\u6790\u524D 512KB"] : [],
+    probedAt
+  };
+}
+async function probeSourcePage(input2) {
+  const url2 = probeUrlFor(input2.config);
+  if (!url2) throw new Error("\u6570\u636E\u6E90\u914D\u7F6E\u4E2D\u6CA1\u6709\u53EF\u63A2\u6D4B\u7684 URL");
+  const cookies = cookiesFromSecret(input2.secret);
+  const host = new URL(url2).hostname;
+  const cookieDomains = Array.isArray(input2.config.cookieDomains) ? input2.config.cookieDomains.filter(
+    (entry) => typeof entry === "string"
+  ) : [];
+  const allowedHosts = cookieDomains.length > 0 ? cookieDomains : [host];
+  const result = await safeFetch(url2, {
+    cookies,
+    allowedHosts,
+    allowedProtocols: input2.config.allowHttp === true ? ["http:", "https:"] : ["https:"],
+    timeoutMs: input2.timeoutMs ?? 15e3,
+    maxBytes: input2.maxBytes ?? 512 * 1024,
+    ...input2.fetchImpl ? { fetchImpl: input2.fetchImpl } : {},
+    ...input2.resolveHost ? { resolveHost: input2.resolveHost } : {}
+  });
+  return buildEvidence(
+    input2.sourceId,
+    url2,
+    result,
+    allowedHosts,
+    input2.config.loggedOutPatterns,
+    input2.probedAt
+  );
+}
+
+// packages/academic-sources/src/index.ts
+var AUTH_KINDS = ["none", "password", "token", "oauth"];
+var MAX_CONFIG_BYTES = 64 * 1024;
+var SECRET_SUFFIXES = [
+  "password",
+  "passwd",
+  "pwd",
+  "token",
+  "cookie",
+  "secret",
+  "apikey",
+  "authorization",
+  "credential",
+  "sessionid"
+];
+var SECRET_PREFIXES = ["secret", "password", "authorization", "credential"];
+var COOKIE_SECRET_KEYS = /* @__PURE__ */ new Set([
+  "cookie",
+  "cookies",
+  "cookieheader",
+  "cookievalue",
+  "cookiejar"
+]);
+var SECRET_PARAMS = /* @__PURE__ */ new Set([
+  "pwd",
+  "session",
+  "sessionid",
+  "sid",
+  "auth",
+  "code"
+]);
+function normalizedKey(key2) {
+  return key2.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+function isSensitiveKey(key2) {
+  const normalized2 = normalizedKey(key2);
+  if (SECRET_PARAMS.has(normalized2)) return true;
+  if (COOKIE_SECRET_KEYS.has(normalized2)) return true;
+  if (SECRET_SUFFIXES.some((suffix) => normalized2 === suffix || normalized2.endsWith(suffix))) {
+    return true;
+  }
+  return SECRET_PREFIXES.some((prefix) => normalized2.startsWith(prefix));
+}
+function assertSafeString(value, path) {
+  if (/^\s*bearer\s+/i.test(value)) {
+    throw new SourceConflictError(
+      `Source config must not contain credentials (${path}); use the credential vault`
+    );
+  }
+  let url2;
+  try {
+    url2 = new URL(value);
+  } catch {
+    return;
+  }
+  if (url2.username || url2.password) {
+    throw new SourceConflictError(
+      `Source config must not contain credentials (${path}); use the credential vault`
+    );
+  }
+  for (const key2 of url2.searchParams.keys()) {
+    if (isSensitiveKey(key2)) {
+      throw new SourceConflictError(
+        `Source config URL must not contain authentication parameters (${path}.${key2})`
+      );
+    }
+  }
+}
+var sourceInputSchema = external_exports.object({
+  sourceId: external_exports.string().min(1).max(200).optional(),
+  engine: external_exports.string().min(1).max(100),
+  displayName: external_exports.string().min(1).max(200),
+  authKind: external_exports.enum(AUTH_KINDS),
+  loginMode: external_exports.enum(["browser", "manual"]).optional(),
+  config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
+  capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
+  enabled: external_exports.boolean().optional()
+});
+var sourceUpdateSchema = external_exports.object({
+  displayName: external_exports.string().min(1).max(200).optional(),
+  authKind: external_exports.enum(AUTH_KINDS).optional(),
+  loginMode: external_exports.enum(["browser", "manual"]).optional(),
+  config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
+  capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
+  enabled: external_exports.boolean().optional()
+});
+function assertNoSecrets(value, path = "config") {
+  if (typeof value === "string") {
+    assertSafeString(value, path);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => assertNoSecrets(entry, `${path}[${index}]`));
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+  for (const [key2, entry] of Object.entries(value)) {
+    if (isSensitiveKey(key2)) {
+      throw new SourceConflictError(
+        `Source config must not contain credentials (${path}.${key2}); use the credential vault`
+      );
+    }
+    assertNoSecrets(entry, `${path}.${key2}`);
+  }
+}
+function parseConfig(value) {
+  const config2 = value ?? {};
+  const serialized = JSON.stringify(config2);
+  if (serialized.length > MAX_CONFIG_BYTES) {
+    throw new SourceConflictError("Source config is too large");
+  }
+  assertNoSecrets(config2);
+  return serialized;
+}
+var SourceConfigStore = class {
+  #db;
+  #clock;
+  #ids;
+  #validateSource;
+  constructor(options) {
+    this.#db = options.db;
+    this.#clock = options.clock;
+    this.#ids = options.ids;
+    this.#validateSource = options.validateSource;
+  }
+  #assertValid(input2) {
+    const error62 = this.#validateSource?.(input2);
+    if (error62) {
+      throw new SourceConflictError(`Source config invalid: ${error62}`);
+    }
+  }
+  ensure(input2) {
+    const existing = this.get(input2.sourceId);
+    return existing ?? this.create(input2);
+  }
+  create(input2) {
+    const parsed = sourceInputSchema.parse(input2);
+    const configJson = parseConfig(parsed.config);
+    this.#assertValid({
+      engine: parsed.engine,
+      authKind: parsed.authKind,
+      ...parsed.loginMode ? { loginMode: parsed.loginMode } : {},
+      config: parsed.config ?? {}
+    });
+    const sourceId = parsed.sourceId ?? this.#ids.next();
+    if (this.get(sourceId)) {
+      throw new SourceConflictError(`Source already exists: ${sourceId}`);
+    }
+    const now = this.#clock.now();
+    try {
+      this.#db.prepare(
+        `INSERT INTO academic_sources (
+             source_id, engine, display_name, auth_kind, login_mode,
+             config_json, capabilities_json, enabled, archived, version,
+             created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
+      ).run(
+        sourceId,
+        parsed.engine,
+        parsed.displayName,
+        parsed.authKind,
+        parsed.loginMode ?? null,
+        configJson,
+        JSON.stringify(parsed.capabilities ?? []),
+        parsed.enabled === false ? 0 : 1,
+        now,
+        now
+      );
+    } catch (error62) {
+      if (String(error62).includes("UNIQUE")) {
+        throw new SourceConflictError(`Source already exists: ${sourceId}`);
+      }
+      throw error62;
+    }
+    return this.get(sourceId);
+  }
+  get(sourceId) {
+    const row = this.#db.prepare("SELECT * FROM academic_sources WHERE source_id = ?").get(sourceId);
+    return row ? this.#toConfig(row) : void 0;
+  }
+  list(options = {}) {
+    const rows = options.includeArchived ? this.#db.prepare("SELECT * FROM academic_sources ORDER BY created_at ASC, rowid ASC").all() : this.#db.prepare(
+      "SELECT * FROM academic_sources WHERE archived = 0 ORDER BY created_at ASC, rowid ASC"
+    ).all();
+    return rows.map((row) => this.#toConfig(row));
+  }
+  update(sourceId, update2, expectedVersion) {
+    const current = this.get(sourceId);
+    if (!current) throw new SourceNotFoundError(sourceId);
+    if (current.archived) {
+      throw new SourceConflictError("Archived source cannot be updated");
+    }
+    if (expectedVersion !== void 0 && expectedVersion !== current.version) {
+      throw new SourceConflictError(
+        `Source version changed: expected ${expectedVersion}, got ${current.version}`
+      );
+    }
+    const parsed = sourceUpdateSchema.parse(update2);
+    const next = {
+      displayName: parsed.displayName ?? current.displayName,
+      authKind: parsed.authKind ?? current.authKind,
+      loginMode: parsed.loginMode ?? current.loginMode,
+      config: parsed.config ?? current.config,
+      capabilities: parsed.capabilities ?? current.capabilities,
+      enabled: parsed.enabled ?? current.enabled
+    };
+    const configJson = parseConfig(next.config);
+    this.#assertValid({
+      engine: current.engine,
+      authKind: next.authKind,
+      ...next.loginMode ? { loginMode: next.loginMode } : {},
+      config: next.config
+    });
+    const now = this.#clock.now();
+    this.#db.prepare(
+      `UPDATE academic_sources SET
+           display_name = ?, auth_kind = ?, login_mode = ?,
+           config_json = ?, capabilities_json = ?, enabled = ?,
+           version = version + 1, updated_at = ?
+         WHERE source_id = ?`
+    ).run(
+      next.displayName,
+      next.authKind,
+      next.loginMode ?? null,
+      configJson,
+      JSON.stringify(next.capabilities),
+      next.enabled ? 1 : 0,
+      now,
+      sourceId
+    );
+    return this.get(sourceId);
+  }
+  archive(sourceId) {
+    const current = this.get(sourceId);
+    if (!current) throw new SourceNotFoundError(sourceId);
+    const now = this.#clock.now();
+    this.#db.prepare(
+      `UPDATE academic_sources SET
+           archived = 1, enabled = 0, version = version + 1, updated_at = ?
+         WHERE source_id = ?`
+    ).run(now, sourceId);
+    return this.get(sourceId);
+  }
+  #toConfig(row) {
+    return {
+      sourceId: row.source_id,
+      engine: row.engine,
+      displayName: row.display_name,
+      authKind: row.auth_kind,
+      ...row.login_mode ? { loginMode: row.login_mode } : {},
+      config: JSON.parse(row.config_json),
+      capabilities: JSON.parse(row.capabilities_json),
+      enabled: Boolean(row.enabled),
+      archived: Boolean(row.archived),
+      version: Number(row.version),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+};
+
 // packages/academic-source-browser/src/index.ts
 import { chromium as chromium2 } from "playwright-core";
 var browserConfigSchema = external_exports.object({
@@ -26417,8 +26762,12 @@ var browserConfigSchema = external_exports.object({
   verifyUrl: external_exports.string().url().optional(),
   loggedOutPatterns: external_exports.array(external_exports.string().min(1)).optional(),
   timeoutMs: external_exports.number().int().min(1e3).max(10 * 6e4).optional(),
-  channel: external_exports.enum(["msedge", "chrome"]).optional()
+  channel: external_exports.enum(["msedge", "chrome"]).optional(),
+  allowHttp: external_exports.boolean().optional()
 });
+function protocolsFor(config2) {
+  return config2.allowHttp ? ["http:", "https:"] : ["https:"];
+}
 function matchesAny(patterns, value) {
   return patterns.some((pattern) => {
     try {
@@ -26510,7 +26859,7 @@ async function browserLogin(config2) {
     await browser.close().catch(() => void 0);
   }
 }
-async function verifySession(config2, secret, fetchImpl, resolveHost, timeoutMs) {
+async function verifySession(config2, secret, fetchImpl, requestImpl, resolveHost, timeoutMs) {
   if (!config2.verifyUrl) return { ok: true };
   let cookies;
   try {
@@ -26526,7 +26875,9 @@ async function verifySession(config2, secret, fetchImpl, resolveHost, timeoutMs)
     const result = await safeFetch(config2.verifyUrl, {
       cookies,
       allowedHosts: config2.cookieDomains,
-      fetchImpl,
+      allowedProtocols: protocolsFor(config2),
+      ...fetchImpl ? { fetchImpl } : {},
+      ...requestImpl ? { requestImpl } : {},
       ...resolveHost ? { resolveHost } : {},
       ...timeoutMs ? { timeoutMs } : {}
     });
@@ -26540,7 +26891,7 @@ async function verifySession(config2, secret, fetchImpl, resolveHost, timeoutMs)
   }
 }
 function createBrowserSessionEngine(options = {}) {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl;
   return {
     descriptor: {
       id: "browser-session",
@@ -26567,6 +26918,7 @@ function createBrowserSessionEngine(options = {}) {
         config2,
         secret,
         fetchImpl,
+        options.requestImpl,
         options.resolveHost,
         options.timeoutMs
       );
@@ -26856,33 +27208,68 @@ function parseCourseLinks(html, options) {
   }
   return { courses, truncated };
 }
-function findAssignmentsAreaUrl(courseHtml, baseUrl) {
-  const candidate = anchors(courseHtml, baseUrl).find((anchor2) => {
-    if (!/listContent\.jsp\?/i.test(anchor2.href)) return false;
-    const label = `${anchor2.text} ${anchor2.title ?? ""}`;
-    return /作业|assignment/i.test(label);
-  });
-  return candidate?.href;
-}
-function parseAssignmentLinks(assignmentsHtml, baseUrl, courseExternalId) {
+var CONTENT_AREA_LABEL = /作业|assignment|测试|测验|考试|test|quiz|exam|课程内容|教学内容|学习材料/i;
+var NEXT_PAGE_LABEL = /下一页|下页|next\s*page|next/i;
+function findContentAreaUrls(courseHtml, baseUrl) {
   const seen = /* @__PURE__ */ new Set();
-  const assignments = [];
-  for (const anchor2 of anchors(assignmentsHtml, baseUrl)) {
-    if (!/\/webapps\/assignment\//i.test(anchor2.href)) continue;
-    const contentId = searchParam(anchor2.href, ["content_id"]);
-    if (!contentId) continue;
+  const urls = [];
+  for (const anchor2 of anchors(courseHtml, baseUrl)) {
+    if (!/listContent\.jsp\?/i.test(anchor2.href)) continue;
+    const label = `${anchor2.text} ${anchor2.title ?? ""}`;
+    if (!CONTENT_AREA_LABEL.test(label)) continue;
+    if (seen.has(anchor2.href)) continue;
+    seen.add(anchor2.href);
+    urls.push(anchor2.href);
+  }
+  return urls;
+}
+function itemKindFromLabel(label, kind) {
+  if (/考试|exam/i.test(label)) return "exam";
+  if (/测验|quiz|test/i.test(label)) return "quiz";
+  return kind;
+}
+function parseContentPage(html, baseUrl, courseExternalId) {
+  const items = [];
+  const folders = [];
+  const seenItems = /* @__PURE__ */ new Set();
+  const seenFolders = /* @__PURE__ */ new Set();
+  let nextPage;
+  for (const anchor2 of anchors(html, baseUrl)) {
+    const label = `${anchor2.text} ${anchor2.title ?? ""}`;
     const courseId = searchParam(anchor2.href, ["course_id"]) ?? courseExternalId;
-    const externalItemId = `bb:${courseId}:${contentId}`;
-    if (seen.has(externalItemId)) continue;
-    seen.add(externalItemId);
-    assignments.push({
+    const contentId = searchParam(anchor2.href, ["content_id"]);
+    if (/listContent\.jsp\?/i.test(anchor2.href) && contentId) {
+      if (NEXT_PAGE_LABEL.test(label) && /startIndex|page/i.test(anchor2.href)) {
+        nextPage = anchor2.href;
+        continue;
+      }
+      if (!seenFolders.has(anchor2.href)) {
+        seenFolders.add(anchor2.href);
+        folders.push(anchor2.href);
+      }
+      continue;
+    }
+    let kind;
+    if (/\/webapps\/assignment\//i.test(anchor2.href)) {
+      kind = "assignment";
+    } else if (/\/webapps\/assessment\//i.test(anchor2.href)) {
+      kind = itemKindFromLabel(label, "quiz");
+    } else {
+      continue;
+    }
+    if (!contentId) continue;
+    const externalItemId = kind === "assignment" ? `bb:${courseId}:${contentId}` : `bb:${courseId}:assessment:${contentId}`;
+    if (seenItems.has(externalItemId)) continue;
+    seenItems.add(externalItemId);
+    items.push({
+      kind,
       externalItemId,
       courseExternalId: courseId,
-      title: anchor2.text || anchor2.title || contentId,
+      title: (anchor2.text || anchor2.title || contentId).slice(0, 300),
       url: anchor2.href
     });
   }
-  return { assignments };
+  return { items, folders, ...nextPage ? { nextPage } : {} };
 }
 function isLoginPage(finalUrl, body, loggedOutPatterns = []) {
   const haystack = `${finalUrl}
@@ -26985,6 +27372,27 @@ function parseDue(value, zone, utcOffsetMinutes) {
   }
   return { kind: "unknown" };
 }
+function firstKnownDue(candidates, zone, utcOffsetMinutes) {
+  for (const candidate of candidates) {
+    if (!candidate.trim()) continue;
+    const due = parseDue(candidate, zone, utcOffsetMinutes);
+    if (due.kind !== "unknown") return due;
+  }
+  return { kind: "unknown" };
+}
+function dueCandidatesFromText(pageText) {
+  const result = [];
+  const patterns = [
+    /(?:截止日期|到期日期|结束日期)\s*[:：]?\s*([\s\S]{0,160})/gi,
+    /(?:Due Date|Due)\s*[:：]?\s*([A-Z][a-z]{2}\s+\d{1,2},?\s+\d{4}[\s\S]{0,40})/gi
+  ];
+  for (const pattern of patterns) {
+    for (const match of pageText.matchAll(pattern)) {
+      if (match[1]) result.push(match[1]);
+    }
+  }
+  return result;
+}
 function parseAssignmentDetail(html, url2, courseExternalId, fallbackTitle, options) {
   const contentId = searchParam(url2, ["content_id"]);
   if (!contentId) throw new Error("Assignment URL has no content_id");
@@ -26999,8 +27407,11 @@ function parseAssignmentDetail(html, url2, courseExternalId, fallbackTitle, opti
   const dueHtml = /<div[^>]*id=["']assignMeta2["'][^>]*>[\s\S]*?截止日期[\s\S]*?<div[^>]*class=["'][^"']*metaField[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(
     html
   )?.[1] ?? /截止日期\s*([\s\S]{0,160})/i.exec(pageText)?.[1] ?? "";
-  const due = parseDue(
-    stripHtml(dueHtml),
+  const due = firstKnownDue(
+    [
+      ...dueHtml ? [stripHtml(dueHtml)] : [],
+      ...dueCandidatesFromText(pageText)
+    ],
     options.zone,
     options.utcOffsetMinutes
   );
@@ -27026,20 +27437,69 @@ function parseAssignmentDetail(html, url2, courseExternalId, fallbackTitle, opti
     contentHash
   };
 }
+function parseAssessmentDetail(html, url2, courseExternalId, fallbackTitle, fallbackKind, options) {
+  const contentId = searchParam(url2, ["content_id"]);
+  if (!contentId) throw new Error("Assessment URL has no content_id");
+  const pageTitle = decodeEntities(
+    /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? ""
+  );
+  const titleMatch = /^(?:考试|测验|测试|Exam|Test|Quiz)\s*[:：]\s*(.+?)(?:\s+[–-]\s+.*)?$/i.exec(
+    stripHtml(pageTitle)
+  );
+  const title = (titleMatch?.[1] ?? fallbackTitle).trim() || fallbackTitle;
+  const pageText = stripHtml(html);
+  const due = firstKnownDue(
+    dueCandidatesFromText(pageText),
+    options.zone,
+    options.utcOffsetMinutes
+  );
+  const instructions = /<li[^>]*id=["']instructions["'][^>]*>([\s\S]*?)<\/li>/i.exec(html)?.[1] ?? /<div[^>]*class=["'][^"']*vtbegenerated[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(
+    html
+  )?.[1] ?? "";
+  const description = stripHtml(instructions).slice(0, 4e3);
+  const kind = /考试|exam/i.test(`${title} ${fallbackKind}`) ? "exam" : "quiz";
+  const contentHash = createHash4("sha256").update(JSON.stringify({ title, description, due, courseExternalId, kind })).digest("hex");
+  return {
+    externalItemId: `bb:${courseExternalId}:assessment:${contentId}`,
+    courseExternalId,
+    kind,
+    title,
+    ...description ? { description } : {},
+    due,
+    sourceUrl: url2,
+    contentHash
+  };
+}
 
 // adapters/ustc-blackboard/src/engine.ts
 var blackboardConfigSchema = browserConfigSchema.extend({
   portalUrl: external_exports.string().url().optional(),
   maxCourses: external_exports.number().int().min(1).max(200).optional(),
   maxAssignments: external_exports.number().int().min(1).max(500).optional(),
+  maxContentPages: external_exports.number().int().min(1).max(100).optional(),
   termFilter: external_exports.array(external_exports.string().min(1)).max(20).optional(),
   courseFilter: external_exports.array(external_exports.string().min(1)).max(50).optional(),
   delayMs: external_exports.number().int().min(0).max(5e3).optional(),
   timeZone: external_exports.string().min(1).optional(),
   utcOffsetMinutes: external_exports.number().int().min(-840).max(840).optional()
 });
+function protocolError(config2) {
+  if (config2.allowHttp) return void 0;
+  const urls = [config2.loginUrl, config2.portalUrl, config2.verifyUrl].filter(
+    (value) => Boolean(value)
+  );
+  for (const value of urls) {
+    if (new URL(value).protocol !== "https:") {
+      return `Blackboard \u5730\u5740\u5FC5\u987B\u4F7F\u7528 HTTPS\uFF1A${value}`;
+    }
+  }
+  return void 0;
+}
 function parseConfig2(config2) {
-  return blackboardConfigSchema.parse(config2);
+  const parsed = blackboardConfigSchema.parse(config2);
+  const error62 = protocolError(parsed);
+  if (error62) throw new Error(error62);
+  return parsed;
 }
 function sessionCookies(secret) {
   try {
@@ -27056,11 +27516,13 @@ var BlackboardClient = class {
   #config;
   #cookies;
   #fetchImpl;
+  #requestImpl;
   #resolveHost;
   constructor(config2, cookies, options) {
     this.#config = config2;
     this.#cookies = cookies;
-    this.#fetchImpl = options.fetchImpl ?? fetch;
+    this.#fetchImpl = options.fetchImpl;
+    this.#requestImpl = options.requestImpl;
     this.#resolveHost = options.resolveHost;
   }
   async get(url2) {
@@ -27083,8 +27545,10 @@ var BlackboardClient = class {
       const result = await safeFetch(url2, {
         cookies: this.#cookies,
         allowedHosts: this.#config.cookieDomains,
+        allowedProtocols: this.#config.allowHttp ? ["http:", "https:"] : ["https:"],
         ...this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {},
-        fetchImpl: this.#fetchImpl,
+        ...this.#fetchImpl ? { fetchImpl: this.#fetchImpl } : {},
+        ...this.#requestImpl ? { requestImpl: this.#requestImpl } : {},
         ...this.#resolveHost ? { resolveHost: this.#resolveHost } : {}
       });
       if (result.status === 401 || result.status === 403) {
@@ -27156,9 +27620,11 @@ var BlackboardReadOnlyAdapter = class {
     const warnings = [];
     const items = [];
     let partial2 = parsedCourses.truncated;
-    let truncatedAssignments = false;
-    let coursesWithAssignmentsArea = 0;
-    const maxAssignments = this.#config.maxAssignments ?? 100;
+    let truncatedItems = false;
+    let hitItemCap = false;
+    let coursesWithContentArea = 0;
+    const maxItems = this.#config.maxAssignments ?? 100;
+    const maxContentPages = this.#config.maxContentPages ?? 20;
     const zone = this.#config.timeZone ?? "Asia/Shanghai";
     const utcOffsetMinutes = this.#config.utcOffsetMinutes ?? 480;
     if (parsedCourses.courses.length === 0) {
@@ -27170,7 +27636,7 @@ var BlackboardReadOnlyAdapter = class {
       };
     }
     for (const course2 of parsedCourses.courses) {
-      if (truncatedAssignments) break;
+      if (truncatedItems) break;
       await client.delay();
       let courseHtml;
       try {
@@ -27181,56 +27647,110 @@ var BlackboardReadOnlyAdapter = class {
         partial2 = true;
         continue;
       }
-      const areaUrl = findAssignmentsAreaUrl(courseHtml, course2.url);
-      if (!areaUrl) continue;
-      coursesWithAssignmentsArea += 1;
-      await client.delay();
-      let assignmentsHtml;
-      try {
-        assignmentsHtml = (await client.get(areaUrl)).html;
-      } catch (error62) {
-        if (error62 instanceof AdapterAuthError) throw error62;
-        warnings.push(`\u8BFE\u7A0B\u300C${course2.title}\u300D\u4F5C\u4E1A\u533A\u8BFB\u53D6\u5931\u8D25\uFF1A${messageOf(error62)}`);
-        partial2 = true;
-        continue;
+      const areaUrls = findContentAreaUrls(courseHtml, course2.url);
+      if (areaUrls.length === 0) continue;
+      coursesWithContentArea += 1;
+      const refs3 = /* @__PURE__ */ new Map();
+      let pagesRead = 0;
+      let truncatedContent = false;
+      for (const areaUrl of areaUrls) {
+        const queue = [areaUrl];
+        const visited = /* @__PURE__ */ new Set();
+        while (queue.length > 0) {
+          if (pagesRead >= maxContentPages || refs3.size >= maxItems) {
+            truncatedContent = true;
+            break;
+          }
+          const pageUrl = queue.shift();
+          const pageKey = contentPageKey(pageUrl);
+          if (visited.has(pageKey)) continue;
+          visited.add(pageKey);
+          pagesRead += 1;
+          await client.delay();
+          let pageHtml;
+          try {
+            pageHtml = (await client.get(pageUrl)).html;
+          } catch (error62) {
+            if (error62 instanceof AdapterAuthError) throw error62;
+            warnings.push(
+              `\u8BFE\u7A0B\u300C${course2.title}\u300D\u5185\u5BB9\u9875\u8BFB\u53D6\u5931\u8D25\uFF1A${messageOf(error62)}`
+            );
+            partial2 = true;
+            continue;
+          }
+          const page = parseContentPage(
+            pageHtml,
+            pageUrl,
+            course2.externalCourseId
+          );
+          for (const ref of page.items) {
+            if (refs3.has(ref.externalItemId)) continue;
+            refs3.set(ref.externalItemId, ref);
+            if (refs3.size >= maxItems) {
+              truncatedContent = true;
+              hitItemCap = true;
+              break;
+            }
+          }
+          for (const folder of page.folders) {
+            if (!visited.has(contentPageKey(folder))) queue.push(folder);
+          }
+          if (page.nextPage && !visited.has(contentPageKey(page.nextPage))) {
+            queue.push(page.nextPage);
+          }
+        }
+        if (truncatedContent) break;
       }
-      const assignments = parseAssignmentLinks(
-        assignmentsHtml,
-        areaUrl,
-        course2.externalCourseId
-      ).assignments;
-      for (const assignment of assignments) {
-        if (items.length >= maxAssignments) {
+      if (truncatedContent) {
+        partial2 = true;
+        truncatedItems = truncatedItems || hitItemCap;
+        if (!hitItemCap) {
+          warnings.push(
+            `\u8BFE\u7A0B\u300C${course2.title}\u300D\u5185\u5BB9\u9875\u6570\u91CF\u8FBE\u5230\u4E0A\u9650 ${maxContentPages}\uFF0C\u672C\u6B21\u6807\u8BB0\u4E3A\u90E8\u5206\u540C\u6B65`
+          );
+        }
+      }
+      for (const ref of refs3.values()) {
+        if (truncatedItems) break;
+        if (items.length >= maxItems) {
           partial2 = true;
-          truncatedAssignments = true;
+          truncatedItems = true;
+          hitItemCap = true;
           break;
         }
         await client.delay();
         try {
-          const detail = await client.get(assignment.url);
-          const parsed = parseAssignmentDetail(
+          const detail = await client.get(ref.url);
+          const parsed = ref.kind === "assignment" ? parseAssignmentDetail(
             detail.html,
-            assignment.url,
+            ref.url,
             course2.externalCourseId,
-            assignment.title,
+            ref.title,
+            { zone, utcOffsetMinutes }
+          ) : parseAssessmentDetail(
+            detail.html,
+            ref.url,
+            course2.externalCourseId,
+            ref.title,
+            ref.kind === "exam" ? "exam" : "quiz",
             { zone, utcOffsetMinutes }
           );
           items.push({ sourceId: this.sourceId, ...parsed });
         } catch (error62) {
           if (error62 instanceof AdapterAuthError) throw error62;
           warnings.push(
-            `\u8BFE\u7A0B\u300C${course2.title}\u300D\u4F5C\u4E1A\u300C${assignment.title}\u300D\u8BFB\u53D6\u5931\u8D25\uFF1A${messageOf(error62)}`
+            `\u8BFE\u7A0B\u300C${course2.title}\u300D${ref.kind === "assignment" ? "\u4F5C\u4E1A" : "\u8003\u8BD5/\u6D4B\u9A8C"}\u300C${ref.title}\u300D\u8BFB\u53D6\u5931\u8D25\uFF1A${messageOf(error62)}`
           );
           partial2 = true;
         }
       }
     }
-    if (coursesWithAssignmentsArea === 0) {
-      warnings.push("\u672A\u627E\u5230\u4F5C\u4E1A\u533A\uFF1B\u4FDD\u7559\u4E0A\u4E00\u6B21\u6709\u6548\u6570\u636E");
+    if (coursesWithContentArea === 0) {
+      warnings.push("\u672A\u627E\u5230\u4F5C\u4E1A/\u8003\u8BD5\u533A\uFF1B\u4FDD\u7559\u4E0A\u4E00\u6B21\u6709\u6548\u6570\u636E");
       partial2 = true;
     }
-    if (truncatedAssignments) {
-      warnings.push(`\u4F5C\u4E1A\u6570\u91CF\u8FBE\u5230\u4E0A\u9650 ${maxAssignments}\uFF0C\u672C\u6B21\u6807\u8BB0\u4E3A\u90E8\u5206\u540C\u6B65`);
+    if (hitItemCap) {
+      warnings.push(`\u4E8B\u9879\u6570\u91CF\u8FBE\u5230\u4E0A\u9650 ${maxItems}\uFF0C\u672C\u6B21\u6807\u8BB0\u4E3A\u90E8\u5206\u540C\u6B65`);
     }
     if (parsedCourses.truncated) {
       warnings.push(
@@ -27248,13 +27768,28 @@ var BlackboardReadOnlyAdapter = class {
 function messageOf(error62) {
   return error62 instanceof Error ? error62.message : String(error62);
 }
+function contentPageKey(url2) {
+  try {
+    const parsed = new URL(url2);
+    parsed.hash = "";
+    if (/listContent\.jsp/i.test(parsed.pathname)) {
+      const courseId = parsed.searchParams.get("course_id") ?? "";
+      const contentId = parsed.searchParams.get("content_id") ?? "";
+      const start = parsed.searchParams.get("startIndex") ?? "";
+      return `${parsed.origin}${parsed.pathname}?course_id=${courseId}&content_id=${contentId}&startIndex=${start}`;
+    }
+    return parsed.toString();
+  } catch {
+    return url2;
+  }
+}
 function createBlackboardEngine(options = {}) {
   const browser = createBrowserSessionEngine(options);
   return {
     descriptor: {
       id: "blackboard",
       displayName: "Blackboard Learn",
-      description: "Blackboard Learn \u53EA\u8BFB\u540C\u6B65\uFF1A\u590D\u7528\u6D4F\u89C8\u5668\u4F1A\u8BDD\uFF0C\u8BFB\u53D6\u8BFE\u7A0B\u4E0E\u4F5C\u4E1A\uFF1B\u4E0D\u63D0\u4EA4\u4F5C\u4E1A\u3002",
+      description: "Blackboard Learn \u53EA\u8BFB\u540C\u6B65\uFF1A\u590D\u7528\u6D4F\u89C8\u5668\u4F1A\u8BDD\uFF0C\u8BFB\u53D6\u8BFE\u7A0B\u3001\u4F5C\u4E1A\u3001\u8003\u8BD5\u4E0E\u6D4B\u9A8C\uFF1B\u4E0D\u63D0\u4EA4\u4F5C\u4E1A\uFF0C\u4E0D\u8BFB\u53D6\u9644\u4EF6\u4E0E\u6210\u7EE9\u3002",
       supportsSync: true,
       supportsLogin: true,
       supportsVerify: true,
@@ -27262,8 +27797,10 @@ function createBlackboardEngine(options = {}) {
       loginModes: ["browser"],
       validateConfig(config2) {
         const parsed = blackboardConfigSchema.safeParse(config2);
-        if (parsed.success) return void 0;
-        return parsed.error.issues.map((issue2) => `${issue2.path.join(".") || "config"}: ${issue2.message}`).join("; ");
+        if (!parsed.success) {
+          return parsed.error.issues.map((issue2) => `${issue2.path.join(".") || "config"}: ${issue2.message}`).join("; ");
+        }
+        return protocolError(parsed.data);
       }
     },
     async login(context2) {
@@ -27332,6 +27869,7 @@ var adapterManifestSchema = external_exports.object({
   description: external_exports.string().max(2e3).optional(),
   baseUrl: external_exports.string().url(),
   allowedOrigins: external_exports.array(external_exports.string().regex(/^[a-z0-9.-]+$/i, "Expected a host name")).min(1).max(20),
+  allowHttp: external_exports.boolean().optional(),
   timeZone: external_exports.string().min(1).optional(),
   utcOffsetMinutes: external_exports.number().int().min(-840).max(840).optional(),
   courses: requestSchema,
@@ -37943,6 +38481,21 @@ function Document4() {
 setPrototypeOf(Document4, Document2).prototype = Document2.prototype;
 
 // packages/academic-adapter-runtime/src/extract.ts
+var MAX_REGEX_INPUT = 1e4;
+var MAX_ROWS_PER_PAGE = 1e3;
+function regexSafetyError(pattern) {
+  if (pattern.length > 300) return "\u6B63\u5219\u8868\u8FBE\u5F0F\u8FC7\u957F";
+  if (/\\[1-9]/.test(pattern)) return "\u4E0D\u5141\u8BB8\u6B63\u5219\u53CD\u5411\u5F15\u7528";
+  if (/\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)\s*(?:[+*]|\{\d+,?\d*\})/.test(pattern)) {
+    return "\u4E0D\u5141\u8BB8\u5D4C\u5957\u91CF\u8BCD";
+  }
+  return void 0;
+}
+function safeRegex(pattern) {
+  const error62 = regexSafetyError(pattern);
+  if (error62) throw new Error(`Unsafe regex: ${error62}`);
+  return new RegExp(pattern);
+}
 function segments(path) {
   const normalized2 = path.replace(/^\$?\.?/, "");
   if (!normalized2) return [];
@@ -37975,7 +38528,7 @@ function readJsonPath(value, path) {
 }
 function applyRegex(value, extractor) {
   if (!extractor.regex) return value;
-  const match = new RegExp(extractor.regex).exec(value);
+  const match = safeRegex(extractor.regex).exec(value.slice(0, MAX_REGEX_INPUT));
   if (!match) return void 0;
   return match[extractor.group ?? 1] ?? "";
 }
@@ -38004,17 +38557,19 @@ function extractPage(payload, request) {
     } catch {
       throw new Error("Response is not valid JSON");
     }
-    const rawRows2 = readJsonPath(parsed, request.items);
-    const rows = Array.isArray(rawRows2) ? rawRows2 : rawRows2 !== void 0 && rawRows2 !== null ? [rawRows2] : [];
+    const rawRows = readJsonPath(parsed, request.items);
+    const allRows2 = Array.isArray(rawRows) ? rawRows : rawRows !== void 0 && rawRows !== null ? [rawRows] : [];
+    const rows2 = allRows2.slice(0, MAX_ROWS_PER_PAGE);
     const result2 = {
-      rows: rows.map((row) => {
+      rows: rows2.map((row) => {
         const record2 = {};
         for (const [name, extractor] of Object.entries(request.fields)) {
           const value = extractJsonField(row, extractor);
           if (value !== void 0) record2[name] = value;
         }
         return record2;
-      })
+      }),
+      ...allRows2.length > rows2.length ? { truncated: true } : {}
     };
     if (request.next) {
       const next = readJsonPath(parsed, request.next);
@@ -38023,18 +38578,20 @@ function extractPage(payload, request) {
     return result2;
   }
   const { document: document2 } = parseHTML(payload);
-  const rawRows = Array.from(
+  const allRows = Array.from(
     document2.querySelectorAll(request.items)
   );
+  const rows = allRows.slice(0, MAX_ROWS_PER_PAGE);
   const result = {
-    rows: rawRows.map((row) => {
+    rows: rows.map((row) => {
       const record2 = {};
       for (const [name, extractor] of Object.entries(request.fields)) {
         const value = extractHtmlField(row, extractor);
         if (value !== void 0) record2[name] = value;
       }
       return record2;
-    })
+    }),
+    ...allRows.length > rows.length ? { truncated: true } : {}
   };
   if (request.next) {
     const next = document2.querySelector(request.next);
@@ -38046,6 +38603,7 @@ function extractPage(payload, request) {
 
 // packages/academic-adapter-runtime/src/runtime.ts
 import { createHash as createHash5 } from "node:crypto";
+var MAX_TOTAL_ROWS = 5e3;
 var declarativeConfigSchema = browserConfigSchema.extend({
   manifestId: external_exports.string().min(1).max(200),
   manifestVersion: external_exports.string().min(1).max(50).optional(),
@@ -38054,7 +38612,9 @@ var declarativeConfigSchema = browserConfigSchema.extend({
   courseFilter: external_exports.array(external_exports.string().min(1)).max(50).optional(),
   maxCourses: external_exports.number().int().min(1).max(200).optional(),
   maxAssignments: external_exports.number().int().min(1).max(500).optional(),
-  delayMs: external_exports.number().int().min(0).max(5e3).optional()
+  delayMs: external_exports.number().int().min(0).max(5e3).optional(),
+  maxRequests: external_exports.number().int().min(1).max(500).optional(),
+  maxDurationMs: external_exports.number().int().min(1e3).max(10 * 6e4).optional()
 });
 function text(value) {
   if (typeof value === "string") return value.trim() || void 0;
@@ -38070,11 +38630,14 @@ function renderTemplate(template, vars) {
     if (value === void 0 || value === null || value === "") {
       throw new Error(`Template variable is missing: ${path}`);
     }
-    return String(value);
+    return encodeURIComponent(String(value));
   });
 }
 function absoluteUrl2(value, baseUrl) {
   return new URL(value, baseUrl).toString();
+}
+function renderManifestUrl(template, vars, baseUrl) {
+  return absoluteUrl2(renderTemplate(template, vars), baseUrl);
 }
 function parseDue2(value, zone, utcOffsetMinutes) {
   if (value && typeof value === "object") {
@@ -38131,17 +38694,32 @@ var ManifestClient = class {
   #cookies;
   #baseUrl;
   #options;
+  #protocols;
+  #ports;
+  #startedAt = Date.now();
+  #requests = 0;
   constructor(manifest, config2, cookies, options) {
     this.#manifest = manifest;
     this.#config = config2;
     this.#cookies = cookies;
     this.#baseUrl = config2.baseUrl ?? manifest.baseUrl;
     this.#options = options;
+    const allowHttp = config2.allowHttp ?? manifest.allowHttp ?? false;
+    this.#protocols = allowHttp ? ["http:", "https:"] : ["https:"];
+    const baseUrl = new URL(this.#baseUrl);
+    this.#ports = baseUrl.port ? [Number(baseUrl.port)] : allowHttp ? [80, 443] : [443];
   }
   get baseUrl() {
     return this.#baseUrl;
   }
   async get(url2) {
+    if (this.#requests >= (this.#config.maxRequests ?? 100)) {
+      throw new AdapterTransientError("\u58F0\u660E\u5F0F\u6293\u53D6\u8BF7\u6C42\u6B21\u6570\u8D85\u8FC7\u4E0A\u9650");
+    }
+    if (Date.now() - this.#startedAt > (this.#config.maxDurationMs ?? 12e4)) {
+      throw new AdapterTransientError("\u58F0\u660E\u5F0F\u6293\u53D6\u8D85\u8FC7\u6267\u884C\u65F6\u95F4\u4E0A\u9650");
+    }
+    this.#requests += 1;
     let lastError;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
@@ -38161,8 +38739,11 @@ var ManifestClient = class {
       const result = await safeFetch(url2, {
         cookies: this.#cookies,
         allowedHosts: this.#manifest.allowedOrigins,
+        allowedProtocols: this.#protocols,
+        allowedPorts: this.#ports,
         ...this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {},
         ...this.#options.fetchImpl ? { fetchImpl: this.#options.fetchImpl } : {},
+        ...this.#options.requestImpl ? { requestImpl: this.#options.requestImpl } : {},
         ...this.#options.resolveHost ? { resolveHost: this.#options.resolveHost } : {}
       });
       if (result.status === 401 || result.status === 403) {
@@ -38206,11 +38787,17 @@ ${result.body.slice(0, 4e3)}`);
   async loadRows(request, vars) {
     const maxPages = request.maxPages ?? 1;
     const rows = [];
-    let currentUrl = absoluteUrl2(renderTemplate(request.url, vars), this.#baseUrl);
+    let currentUrl = renderManifestUrl(request.url, vars, this.#baseUrl);
     for (let page = 0; page < maxPages; page += 1) {
       const body = await this.get(currentUrl);
       const extracted = extractPage(body, request);
+      const remaining = MAX_TOTAL_ROWS - rows.length;
+      if (extracted.rows.length > remaining) {
+        rows.push(...extracted.rows.slice(0, Math.max(0, remaining)));
+        return { rows, complete: false };
+      }
       rows.push(...extracted.rows);
+      if (extracted.truncated) return { rows, complete: false };
       if (!extracted.next) return { rows, complete: true };
       if (page + 1 >= maxPages) return { rows, complete: false };
       currentUrl = absoluteUrl2(extracted.next, currentUrl);
@@ -38442,15 +39029,21 @@ function createDeclarativeEngine(registry2, options = {}) {
     }
   };
 }
-function hostAllowed(host, origins) {
+function hostAllowed2(host, origins) {
   return origins.some((origin) => host === origin || host.endsWith(`.${origin}`));
 }
 function validateManifestStatic(manifest) {
   const errors = [];
+  const allowHttp = manifest.allowHttp === true;
+  let basePort = 443;
   try {
-    const host = new URL(manifest.baseUrl).hostname;
-    if (!hostAllowed(host, manifest.allowedOrigins)) {
-      errors.push(`baseUrl \u4E3B\u673A\u4E0D\u5728 allowedOrigins\uFF1A${host}`);
+    const base = new URL(manifest.baseUrl);
+    if (!allowHttp && base.protocol !== "https:") {
+      errors.push("baseUrl \u5FC5\u987B\u4F7F\u7528 HTTPS\uFF0CHTTP \u9700\u8981\u663E\u5F0F allowHttp");
+    }
+    basePort = base.port ? Number(base.port) : base.protocol === "https:" ? 443 : 80;
+    if (!hostAllowed2(base.hostname, manifest.allowedOrigins)) {
+      errors.push(`baseUrl \u4E3B\u673A\u4E0D\u5728 allowedOrigins\uFF1A${base.hostname}`);
     }
   } catch {
     errors.push("baseUrl \u65E0\u6548");
@@ -38471,8 +39064,15 @@ function validateManifestStatic(manifest) {
       const resolved = new URL(request.url, manifest.baseUrl);
       if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
         errors.push(`${name} URL \u53EA\u5141\u8BB8 http(s)`);
+      } else if (!allowHttp && resolved.protocol !== "https:") {
+        errors.push(`${name} URL \u5FC5\u987B\u4F7F\u7528 HTTPS`);
       } else if (!allowHostInManifest(resolved.hostname, manifest)) {
         errors.push(`${name} URL \u4E3B\u673A\u4E0D\u5728 allowedOrigins\uFF1A${resolved.hostname}`);
+      } else {
+        const port = resolved.port ? Number(resolved.port) : resolved.protocol === "https:" ? 443 : 80;
+        if (port !== basePort) {
+          errors.push(`${name} URL \u7AEF\u53E3\u5FC5\u987B\u4E0E baseUrl \u4E00\u81F4\uFF1A${port}`);
+        }
       }
     } catch {
       errors.push(`${name} URL \u65E0\u6548`);
@@ -38484,12 +39084,16 @@ function validateManifestStatic(manifest) {
       if (request.responseType === "json" && !extractor.path) {
         errors.push(`${name}.${field} \u9700\u8981 path`);
       }
+      if (extractor.regex) {
+        const regexError = regexSafetyError(extractor.regex);
+        if (regexError) errors.push(`${name}.${field} \u6B63\u5219\u4E0D\u5B89\u5168\uFF1A${regexError}`);
+      }
     }
   }
   return errors;
 }
 function allowHostInManifest(host, manifest) {
-  return hostAllowed(host, manifest.allowedOrigins);
+  return hostAllowed2(host, manifest.allowedOrigins);
 }
 function formatCandidateError(error62) {
   if (error62 && typeof error62 === "object" && "issues" in error62) {
@@ -38761,6 +39365,7 @@ var ACADEMIC_TOOL_NAMES = {
   GetStudyPlan: "academic_get_study_plan",
   ListSources: "academic_list_sources",
   ListSourceEngines: "academic_list_source_engines",
+  ProbeSource: "academic_probe_source",
   CreateSource: "academic_create_source",
   ListWebSessions: "academic_list_web_sessions",
   FetchWebSession: "academic_fetch_web_session",
@@ -39028,6 +39633,23 @@ function createAcademicTools(dependencies) {
           engines: dependencies.sourceEngines.list().map((engine) => engine.descriptor)
         })
       ),
+      ...dependencies.probeSource ? [
+        defineTool(
+          ACADEMIC_TOOL_NAMES.ProbeSource,
+          "Read one authorized page from a saved session and return sanitized evidence (title, headings, links, forms). Read-only; never returns cookies or URL query strings.",
+          external_exports.object({ sourceId: external_exports.string().min(1).max(200) }),
+          async (input2) => {
+            const evidence = await dependencies.probeSource(input2.sourceId);
+            if (evidence.loginLike) {
+              return failure2(
+                "AUTH_REQUIRED",
+                "Session appears expired; the user must log in again."
+              );
+            }
+            return success2({ evidence });
+          }
+        )
+      ] : [],
       defineTool(
         ACADEMIC_TOOL_NAMES.CreateSource,
         "Create a database-backed source definition from a known engine and non-secret config. The host must authorize this write; this tool cannot install code.",
@@ -39267,7 +39889,7 @@ var ConnectorService = class {
       );
     }
     const result = await adapter2.fetch(credentials ? { credentials } : void 0);
-    const counts = { create: 0, update: 0, unchanged: 0, skip: 0 };
+    const counts = { create: 0, update: 0, unchanged: 0, skip: 0, missing: 0 };
     const items = [];
     for (const item of result.items) {
       let action = "create";
@@ -39294,6 +39916,23 @@ var ConnectorService = class {
         action,
         ...reason ? { reason } : {}
       });
+    }
+    if (result.completeness === "full") {
+      const seen = new Set(
+        result.items.map((item) => item.externalItemId).filter((value) => Boolean(value))
+      );
+      for (const item of await this.#listActiveItems(adapter2.sourceId)) {
+        const externalItemId = item.source.externalItemId;
+        if (!externalItemId || seen.has(externalItemId)) continue;
+        counts.missing += 1;
+        items.push({
+          externalItemId,
+          title: item.title,
+          kind: item.kind,
+          action: "missing",
+          reason: "\u672C\u6B21\u5B8C\u6574\u540C\u6B65\u672A\u8FD4\u56DE\uFF1B\u4FDD\u7559\u672C\u5730\u6570\u636E"
+        });
+      }
     }
     return {
       sourceId: adapter2.sourceId,
@@ -39423,6 +40062,16 @@ var ConnectorService = class {
         else if (outcome.kind === "updated") updated += 1;
         else if (outcome.kind === "failed") warnings.push(outcome.message);
       }
+      if (adapterResult.completeness === "full" && !options.archiveMissing) {
+        const missing = (await this.#listActiveItems(adapter2.sourceId)).filter(
+          (item) => !item.source.externalItemId || !seenExternalIds.has(item.source.externalItemId)
+        );
+        if (missing.length > 0) {
+          warnings.push(
+            `${missing.length} \u4E2A\u5DF2\u540C\u6B65\u4E8B\u9879\u672A\u51FA\u73B0\u5728\u672C\u6B21\u5B8C\u6574\u7ED3\u679C\u4E2D\uFF1B\u5DF2\u4FDD\u7559\u672C\u5730\u6570\u636E`
+          );
+        }
+      }
       if (options.archiveMissing && adapterResult.completeness === "full") {
         updated += await this.#archiveMissing(
           adapter2.sourceId,
@@ -39516,6 +40165,21 @@ var ConnectorService = class {
     }
     if (!result.ok) return { kind: "failed", message: `Item ${itemId}: ${result.message}` };
     return { kind: result.eventIds.length > 0 ? "updated" : "noop" };
+  }
+  async #listActiveItems(sourceId) {
+    const items = [];
+    let cursor;
+    do {
+      const page = await this.#queries.listAcademicItems({
+        sourceId,
+        status: "active",
+        limit: 200,
+        ...cursor ? { cursor } : {}
+      });
+      items.push(...page.items);
+      cursor = page.nextCursor;
+    } while (cursor);
+    return items;
   }
   async #archiveMissing(sourceId, seenExternalIds, runId, warnings) {
     let archived = 0;
@@ -42952,19 +43616,6 @@ async function createAcademicApp(options) {
     capabilities: ["academic.reminder.in-app"],
     requiredPermissions: []
   });
-  const sources = new SourceConfigStore({
-    db: store.database,
-    clock,
-    ids
-  });
-  sources.ensure({
-    sourceId: "fixture-lms",
-    engine: "fixture",
-    displayName: "Fixture LMS\uFF08\u5185\u7F6E\u6F14\u793A\uFF09",
-    authKind: "none",
-    capabilities: ["academic.sync", "academic.courses.probe"],
-    config: {}
-  });
   const sourceEngines = new SourceEngineRegistry();
   const manifestRegistry = options.manifestRegistry ?? new ManifestRegistry();
   const manifestStore = new ManifestStore({ db: store.database, clock });
@@ -43002,6 +43653,60 @@ async function createAcademicApp(options) {
   for (const engine of configuredEngines) {
     sourceEngineRegistrations.push(sourceEngines.register(engine));
   }
+  const sources = new SourceConfigStore({
+    db: store.database,
+    clock,
+    ids,
+    validateSource(input2) {
+      const registered = sourceEngines.get(input2.engine);
+      if (!registered) return `\u672A\u77E5 engine\uFF1A${input2.engine}`;
+      const descriptor = registered.descriptor;
+      if (descriptor.authKinds && !descriptor.authKinds.includes(input2.authKind)) {
+        return `\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u8BA4\u8BC1\u65B9\u5F0F ${input2.authKind}`;
+      }
+      if (input2.loginMode) {
+        if (input2.authKind === "none") return "\u8BA4\u8BC1\u65B9\u5F0F\u4E3A none \u65F6\u4E0D\u5E94\u914D\u7F6E\u767B\u5F55\u65B9\u5F0F";
+        if (!descriptor.supportsLogin) return "\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u767B\u5F55\u6D41\u7A0B";
+        if (descriptor.loginModes && !descriptor.loginModes.includes(input2.loginMode)) {
+          return `\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u767B\u5F55\u65B9\u5F0F ${input2.loginMode}`;
+        }
+      }
+      return descriptor.validateConfig?.(input2.config);
+    }
+  });
+  sources.ensure({
+    sourceId: "fixture-lms",
+    engine: "fixture",
+    displayName: "Fixture LMS\uFF08\u5185\u7F6E\u6F14\u793A\uFF09",
+    authKind: "none",
+    capabilities: ["academic.sync", "academic.courses.probe"],
+    config: {}
+  });
+  const probeSourceById = async (sourceId) => {
+    const source = sources.get(sourceId);
+    if (!source || source.archived) {
+      throw new CapabilityUnavailableError(`source.${sourceId}`);
+    }
+    if (source.authKind === "none") {
+      throw new CapabilityUnavailableError(`source.session.${sourceId}`);
+    }
+    const connection = connections.list().find((entry) => entry.sourceId === sourceId);
+    if (!connection) {
+      throw new CapabilityUnavailableError(`source.session.${sourceId}`);
+    }
+    const credentials = await connections.openCredential(
+      connection.connectionId,
+      sourceId
+    );
+    return probeSourcePage({
+      sourceId,
+      config: source.config,
+      secret: await credentials.getSecret(),
+      probedAt: clock.now(),
+      ...options.probeFetch ? { fetchImpl: options.probeFetch } : {},
+      ...options.probeResolveHost ? { resolveHost: options.probeResolveHost } : {}
+    });
+  };
   const host = new InMemoryToolHost();
   const agentRegistration = registerAcademicTools(host, {
     queries: store.queries,
@@ -43013,6 +43718,7 @@ async function createAcademicApp(options) {
     sourceEngines,
     webSessions,
     adapterCandidates,
+    probeSource: probeSourceById,
     allowWrites: options.agentWrites ?? false,
     ...options.authorizeAgentWrite ? { authorizeWrite: options.authorizeAgentWrite } : {}
   });
@@ -43231,6 +43937,7 @@ async function createAcademicApp(options) {
       await dispatcher.processOnce();
       return summary2;
     },
+    probeSource: probeSourceById,
     async previewSourceSync(sourceId, connectionId) {
       const source = sources.get(sourceId);
       if (!source || !source.enabled || source.archived) {
