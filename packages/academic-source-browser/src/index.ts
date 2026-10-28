@@ -24,6 +24,17 @@ export const browserConfigSchema = z.object({
     .array(z.string().regex(/^\//, 'Expected a path beginning with /'))
     .max(20)
     .optional(),
+  /** Extra hosts the user explicitly allows the read-only probe to visit. */
+  probeAllowedHosts: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(253)
+        .regex(/^[a-z0-9.-]+$/i, 'Expected a hostname without scheme or path'),
+    )
+    .max(20)
+    .optional(),
   timeoutMs: z.number().int().min(1_000).max(10 * 60_000).optional(),
   channel: z.enum(['msedge', 'chrome']).optional(),
   allowHttp: z.boolean().optional(),

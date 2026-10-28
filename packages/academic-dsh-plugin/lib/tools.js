@@ -20259,7 +20259,7 @@ var TOOL_SPECS = [
   },
   {
     name: ACADEMIC_TOOL_NAMES.ProbeSource,
-    description: "Read one authorized same-host page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Read-only; never returns cookies or URL query strings.",
+    description: "Read one authorized page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). The URL host must be in the source cookieDomains or the explicit probeAllowedHosts list. Read-only; never returns cookies or URL query strings.",
     parameters: {
       sourceId: {
         type: "string",
@@ -20268,7 +20268,7 @@ var TOOL_SPECS = [
       },
       url: {
         type: "string",
-        description: "Optional same-host URL to probe; defaults to the configured portal/verify URL"
+        description: "Optional URL to probe; host must be in cookieDomains or probeAllowedHosts; defaults to the configured portal/verify URL"
       },
       capture: {
         type: "boolean",

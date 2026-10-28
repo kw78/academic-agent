@@ -82,6 +82,7 @@ docs/adr/                      # 架构决策记录
 - 数据源定义与配置保存在 `academic_sources` 运营表：少量通用 engine（fixture、browser-session，后续 ics/http-session）+ 非敏感 `config_json`。新增网站来源优先写 DB 配置，不在应用层为每家网站写代码或 vendor 插件；只有出现新的独立执行能力时才增加 engine。
 - 通用网站会话保存在 `web_sessions` 运营表，Cookie 仅存 DPAPI；UI/CLI/Agent 通过 `web login`、`academic_fetch_web_session` 等接口带会话访问，不把 Cookie 返回给模型或浏览器端。
 - 课程资料原文件按 sha256 存于数据库同目录 `materials/`，SQLite 只存元数据、分块与 FTS5 索引（可重建）；资料不写入 Event Store/核心投影，删除资料不影响学业事件。
+- 只读探测默认限制在来源 `cookieDomains`；需要跨主机（例如壳站与 MOOC 子站）时，必须由用户在来源配置 `probeAllowedHosts` 中显式列出额外主机。跨主机请求不会自动携带该主机 Cookie；Manifest `allowedOrigins` 必须列出所有实际请求主机。
 - 课程页附件自动导入必须由用户为 source+course 显式开启；只扫描用户给出的课程页同主机链接，限制文件数/大小/时长，401/403/登录页/429 立即停止；资料正文一律视为不可信数据。
 - 课程身份按 `(termId, 规范化标题)` 合并：同步注册与手工添加都复用同学期同名课程；外部来源身份保存在 `course_source_aliases`，不重复建课。
 - 历史重复课程通过 `course merge-duplicates` 或设置页“合并同学期同名课程”显式修复：事项经 `AcademicItemReassignCourse` 事件迁移，资料/订阅/优先级迁移后关闭重复课程；合并前先备份。
@@ -159,7 +160,7 @@ docs/adr/                      # 架构决策记录
 
 | Gate | 内容 | 状态 |
 |---|---|---|
-| Gate 0 | 真实基线 | 已完成：typecheck、217 项测试/40 文件、两个构建、DSH selftest；桌面干净启动待复核 |
+| Gate 0 | 真实基线 | 已完成：typecheck、219 项测试/41 文件、两个构建、DSH selftest；桌面干净启动待复核 |
 | Gate 1 | 桌面端可启动、可操作 | 用户已手工检查当前 Desktop 基本流程，无阻塞；链接配置已置顶；文件级 HMR/完整生命周期专项仍未验证 |
 | Gate 2 | 真实平台登录与会话 | 已完成：BB 与 USTC 教务真实登录/验证；正式同步新增“连接必须已验证”闸门；删除凭据不删学业数据 |
 | Gate 3 | 一个平台的数据同步闭环 | 已完成：BB 真实课程/作业/文件夹；考试/测验 fixture 验证并标注；JW 考试真实同步 |
@@ -173,7 +174,7 @@ docs/adr/                      # 架构决策记录
 
 声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、常量/模板、类型转换/默认值/必需字段诊断、`next`/页码/offset 分页、字段映射、允许主机与路径、总请求/行/字节/时长上限、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选流水线已实现：Agent 可调用只读 `academic_probe_source` 获取带 SHA-256 摘要的脱敏证据，生成 Manifest 并用显式样本离线回放；验证按 schema、字段契约、访问范围、样本回放分阶段报告，候选摘要包含允许主机/路径/数据类型/字段；候选保存与启用分开：Agent 可暂存候选（不需要写权限，不激活、不建源），只有 validated 版本可启用，启用仍需可信宿主逐次授权。激活语义统一在应用服务中实现：UI、CLI 与提供回调的 Agent 工具都会创建/更新可同步的 declarative 数据源并复制同站点会话，不返回秘密；自动建源命名为 `<Manifest 显示名>（同步）`，原登录源保留，UI 标记“登录源/同步源”；激活时从候选表重新注册 Manifest，不需要重启 Host。`assignments.scope=source` 让静态作业/考试列表只请求一次并按行内课程 ID 归属，避免按课程重复抓取。UI“连接”页提供快速添加、探测、候选列表、文件导入、验证报告、启用/回滚；样本回放明确标注“未做真实同步”。CLI `adapter validate/register/activate/rollback` 同样可用。设置页提供默认关闭的“Agent 自动接入”偏好：开启后 Agent 可启用 validated 候选，并用 `academic_preview_source_sync` / `academic_sync_source` 预览、同步 declarative 源，不需要逐次审核；仍不能启用未验证候选、操作非 declarative 源、读取凭据、修改任务或提交作业。尚未实现 Host 直接调用模型生成、多页自动采样、任意 JavaScript 生成与沙箱执行。
 
-MVP 后能力（2026-10-28）：Host 统一返回数据源阶段与唯一下一步，同步失败分类为认证/网络/权限/结构/质量并给出建议；课程优先级保存于 `user_preferences` 并作为任务优先级之后的计划排序依据；任务页提供按课程的复习清单与带上下文 Agent 提示；`skills/academic-tutor` 提供稳定教学契约与可扩展的 explain/hint/check/review 模式（不新增工具或代码，安装到 DSH 属于工作区外操作）；`academic_probe_source` 支持同一主机内的额外 URL、同站脚本与候选接口线索、表格表头/class 与容器 class，`capture=true` 时原始响应只进入 Host 内存样本存储（60 分钟 TTL、按 URL 复用）并返回 `sampleId`，验证可直接使用 `sampleIds`，不把原始 body 交给模型；探测按来源限速（每个来源最多 3 次/分钟，按 20 秒间隔执行，过早请求返回“约 N 秒后再试”，不长时间占用工具调用），429/403/登录页停止；CLI 支持带完整性/投影校验的独立目录恢复；`npm run benchmark` 记录 1k/10k 事项基线。仍未验证：Desktop 文件级 HMR/真实 Session、真实 BB 考试样本、JW 会话过期后的重新登录。自动多页发现仍未实现。
+MVP 后能力（2026-10-28）：Host 统一返回数据源阶段与唯一下一步，同步失败分类为认证/网络/权限/结构/质量并给出建议；课程优先级保存于 `user_preferences` 并作为任务优先级之后的计划排序依据；任务页提供按课程的复习清单与带上下文 Agent 提示；`skills/academic-tutor` 提供稳定教学契约与可扩展的 explain/hint/check/review 模式（不新增工具或代码，安装到 DSH 属于工作区外操作）；`academic_probe_source` 支持同一主机或 `probeAllowedHosts` 显式授权主机内的额外 URL、同站脚本与候选接口线索、表格表头/class 与容器 class，`capture=true` 时原始响应只进入 Host 内存样本存储（60 分钟 TTL、按 URL 复用）并返回 `sampleId`，验证可直接使用 `sampleIds`，不把原始 body 交给模型；探测按来源限速（每个来源最多 3 次/分钟，按 20 秒间隔执行，过早请求返回“约 N 秒后再试”，不长时间占用工具调用），429/403/登录页停止；CLI 支持带完整性/投影校验的独立目录恢复；`npm run benchmark` 记录 1k/10k 事项基线。仍未验证：Desktop 文件级 HMR/真实 Session、真实 BB 考试样本、JW 会话过期后的重新登录。自动多页发现仍未实现。
 
 架构测试矩阵进度：
 
@@ -200,7 +201,7 @@ MVP 后能力（2026-10-28）：Host 统一返回数据源阶段与唯一下一�
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（217 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（219 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/编辑/归档/删除/恢复、来源事项归档/恢复、任务创建/编辑/完成/重开/删除/恢复/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、Agent 自动接入开关、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 

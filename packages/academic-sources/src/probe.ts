@@ -360,12 +360,22 @@ export async function probeSourcePage(
         (entry): entry is string => typeof entry === 'string',
       )
     : []
-  if (input.url && cookieDomains.length === 0) {
+  const probeAllowedHosts = Array.isArray(input.config.probeAllowedHosts)
+    ? input.config.probeAllowedHosts.filter(
+        (entry): entry is string => typeof entry === 'string',
+      )
+    : []
+  const allowedHosts = [
+    ...new Set([...cookieDomains, ...probeAllowedHosts]),
+  ]
+  if (input.url && allowedHosts.length === 0) {
     throw new Error('该来源未配置授权域名，不能探测额外 URL')
   }
-  const allowedHosts = cookieDomains.length > 0 ? cookieDomains : [host]
-  if (!hostAllowed(host, allowedHosts)) {
-    throw new Error('探测 URL 不在该来源的授权域名内')
+  const effectiveHosts = allowedHosts.length > 0 ? allowedHosts : [host]
+  if (!hostAllowed(host, effectiveHosts)) {
+    throw new Error(
+      `探测 URL 主机未授权：${host}。已授权主机：${effectiveHosts.join(', ')}；跨主机的只读探测需在来源配置的 probeAllowedHosts 中显式加入该主机（不会自动携带该域名的 Cookie）`,
+    )
   }
   const pathPrefixes = Array.isArray(input.config.probePathPrefixes)
     ? input.config.probePathPrefixes.filter(
@@ -380,7 +390,7 @@ export async function probeSourcePage(
   }
   const result = await safeFetch(url, {
     cookies,
-    allowedHosts,
+    allowedHosts: effectiveHosts,
     allowedProtocols:
       input.config.allowHttp === true ? ['http:', 'https:'] : ['https:'],
     ...(pathPrefixes.length > 0 ? { allowedPathPrefixes: pathPrefixes } : {}),
@@ -393,7 +403,7 @@ export async function probeSourcePage(
     input.sourceId,
     url,
     result,
-    allowedHosts,
+    effectiveHosts,
     input.config.loggedOutPatterns,
     input.probedAt,
   )

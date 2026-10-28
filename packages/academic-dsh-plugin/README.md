@@ -26,7 +26,7 @@ bundle 现在由三个独立 Cordis fiber 组成：
 | `academic_request_replan` | 运行控制 | 排队重规划请求；需可信宿主授权 + planner 能力 |
 | `academic_list_sources` | 只读 | 列出数据库中的数据源与 engine |
 | `academic_list_source_engines` | 只读 | 列出当前 Host 可用的通用 engine |
-| `academic_probe_source` | 只读 | 用已保存会话读取同主机页面，返回脱敏结构证据 |
+| `academic_probe_source` | 只读 | 用已保存会话读取授权页面（cookieDomains 或 probeAllowedHosts），返回脱敏结构证据 |
 | `academic_create_source` | 写入 | 用已知 engine 与非敏感 config 创建数据源；需可信宿主授权 |
 | `academic_update_source` | 写入 | 修改数据源配置；需可信宿主授权 |
 | `academic_list_web_sessions` | 只读 | 列出已保存的网站会话元数据，不返回 Cookie |

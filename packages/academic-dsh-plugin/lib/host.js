@@ -26772,12 +26772,20 @@ async function probeSourcePage(input2) {
   const cookieDomains = Array.isArray(input2.config.cookieDomains) ? input2.config.cookieDomains.filter(
     (entry) => typeof entry === "string"
   ) : [];
-  if (input2.url && cookieDomains.length === 0) {
+  const probeAllowedHosts = Array.isArray(input2.config.probeAllowedHosts) ? input2.config.probeAllowedHosts.filter(
+    (entry) => typeof entry === "string"
+  ) : [];
+  const allowedHosts = [
+    .../* @__PURE__ */ new Set([...cookieDomains, ...probeAllowedHosts])
+  ];
+  if (input2.url && allowedHosts.length === 0) {
     throw new Error("\u8BE5\u6765\u6E90\u672A\u914D\u7F6E\u6388\u6743\u57DF\u540D\uFF0C\u4E0D\u80FD\u63A2\u6D4B\u989D\u5916 URL");
   }
-  const allowedHosts = cookieDomains.length > 0 ? cookieDomains : [host];
-  if (!hostAllowed(host, allowedHosts)) {
-    throw new Error("\u63A2\u6D4B URL \u4E0D\u5728\u8BE5\u6765\u6E90\u7684\u6388\u6743\u57DF\u540D\u5185");
+  const effectiveHosts = allowedHosts.length > 0 ? allowedHosts : [host];
+  if (!hostAllowed(host, effectiveHosts)) {
+    throw new Error(
+      `\u63A2\u6D4B URL \u4E3B\u673A\u672A\u6388\u6743\uFF1A${host}\u3002\u5DF2\u6388\u6743\u4E3B\u673A\uFF1A${effectiveHosts.join(", ")}\uFF1B\u8DE8\u4E3B\u673A\u7684\u53EA\u8BFB\u63A2\u6D4B\u9700\u5728\u6765\u6E90\u914D\u7F6E\u7684 probeAllowedHosts \u4E2D\u663E\u5F0F\u52A0\u5165\u8BE5\u4E3B\u673A\uFF08\u4E0D\u4F1A\u81EA\u52A8\u643A\u5E26\u8BE5\u57DF\u540D\u7684 Cookie\uFF09`
+    );
   }
   const pathPrefixes = Array.isArray(input2.config.probePathPrefixes) ? input2.config.probePathPrefixes.filter(
     (entry) => typeof entry === "string" && entry.startsWith("/")
@@ -26790,7 +26798,7 @@ async function probeSourcePage(input2) {
   }
   const result = await safeFetch(url2, {
     cookies,
-    allowedHosts,
+    allowedHosts: effectiveHosts,
     allowedProtocols: input2.config.allowHttp === true ? ["http:", "https:"] : ["https:"],
     ...pathPrefixes.length > 0 ? { allowedPathPrefixes: pathPrefixes } : {},
     timeoutMs: input2.timeoutMs ?? 15e3,
@@ -26802,7 +26810,7 @@ async function probeSourcePage(input2) {
     input2.sourceId,
     url2,
     result,
-    allowedHosts,
+    effectiveHosts,
     input2.config.loggedOutPatterns,
     input2.probedAt
   );
@@ -27220,6 +27228,10 @@ var browserConfigSchema = external_exports.object({
   verifyUrl: external_exports.string().url().optional(),
   loggedOutPatterns: external_exports.array(external_exports.string().min(1)).optional(),
   probePathPrefixes: external_exports.array(external_exports.string().regex(/^\//, "Expected a path beginning with /")).max(20).optional(),
+  /** Extra hosts the user explicitly allows the read-only probe to visit. */
+  probeAllowedHosts: external_exports.array(
+    external_exports.string().min(1).max(253).regex(/^[a-z0-9.-]+$/i, "Expected a hostname without scheme or path")
+  ).max(20).optional(),
   timeoutMs: external_exports.number().int().min(1e3).max(10 * 6e4).optional(),
   channel: external_exports.enum(["msedge", "chrome"]).optional(),
   allowHttp: external_exports.boolean().optional()
@@ -42482,7 +42494,7 @@ function createAcademicTools(dependencies) {
       ...dependencies.probeSource ? [
         defineTool(
           ACADEMIC_TOOL_NAMES.ProbeSource,
-          "Read one authorized same-host page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Read-only; never returns cookies or URL query strings.",
+          "Read one authorized page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). The URL host must be in the source cookieDomains or the explicit probeAllowedHosts list. Read-only; never returns cookies or URL query strings.",
           external_exports.object({
             sourceId: external_exports.string().min(1).max(200),
             url: external_exports.string().url().optional(),

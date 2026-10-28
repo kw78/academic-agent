@@ -510,7 +510,7 @@ export function createAcademicTools(
             ? [
                 defineTool(
                   ACADEMIC_TOOL_NAMES.ProbeSource,
-                  'Read one authorized same-host page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Read-only; never returns cookies or URL query strings.',
+                  'Read one authorized page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). The URL host must be in the source cookieDomains or the explicit probeAllowedHosts list. Read-only; never returns cookies or URL query strings.',
                   z.object({
                     sourceId: z.string().min(1).max(200),
                     url: z.string().url().optional(),
