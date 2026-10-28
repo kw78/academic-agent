@@ -414,37 +414,126 @@ function mapRun(run: JobRun): AutomationRun {
   }
 }
 
+const SYNC_STALE_AFTER_MS = 24 * 60 * 60 * 1000
+
+function configurationState(config: {
+  enabled: boolean
+  archived: boolean
+}): SourceStatus['configuration'] {
+  if (config.archived) return 'archived'
+  return config.enabled ? 'configured' : 'disabled'
+}
+
+function authenticationState(
+  source: Pick<SourceStatus, 'authKind' | 'connection'>,
+): SourceStatus['authentication'] {
+  if (source.authKind === 'none') return 'not-required'
+  if (!source.connection) return 'missing'
+  switch (source.connection.status) {
+    case 'configured':
+      return 'saved'
+    case 'connected':
+      return 'verified'
+    case 'auth-required':
+      return 'expired'
+    case 'disconnected':
+    case 'unconfigured':
+      return 'missing'
+    case 'error':
+      return 'rejected'
+  }
+}
+
+function syncHealthState(
+  lastSync: SyncRunSummary | undefined,
+  now: string,
+): SourceStatus['syncHealth'] {
+  if (!lastSync) return 'never-synced'
+  if (lastSync.status === 'running') return 'running'
+  if (lastSync.status === 'partial') return 'partial'
+  if (lastSync.status === 'failed') return 'failed'
+  if (lastSync.status === 'auth-required') return 'auth-required'
+  const finished = lastSync.finishedAt ?? lastSync.startedAt
+  if (Date.parse(now) - Date.parse(finished) > SYNC_STALE_AFTER_MS) return 'stale'
+  return 'healthy'
+}
+
+function validateSourceCapabilities(
+  descriptor: {
+    supportsLogin: boolean
+    authKinds?: readonly string[]
+    loginModes?: readonly string[]
+  },
+  authKind: string,
+  loginMode: string | undefined,
+): string | undefined {
+  if (descriptor.authKinds && !descriptor.authKinds.includes(authKind)) {
+    return `该引擎不支持认证方式 ${authKind}`
+  }
+  if (loginMode) {
+    if (authKind === 'none') return '认证方式为 none 时不应配置登录方式'
+    if (!descriptor.supportsLogin) return '该引擎不支持登录流程'
+    if (descriptor.loginModes && !descriptor.loginModes.includes(loginMode)) {
+      return `该引擎不支持登录方式 ${loginMode}`
+    }
+  }
+  return undefined
+}
+
 function sourceState(source: SourceStatus): SourceStatus['state'] {
   if (!source.adapterAvailable) return 'unavailable'
-  if (source.lastSync?.status === 'partial') return 'degraded'
-  if (!source.connection) return 'unconfigured'
-  return source.connection.status
+  if (source.syncHealth === 'partial') return 'degraded'
+  if (source.syncHealth === 'failed') return 'error'
+  if (
+    source.syncHealth === 'auth-required' ||
+    source.authentication === 'expired'
+  ) {
+    return 'auth-required'
+  }
+  if (source.authentication === 'rejected') return 'error'
+  if (source.authentication === 'saved') return 'configured'
+  if (source.authentication === 'missing' && source.authKind !== 'none') {
+    return 'unconfigured'
+  }
+  if (
+    source.syncHealth === 'healthy' ||
+    source.syncHealth === 'stale' ||
+    source.syncHealth === 'running'
+  ) {
+    return 'connected'
+  }
+  return 'configured'
 }
 
 function sourceDetail(source: SourceStatus): string {
-  if (!source.adapterAvailable) {
-    return source.detail ?? '当前版本未加载该数据源引擎'
+  if (!source.engineKnown) return '当前版本未加载该数据源引擎'
+  if (source.configuration === 'archived') return '数据源已归档'
+  if (source.configuration === 'disabled') return '数据源已停用'
+  if (source.authentication === 'saved') {
+    return '凭据或会话已保存，尚未验证；保存凭据不代表平台可用'
   }
-  if (source.state === 'degraded') {
+  if (source.authentication === 'expired') {
+    return source.connection?.lastError ?? '需要重新认证'
+  }
+  if (source.authentication === 'rejected') {
+    return source.connection?.lastError ?? '认证被拒绝'
+  }
+  if (source.authentication === 'missing' && source.authKind !== 'none') {
+    return '尚未保存凭据'
+  }
+  if (source.syncHealth === 'partial') {
     return '部分数据抓取成功；旧数据保留，请查看同步警告'
   }
-  if (!source.connection) {
-    return source.detail ?? '尚未配置连接'
+  if (source.syncHealth === 'failed') {
+    return source.connection?.lastError ?? '同步失败；保留最后一次有效数据'
   }
-  switch (source.connection.status) {
-    case 'unconfigured':
-      return '尚未保存凭据'
-    case 'configured':
-      return '已保存凭据，尚未验证；保存凭据不等于平台可用'
-    case 'connected':
-      return '平台验证或同步成功'
-    case 'auth-required':
-      return source.connection.lastError ?? '需要重新认证'
-    case 'error':
-      return source.connection.lastError ?? '同步失败；保留最后一次有效数据'
-    case 'disconnected':
-      return '已断开；已同步的学业数据仍然保留'
+  if (!source.adapterReady) {
+    return '会话可用；当前 engine 没有同步 Adapter'
   }
+  if (source.syncHealth === 'never-synced') return '尚未执行同步'
+  if (source.syncHealth === 'stale') return '最近同步已过期'
+  if (source.syncHealth === 'running') return '同步进行中'
+  return '最近同步成功'
 }
 
 function buildSources(
@@ -456,12 +545,13 @@ function buildSources(
   for (const config of app.sources.list()) {
     const engine = app.sourceEngines.get(config.engine)
     const available = Boolean(engine) && config.enabled && !config.archived
+    const adapterReady = available && Boolean(engine?.createAdapter)
     catalog.set(config.sourceId, {
       sourceId: config.sourceId,
       displayName: config.displayName,
       engine: config.engine,
       engineKnown: Boolean(engine),
-      syncAvailable: available && Boolean(engine?.createAdapter),
+      syncAvailable: adapterReady,
       canLogin: available && Boolean(engine?.login),
       canVerify: available && Boolean(engine?.verify),
       ...(config.loginMode ? { loginMode: config.loginMode } : {}),
@@ -470,7 +560,12 @@ function buildSources(
       enabled: config.enabled,
       version: config.version,
       adapterAvailable: available,
+      adapterReady,
       authKind: config.authKind,
+      configuration: configurationState(config),
+      authentication:
+        config.authKind === 'none' ? 'not-required' : 'missing',
+      syncHealth: 'never-synced',
       state: 'unconfigured',
       ...(engine?.descriptor.description
         ? { detail: engine.descriptor.description }
@@ -495,15 +590,22 @@ function buildSources(
         enabled: false,
         version: 0,
         adapterAvailable: false,
+        adapterReady: false,
         authKind: connection.authKind,
+        configuration: 'disabled',
+        authentication: 'missing',
+        syncHealth: 'never-synced',
         state: 'unavailable',
         connection,
       })
     }
   }
+  const now = app.clock.now()
   for (const source of catalog.values()) {
     const run = syncRuns.find((candidate) => candidate.sourceId === source.sourceId)
     if (run) source.lastSync = run
+    source.authentication = authenticationState(source)
+    source.syncHealth = syncHealthState(source.lastSync, now)
     source.state = sourceState(source)
     const detail = sourceDetail(source)
     if (detail) source.detail = detail
@@ -977,8 +1079,19 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       const parsed = parse(createSourceSchema, request)
       if (!parsed.ok) return parsed
       const body: CreateSourceRequest = parsed.value
-      if (!app.sourceEngines.get(body.engine)) {
+      const engine = app.sourceEngines.get(body.engine)
+      if (!engine) {
         return failure('CAPABILITY_UNAVAILABLE', '该数据源引擎尚未加载')
+      }
+      const invalid = validateSourceCapabilities(
+        engine.descriptor,
+        body.authKind,
+        body.loginMode,
+      )
+      if (invalid) return failure('VALIDATION', invalid)
+      const invalidConfig = engine.descriptor.validateConfig?.(body.config ?? {})
+      if (invalidConfig) {
+        return failure('VALIDATION', `配置无效：${invalidConfig}`)
       }
       try {
         const created = app.sources.create(body)
@@ -995,6 +1108,24 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       const parsed = parse(updateSourceSchema, request)
       if (!parsed.ok) return parsed
       const body: UpdateSourceRequest = parsed.value
+      const current = app.sources.get(body.sourceId)
+      if (!current) return failure('NOT_FOUND', '数据源不存在')
+      const engine = app.sourceEngines.get(current.engine)
+      if (!engine) {
+        return failure('CAPABILITY_UNAVAILABLE', '该数据源引擎尚未加载')
+      }
+      const invalid = validateSourceCapabilities(
+        engine.descriptor,
+        body.authKind ?? current.authKind,
+        body.loginMode ?? current.loginMode,
+      )
+      if (invalid) return failure('VALIDATION', invalid)
+      const invalidConfig = engine.descriptor.validateConfig?.(
+        body.config ?? current.config,
+      )
+      if (invalidConfig) {
+        return failure('VALIDATION', `配置无效：${invalidConfig}`)
+      }
       try {
         app.sources.update(body.sourceId, body, body.expectedVersion)
         const source = sourceStatusFor(app, body.sourceId)

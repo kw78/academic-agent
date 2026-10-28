@@ -20519,48 +20519,110 @@ function mapRun(run) {
     ...run.errorMessage ? { errorMessage: run.errorMessage } : {}
   };
 }
+var SYNC_STALE_AFTER_MS = 24 * 60 * 60 * 1e3;
+function configurationState(config2) {
+  if (config2.archived) return "archived";
+  return config2.enabled ? "configured" : "disabled";
+}
+function authenticationState(source) {
+  if (source.authKind === "none") return "not-required";
+  if (!source.connection) return "missing";
+  switch (source.connection.status) {
+    case "configured":
+      return "saved";
+    case "connected":
+      return "verified";
+    case "auth-required":
+      return "expired";
+    case "disconnected":
+    case "unconfigured":
+      return "missing";
+    case "error":
+      return "rejected";
+  }
+}
+function syncHealthState(lastSync, now) {
+  if (!lastSync) return "never-synced";
+  if (lastSync.status === "running") return "running";
+  if (lastSync.status === "partial") return "partial";
+  if (lastSync.status === "failed") return "failed";
+  if (lastSync.status === "auth-required") return "auth-required";
+  const finished = lastSync.finishedAt ?? lastSync.startedAt;
+  if (Date.parse(now) - Date.parse(finished) > SYNC_STALE_AFTER_MS) return "stale";
+  return "healthy";
+}
+function validateSourceCapabilities(descriptor, authKind, loginMode) {
+  if (descriptor.authKinds && !descriptor.authKinds.includes(authKind)) {
+    return `\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u8BA4\u8BC1\u65B9\u5F0F ${authKind}`;
+  }
+  if (loginMode) {
+    if (authKind === "none") return "\u8BA4\u8BC1\u65B9\u5F0F\u4E3A none \u65F6\u4E0D\u5E94\u914D\u7F6E\u767B\u5F55\u65B9\u5F0F";
+    if (!descriptor.supportsLogin) return "\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u767B\u5F55\u6D41\u7A0B";
+    if (descriptor.loginModes && !descriptor.loginModes.includes(loginMode)) {
+      return `\u8BE5\u5F15\u64CE\u4E0D\u652F\u6301\u767B\u5F55\u65B9\u5F0F ${loginMode}`;
+    }
+  }
+  return void 0;
+}
 function sourceState(source) {
   if (!source.adapterAvailable) return "unavailable";
-  if (source.lastSync?.status === "partial") return "degraded";
-  if (!source.connection) return "unconfigured";
-  return source.connection.status;
+  if (source.syncHealth === "partial") return "degraded";
+  if (source.syncHealth === "failed") return "error";
+  if (source.syncHealth === "auth-required" || source.authentication === "expired") {
+    return "auth-required";
+  }
+  if (source.authentication === "rejected") return "error";
+  if (source.authentication === "saved") return "configured";
+  if (source.authentication === "missing" && source.authKind !== "none") {
+    return "unconfigured";
+  }
+  if (source.syncHealth === "healthy" || source.syncHealth === "stale" || source.syncHealth === "running") {
+    return "connected";
+  }
+  return "configured";
 }
 function sourceDetail(source) {
-  if (!source.adapterAvailable) {
-    return source.detail ?? "\u5F53\u524D\u7248\u672C\u672A\u52A0\u8F7D\u8BE5\u6570\u636E\u6E90\u5F15\u64CE";
+  if (!source.engineKnown) return "\u5F53\u524D\u7248\u672C\u672A\u52A0\u8F7D\u8BE5\u6570\u636E\u6E90\u5F15\u64CE";
+  if (source.configuration === "archived") return "\u6570\u636E\u6E90\u5DF2\u5F52\u6863";
+  if (source.configuration === "disabled") return "\u6570\u636E\u6E90\u5DF2\u505C\u7528";
+  if (source.authentication === "saved") {
+    return "\u51ED\u636E\u6216\u4F1A\u8BDD\u5DF2\u4FDD\u5B58\uFF0C\u5C1A\u672A\u9A8C\u8BC1\uFF1B\u4FDD\u5B58\u51ED\u636E\u4E0D\u4EE3\u8868\u5E73\u53F0\u53EF\u7528";
   }
-  if (source.state === "degraded") {
+  if (source.authentication === "expired") {
+    return source.connection?.lastError ?? "\u9700\u8981\u91CD\u65B0\u8BA4\u8BC1";
+  }
+  if (source.authentication === "rejected") {
+    return source.connection?.lastError ?? "\u8BA4\u8BC1\u88AB\u62D2\u7EDD";
+  }
+  if (source.authentication === "missing" && source.authKind !== "none") {
+    return "\u5C1A\u672A\u4FDD\u5B58\u51ED\u636E";
+  }
+  if (source.syncHealth === "partial") {
     return "\u90E8\u5206\u6570\u636E\u6293\u53D6\u6210\u529F\uFF1B\u65E7\u6570\u636E\u4FDD\u7559\uFF0C\u8BF7\u67E5\u770B\u540C\u6B65\u8B66\u544A";
   }
-  if (!source.connection) {
-    return source.detail ?? "\u5C1A\u672A\u914D\u7F6E\u8FDE\u63A5";
+  if (source.syncHealth === "failed") {
+    return source.connection?.lastError ?? "\u540C\u6B65\u5931\u8D25\uFF1B\u4FDD\u7559\u6700\u540E\u4E00\u6B21\u6709\u6548\u6570\u636E";
   }
-  switch (source.connection.status) {
-    case "unconfigured":
-      return "\u5C1A\u672A\u4FDD\u5B58\u51ED\u636E";
-    case "configured":
-      return "\u5DF2\u4FDD\u5B58\u51ED\u636E\uFF0C\u5C1A\u672A\u9A8C\u8BC1\uFF1B\u4FDD\u5B58\u51ED\u636E\u4E0D\u7B49\u4E8E\u5E73\u53F0\u53EF\u7528";
-    case "connected":
-      return "\u5E73\u53F0\u9A8C\u8BC1\u6216\u540C\u6B65\u6210\u529F";
-    case "auth-required":
-      return source.connection.lastError ?? "\u9700\u8981\u91CD\u65B0\u8BA4\u8BC1";
-    case "error":
-      return source.connection.lastError ?? "\u540C\u6B65\u5931\u8D25\uFF1B\u4FDD\u7559\u6700\u540E\u4E00\u6B21\u6709\u6548\u6570\u636E";
-    case "disconnected":
-      return "\u5DF2\u65AD\u5F00\uFF1B\u5DF2\u540C\u6B65\u7684\u5B66\u4E1A\u6570\u636E\u4ECD\u7136\u4FDD\u7559";
+  if (!source.adapterReady) {
+    return "\u4F1A\u8BDD\u53EF\u7528\uFF1B\u5F53\u524D engine \u6CA1\u6709\u540C\u6B65 Adapter";
   }
+  if (source.syncHealth === "never-synced") return "\u5C1A\u672A\u6267\u884C\u540C\u6B65";
+  if (source.syncHealth === "stale") return "\u6700\u8FD1\u540C\u6B65\u5DF2\u8FC7\u671F";
+  if (source.syncHealth === "running") return "\u540C\u6B65\u8FDB\u884C\u4E2D";
+  return "\u6700\u8FD1\u540C\u6B65\u6210\u529F";
 }
 function buildSources(app, connections, syncRuns) {
   const catalog = /* @__PURE__ */ new Map();
   for (const config2 of app.sources.list()) {
     const engine = app.sourceEngines.get(config2.engine);
     const available = Boolean(engine) && config2.enabled && !config2.archived;
+    const adapterReady = available && Boolean(engine?.createAdapter);
     catalog.set(config2.sourceId, {
       sourceId: config2.sourceId,
       displayName: config2.displayName,
       engine: config2.engine,
       engineKnown: Boolean(engine),
-      syncAvailable: available && Boolean(engine?.createAdapter),
+      syncAvailable: adapterReady,
       canLogin: available && Boolean(engine?.login),
       canVerify: available && Boolean(engine?.verify),
       ...config2.loginMode ? { loginMode: config2.loginMode } : {},
@@ -20569,7 +20631,11 @@ function buildSources(app, connections, syncRuns) {
       enabled: config2.enabled,
       version: config2.version,
       adapterAvailable: available,
+      adapterReady,
       authKind: config2.authKind,
+      configuration: configurationState(config2),
+      authentication: config2.authKind === "none" ? "not-required" : "missing",
+      syncHealth: "never-synced",
       state: "unconfigured",
       ...engine?.descriptor.description ? { detail: engine.descriptor.description } : {}
     });
@@ -20592,15 +20658,22 @@ function buildSources(app, connections, syncRuns) {
         enabled: false,
         version: 0,
         adapterAvailable: false,
+        adapterReady: false,
         authKind: connection.authKind,
+        configuration: "disabled",
+        authentication: "missing",
+        syncHealth: "never-synced",
         state: "unavailable",
         connection
       });
     }
   }
+  const now = app.clock.now();
   for (const source of catalog.values()) {
     const run = syncRuns.find((candidate) => candidate.sourceId === source.sourceId);
     if (run) source.lastSync = run;
+    source.authentication = authenticationState(source);
+    source.syncHealth = syncHealthState(source.lastSync, now);
     source.state = sourceState(source);
     const detail = sourceDetail(source);
     if (detail) source.detail = detail;
@@ -20979,8 +21052,19 @@ function createAcademicUiApi(app) {
       const parsed = parse3(createSourceSchema, request);
       if (!parsed.ok) return parsed;
       const body = parsed.value;
-      if (!app.sourceEngines.get(body.engine)) {
+      const engine = app.sourceEngines.get(body.engine);
+      if (!engine) {
         return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u5F15\u64CE\u5C1A\u672A\u52A0\u8F7D");
+      }
+      const invalid = validateSourceCapabilities(
+        engine.descriptor,
+        body.authKind,
+        body.loginMode
+      );
+      if (invalid) return failure2("VALIDATION", invalid);
+      const invalidConfig = engine.descriptor.validateConfig?.(body.config ?? {});
+      if (invalidConfig) {
+        return failure2("VALIDATION", `\u914D\u7F6E\u65E0\u6548\uFF1A${invalidConfig}`);
       }
       try {
         const created = app.sources.create(body);
@@ -20994,6 +21078,24 @@ function createAcademicUiApi(app) {
       const parsed = parse3(updateSourceSchema, request);
       if (!parsed.ok) return parsed;
       const body = parsed.value;
+      const current = app.sources.get(body.sourceId);
+      if (!current) return failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
+      const engine = app.sourceEngines.get(current.engine);
+      if (!engine) {
+        return failure2("CAPABILITY_UNAVAILABLE", "\u8BE5\u6570\u636E\u6E90\u5F15\u64CE\u5C1A\u672A\u52A0\u8F7D");
+      }
+      const invalid = validateSourceCapabilities(
+        engine.descriptor,
+        body.authKind ?? current.authKind,
+        body.loginMode ?? current.loginMode
+      );
+      if (invalid) return failure2("VALIDATION", invalid);
+      const invalidConfig = engine.descriptor.validateConfig?.(
+        body.config ?? current.config
+      );
+      if (invalidConfig) {
+        return failure2("VALIDATION", `\u914D\u7F6E\u65E0\u6548\uFF1A${invalidConfig}`);
+      }
       try {
         app.sources.update(body.sourceId, body, body.expectedVersion);
         const source = sourceStatusFor(app, body.sourceId);

@@ -299,7 +299,7 @@ export function sourceStateLabel(state: string): string {
     case 'unconfigured':
       return '未配置'
     case 'configured':
-      return '已保存凭据，未验证'
+      return '已配置'
     case 'connected':
       return '已连接'
     case 'auth-required':
@@ -314,6 +314,76 @@ export function sourceStateLabel(state: string): string {
       return '同步降级'
     default:
       return state
+  }
+}
+
+export function sourceConfigurationLabel(state: string): string {
+  switch (state) {
+    case 'configured':
+      return '已配置'
+    case 'disabled':
+      return '已停用'
+    case 'archived':
+      return '已归档'
+    default:
+      return state
+  }
+}
+
+export function sourceAuthenticationLabel(state: string): string {
+  switch (state) {
+    case 'not-required':
+      return '无需认证'
+    case 'missing':
+      return '缺少会话'
+    case 'saved':
+      return '会话已保存'
+    case 'verified':
+      return '会话已验证'
+    case 'expired':
+      return '会话已过期'
+    case 'rejected':
+      return '认证被拒绝'
+    default:
+      return state
+  }
+}
+
+export function sourceSyncHealthLabel(state: string): string {
+  switch (state) {
+    case 'never-synced':
+      return '从未同步'
+    case 'running':
+      return '同步中'
+    case 'healthy':
+      return '同步正常'
+    case 'partial':
+      return '部分同步'
+    case 'auth-required':
+      return '认证失效'
+    case 'failed':
+      return '同步失败'
+    case 'stale':
+      return '同步过期'
+    default:
+      return state
+  }
+}
+
+export function sourceSyncHealthTone(
+  state: string,
+): 'ok' | 'warn' | 'bad' | 'neutral' {
+  switch (state) {
+    case 'healthy':
+      return 'ok'
+    case 'partial':
+    case 'auth-required':
+    case 'stale':
+      return 'warn'
+    case 'failed':
+      return 'bad'
+    default:
+      return 'neutral'
   }
 }
 

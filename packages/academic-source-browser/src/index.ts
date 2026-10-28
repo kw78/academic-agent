@@ -196,6 +196,15 @@ export function createBrowserSessionEngine(
       supportsSync: false,
       supportsLogin: true,
       supportsVerify: true,
+      authKinds: ['token'],
+      loginModes: ['browser', 'manual'],
+      validateConfig(config) {
+        const parsed = browserConfigSchema.safeParse(config)
+        if (parsed.success) return undefined
+        return parsed.error.issues
+          .map((issue) => `${issue.path.join('.') || 'config'}: ${issue.message}`)
+          .join('; ')
+      },
     },
     async login(context: SourceEngineContext) {
       const config = browserConfigSchema.parse(context.config)

@@ -62,6 +62,25 @@ export interface NotificationCard {
   readAt?: string
 }
 
+export type SourceConfigurationState = 'configured' | 'disabled' | 'archived'
+
+export type SourceAuthenticationState =
+  | 'not-required'
+  | 'missing'
+  | 'saved'
+  | 'verified'
+  | 'expired'
+  | 'rejected'
+
+export type SourceSyncHealth =
+  | 'never-synced'
+  | 'running'
+  | 'healthy'
+  | 'partial'
+  | 'auth-required'
+  | 'failed'
+  | 'stale'
+
 export interface SourceStatus {
   sourceId: string
   displayName: string
@@ -76,7 +95,11 @@ export interface SourceStatus {
   enabled: boolean
   version: number
   adapterAvailable: boolean
+  adapterReady: boolean
   authKind: 'password' | 'token' | 'oauth' | 'none' | 'unknown'
+  configuration: SourceConfigurationState
+  authentication: SourceAuthenticationState
+  syncHealth: SourceSyncHealth
   state:
     | 'unconfigured'
     | 'configured'

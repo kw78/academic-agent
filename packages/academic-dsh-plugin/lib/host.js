@@ -21360,7 +21360,14 @@ function createBrowserSessionEngine(options = {}) {
       description: "\u7531\u5BBF\u4E3B\u62C9\u8D77\u771F\u5B9E\u6D4F\u89C8\u5668\uFF0C\u7528\u6237\u5B8C\u6210\u767B\u5F55\u540E\u8BFB\u53D6\u914D\u7F6E\u57DF\u540D\u7684\u4F1A\u8BDD Cookie\uFF1B\u4E0D\u8BFB\u53D6\u5BC6\u7801\u3002",
       supportsSync: false,
       supportsLogin: true,
-      supportsVerify: true
+      supportsVerify: true,
+      authKinds: ["token"],
+      loginModes: ["browser", "manual"],
+      validateConfig(config2) {
+        const parsed = browserConfigSchema.safeParse(config2);
+        if (parsed.success) return void 0;
+        return parsed.error.issues.map((issue2) => `${issue2.path.join(".") || "config"}: ${issue2.message}`).join("; ");
+      }
     },
     async login(context) {
       const config2 = browserConfigSchema.parse(context.config);
@@ -21503,7 +21510,9 @@ function createFixtureSourceEngine() {
       description: "\u5185\u7F6E\u6D4B\u8BD5\u6570\u636E\u6E90\uFF0C\u4E0D\u9700\u8981\u51ED\u636E\u3002",
       supportsSync: true,
       supportsLogin: false,
-      supportsVerify: false
+      supportsVerify: false,
+      authKinds: ["none"],
+      loginModes: []
     },
     createAdapter(context) {
       const fixturePath = typeof context.config.fixturePath === "string" ? context.config.fixturePath : void 0;

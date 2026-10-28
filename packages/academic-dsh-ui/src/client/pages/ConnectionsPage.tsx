@@ -15,8 +15,12 @@ import { useAction, useLoad } from '../hooks.js'
 import { viewState } from '../state.js'
 import {
   formatDateTimeOrDash,
+  sourceAuthenticationLabel,
+  sourceConfigurationLabel,
   sourceStateLabel,
   sourceStateTone,
+  sourceSyncHealthLabel,
+  sourceSyncHealthTone,
   syncStatusLabel,
 } from '../view.js'
 import type {
@@ -143,6 +147,29 @@ function SourceCard({
           {source.canLogin && <Badge tone="info">登录可用</Badge>}
         </div>
         <p className="ac-muted">{source.detail}</p>
+        <div className="ac-task-title">
+          <Badge tone="neutral">
+            配置：{sourceConfigurationLabel(source.configuration)}
+          </Badge>
+          <Badge
+            tone={
+              source.authentication === 'verified' ||
+              source.authentication === 'not-required'
+                ? 'ok'
+                : source.authentication === 'missing'
+                  ? 'warn'
+                  : 'bad'
+            }
+          >
+            认证：{sourceAuthenticationLabel(source.authentication)}
+          </Badge>
+          <Badge tone={sourceSyncHealthTone(source.syncHealth)}>
+            同步：{sourceSyncHealthLabel(source.syncHealth)}
+          </Badge>
+          <Badge tone={source.adapterReady ? 'ok' : 'warn'}>
+            Adapter：{source.adapterReady ? '已就绪' : '未就绪'}
+          </Badge>
+        </div>
         <div className="ac-task-meta">
           <span>来源 ID：{source.sourceId}</span>
           <span>认证方式：{source.authKind}</span>
@@ -303,13 +330,30 @@ function SourceForm({
   const action = useAction(async () => {
     await onCreated()
   })
+  const initialEngine = data.engines[0]
+  const initialAuthKind = initialEngine?.authKinds?.[0] ?? 'token'
   const [sourceId, setSourceId] = useState('')
-  const [engine, setEngine] = useState(data.engines[0]?.id ?? '')
+  const [engine, setEngine] = useState(initialEngine?.id ?? '')
   const [displayName, setDisplayName] = useState('')
-  const [authKind, setAuthKind] = useState('token')
-  const [loginMode, setLoginMode] = useState('browser')
+  const [authKind, setAuthKind] = useState<string>(initialAuthKind)
+  const [loginMode, setLoginMode] = useState<string>(
+    initialAuthKind === 'none'
+      ? 'none'
+      : (initialEngine?.loginModes?.[0] ?? 'browser'),
+  )
   const [capabilities, setCapabilities] = useState('')
   const [configJson, setConfigJson] = useState('{}')
+
+  const selectedEngine = data.engines.find((entry) => entry.id === engine)
+  const authKinds = selectedEngine?.authKinds ?? [
+    'none',
+    'password',
+    'token',
+    'oauth',
+  ]
+  const loginModes = selectedEngine?.loginModes ?? ['browser', 'manual']
+  const loginDisabled =
+    authKind === 'none' || selectedEngine?.supportsLogin === false
 
   const submit = async (): Promise<UiResult<SourceStatus>> => {
     let config: Record<string, unknown>
@@ -370,7 +414,23 @@ function SourceForm({
           />
         </Field>
         <Field label="引擎">
-          <select value={engine} onChange={(event) => setEngine(event.target.value)} required>
+          <select
+            value={engine}
+            onChange={(event) => {
+              const nextId = event.target.value
+              const next = data.engines.find((entry) => entry.id === nextId)
+              setEngine(nextId)
+              const nextAuth = next?.authKinds
+                ? (next.authKinds[0] ?? 'none')
+                : 'token'
+              const nextLogin = next?.loginModes
+                ? (next.loginModes[0] ?? 'none')
+                : 'browser'
+              setAuthKind(nextAuth)
+              setLoginMode(nextAuth === 'none' ? 'none' : nextLogin)
+            }}
+            required
+          >
             {data.engines.map((entry) => (
               <option key={entry.id} value={entry.id}>
                 {entry.displayName}（{entry.id}）
@@ -386,18 +446,37 @@ function SourceForm({
           />
         </Field>
         <Field label="认证方式">
-          <select value={authKind} onChange={(event) => setAuthKind(event.target.value)}>
-            <option value="none">none</option>
-            <option value="password">password</option>
-            <option value="token">token</option>
-            <option value="oauth">oauth</option>
+          <select
+            value={authKind}
+            onChange={(event) => {
+              const next = event.target.value
+              setAuthKind(next)
+              if (next === 'none') {
+                setLoginMode('none')
+              } else if (loginMode === 'none' && loginModes[0]) {
+                setLoginMode(loginModes[0])
+              }
+            }}
+          >
+            {authKinds.map((kind) => (
+              <option key={kind} value={kind}>
+                {kind}
+              </option>
+            ))}
           </select>
         </Field>
         <Field label="登录方式">
-          <select value={loginMode} onChange={(event) => setLoginMode(event.target.value)}>
-            <option value="browser">browser</option>
-            <option value="manual">manual</option>
+          <select
+            value={loginDisabled ? 'none' : loginMode}
+            onChange={(event) => setLoginMode(event.target.value)}
+            disabled={loginDisabled}
+          >
             <option value="none">不登录</option>
+            {loginModes.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode}
+              </option>
+            ))}
           </select>
         </Field>
         <Field label="能力（逗号分隔）">
@@ -408,14 +487,20 @@ function SourceForm({
           />
         </Field>
       </div>
-      <Field label="非敏感配置（JSON）" hint="URL、选择器、规则等；禁止 password/token/cookie 字段">
-        <textarea
-          rows={6}
-          value={configJson}
-          onChange={(event) => setConfigJson(event.target.value)}
-          spellCheck={false}
-        />
-      </Field>
+      <details className="ac-advanced">
+        <summary>高级设置</summary>
+        <Field
+          label="非敏感配置（JSON）"
+          hint="URL、选择器、规则等；禁止 password/token/cookie 字段"
+        >
+          <textarea
+            rows={6}
+            value={configJson}
+            onChange={(event) => setConfigJson(event.target.value)}
+            spellCheck={false}
+          />
+        </Field>
+      </details>
       <div className="ac-form-actions">
         <button type="submit" className="ac-button" disabled={action.pending !== undefined}>
           {action.pending === 'source' ? '创建中…' : '创建数据源'}

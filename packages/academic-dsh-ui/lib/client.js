@@ -1127,7 +1127,7 @@ function sourceStateLabel(state) {
     case "unconfigured":
       return "\u672A\u914D\u7F6E";
     case "configured":
-      return "\u5DF2\u4FDD\u5B58\u51ED\u636E\uFF0C\u672A\u9A8C\u8BC1";
+      return "\u5DF2\u914D\u7F6E";
     case "connected":
       return "\u5DF2\u8FDE\u63A5";
     case "auth-required":
@@ -1142,6 +1142,70 @@ function sourceStateLabel(state) {
       return "\u540C\u6B65\u964D\u7EA7";
     default:
       return state;
+  }
+}
+function sourceConfigurationLabel(state) {
+  switch (state) {
+    case "configured":
+      return "\u5DF2\u914D\u7F6E";
+    case "disabled":
+      return "\u5DF2\u505C\u7528";
+    case "archived":
+      return "\u5DF2\u5F52\u6863";
+    default:
+      return state;
+  }
+}
+function sourceAuthenticationLabel(state) {
+  switch (state) {
+    case "not-required":
+      return "\u65E0\u9700\u8BA4\u8BC1";
+    case "missing":
+      return "\u7F3A\u5C11\u4F1A\u8BDD";
+    case "saved":
+      return "\u4F1A\u8BDD\u5DF2\u4FDD\u5B58";
+    case "verified":
+      return "\u4F1A\u8BDD\u5DF2\u9A8C\u8BC1";
+    case "expired":
+      return "\u4F1A\u8BDD\u5DF2\u8FC7\u671F";
+    case "rejected":
+      return "\u8BA4\u8BC1\u88AB\u62D2\u7EDD";
+    default:
+      return state;
+  }
+}
+function sourceSyncHealthLabel(state) {
+  switch (state) {
+    case "never-synced":
+      return "\u4ECE\u672A\u540C\u6B65";
+    case "running":
+      return "\u540C\u6B65\u4E2D";
+    case "healthy":
+      return "\u540C\u6B65\u6B63\u5E38";
+    case "partial":
+      return "\u90E8\u5206\u540C\u6B65";
+    case "auth-required":
+      return "\u8BA4\u8BC1\u5931\u6548";
+    case "failed":
+      return "\u540C\u6B65\u5931\u8D25";
+    case "stale":
+      return "\u540C\u6B65\u8FC7\u671F";
+    default:
+      return state;
+  }
+}
+function sourceSyncHealthTone(state) {
+  switch (state) {
+    case "healthy":
+      return "ok";
+    case "partial":
+    case "auth-required":
+    case "stale":
+      return "warn";
+    case "failed":
+      return "bad";
+    default:
+      return "neutral";
   }
 }
 function sourceStateTone(state) {
@@ -2466,6 +2530,30 @@ function SourceCard({
         source.canLogin && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Badge, { tone: "info", children: "\u767B\u5F55\u53EF\u7528" })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: source.detail }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-task-title", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Badge, { tone: "neutral", children: [
+          "\u914D\u7F6E\uFF1A",
+          sourceConfigurationLabel(source.configuration)
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+          Badge,
+          {
+            tone: source.authentication === "verified" || source.authentication === "not-required" ? "ok" : source.authentication === "missing" ? "warn" : "bad",
+            children: [
+              "\u8BA4\u8BC1\uFF1A",
+              sourceAuthenticationLabel(source.authentication)
+            ]
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Badge, { tone: sourceSyncHealthTone(source.syncHealth), children: [
+          "\u540C\u6B65\uFF1A",
+          sourceSyncHealthLabel(source.syncHealth)
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Badge, { tone: source.adapterReady ? "ok" : "warn", children: [
+          "Adapter\uFF1A",
+          source.adapterReady ? "\u5DF2\u5C31\u7EEA" : "\u672A\u5C31\u7EEA"
+        ] })
+      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-task-meta", children: [
         /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { children: [
           "\u6765\u6E90 ID\uFF1A",
@@ -2619,13 +2707,26 @@ function SourceForm({
   const action = useAction(async () => {
     await onCreated();
   });
+  const initialEngine = data.engines[0];
+  const initialAuthKind = initialEngine?.authKinds?.[0] ?? "token";
   const [sourceId, setSourceId] = (0, import_react6.useState)("");
-  const [engine, setEngine] = (0, import_react6.useState)(data.engines[0]?.id ?? "");
+  const [engine, setEngine] = (0, import_react6.useState)(initialEngine?.id ?? "");
   const [displayName, setDisplayName] = (0, import_react6.useState)("");
-  const [authKind, setAuthKind] = (0, import_react6.useState)("token");
-  const [loginMode, setLoginMode] = (0, import_react6.useState)("browser");
+  const [authKind, setAuthKind] = (0, import_react6.useState)(initialAuthKind);
+  const [loginMode, setLoginMode] = (0, import_react6.useState)(
+    initialAuthKind === "none" ? "none" : initialEngine?.loginModes?.[0] ?? "browser"
+  );
   const [capabilities, setCapabilities] = (0, import_react6.useState)("");
   const [configJson, setConfigJson] = (0, import_react6.useState)("{}");
+  const selectedEngine = data.engines.find((entry) => entry.id === engine);
+  const authKinds = selectedEngine?.authKinds ?? [
+    "none",
+    "password",
+    "token",
+    "oauth"
+  ];
+  const loginModes = selectedEngine?.loginModes ?? ["browser", "manual"];
+  const loginDisabled = authKind === "none" || selectedEngine?.supportsLogin === false;
   const submit = async () => {
     let config;
     try {
@@ -2679,12 +2780,28 @@ function SourceForm({
               placeholder: "my-source"
             }
           ) }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u5F15\u64CE", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("select", { value: engine, onChange: (event) => setEngine(event.target.value), required: true, children: data.engines.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("option", { value: entry.id, children: [
-            entry.displayName,
-            "\uFF08",
-            entry.id,
-            "\uFF09"
-          ] }, entry.id)) }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u5F15\u64CE", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            "select",
+            {
+              value: engine,
+              onChange: (event) => {
+                const nextId = event.target.value;
+                const next = data.engines.find((entry) => entry.id === nextId);
+                setEngine(nextId);
+                const nextAuth = next?.authKinds ? next.authKinds[0] ?? "none" : "token";
+                const nextLogin = next?.loginModes ? next.loginModes[0] ?? "none" : "browser";
+                setAuthKind(nextAuth);
+                setLoginMode(nextAuth === "none" ? "none" : nextLogin);
+              },
+              required: true,
+              children: data.engines.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("option", { value: entry.id, children: [
+                entry.displayName,
+                "\uFF08",
+                entry.id,
+                "\uFF09"
+              ] }, entry.id))
+            }
+          ) }),
           /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u663E\u793A\u540D\u79F0", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
             "input",
             {
@@ -2693,17 +2810,34 @@ function SourceForm({
               required: true
             }
           ) }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u8BA4\u8BC1\u65B9\u5F0F", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("select", { value: authKind, onChange: (event) => setAuthKind(event.target.value), children: [
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "none", children: "none" }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "password", children: "password" }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "token", children: "token" }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "oauth", children: "oauth" })
-          ] }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u767B\u5F55\u65B9\u5F0F", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("select", { value: loginMode, onChange: (event) => setLoginMode(event.target.value), children: [
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "browser", children: "browser" }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "manual", children: "manual" }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "none", children: "\u4E0D\u767B\u5F55" })
-          ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u8BA4\u8BC1\u65B9\u5F0F", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            "select",
+            {
+              value: authKind,
+              onChange: (event) => {
+                const next = event.target.value;
+                setAuthKind(next);
+                if (next === "none") {
+                  setLoginMode("none");
+                } else if (loginMode === "none" && loginModes[0]) {
+                  setLoginMode(loginModes[0]);
+                }
+              },
+              children: authKinds.map((kind) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: kind, children: kind }, kind))
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u767B\u5F55\u65B9\u5F0F", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+            "select",
+            {
+              value: loginDisabled ? "none" : loginMode,
+              onChange: (event) => setLoginMode(event.target.value),
+              disabled: loginDisabled,
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "none", children: "\u4E0D\u767B\u5F55" }),
+                loginModes.map((mode) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: mode, children: mode }, mode))
+              ]
+            }
+          ) }),
           /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u80FD\u529B\uFF08\u9017\u53F7\u5206\u9694\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
             "input",
             {
@@ -2713,15 +2847,25 @@ function SourceForm({
             }
           ) })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u975E\u654F\u611F\u914D\u7F6E\uFF08JSON\uFF09", hint: "URL\u3001\u9009\u62E9\u5668\u3001\u89C4\u5219\u7B49\uFF1B\u7981\u6B62 password/token/cookie \u5B57\u6BB5", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-          "textarea",
-          {
-            rows: 6,
-            value: configJson,
-            onChange: (event) => setConfigJson(event.target.value),
-            spellCheck: false
-          }
-        ) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("details", { className: "ac-advanced", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("summary", { children: "\u9AD8\u7EA7\u8BBE\u7F6E" }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            Field,
+            {
+              label: "\u975E\u654F\u611F\u914D\u7F6E\uFF08JSON\uFF09",
+              hint: "URL\u3001\u9009\u62E9\u5668\u3001\u89C4\u5219\u7B49\uFF1B\u7981\u6B62 password/token/cookie \u5B57\u6BB5",
+              children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+                "textarea",
+                {
+                  rows: 6,
+                  value: configJson,
+                  onChange: (event) => setConfigJson(event.target.value),
+                  spellCheck: false
+                }
+              )
+            }
+          )
+        ] }),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ac-form-actions", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "submit", className: "ac-button", disabled: action.pending !== void 0, children: action.pending === "source" ? "\u521B\u5EFA\u4E2D\u2026" : "\u521B\u5EFA\u6570\u636E\u6E90" }) }),
         action.notice && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) })
       ]

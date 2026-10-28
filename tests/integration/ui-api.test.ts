@@ -335,4 +335,101 @@ describe('generic DB-backed source login', () => {
       listed.value.sources.some((entry) => entry.sourceId === created.value.sourceId),
     ).toBe(true)
   })
+
+  it('separates configuration, authentication, adapter and sync health', async () => {
+    const { api } = await setup()
+    const listed = await api.connections({})
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+
+    const fixture = listed.value.sources.find(
+      (source) => source.sourceId === 'fixture-lms',
+    )
+    expect(fixture?.configuration).toBe('configured')
+    expect(fixture?.authentication).toBe('not-required')
+    expect(fixture?.adapterReady).toBe(true)
+    expect(fixture?.syncHealth).toBe('healthy')
+    expect(fixture?.state).toBe('connected')
+
+    const created = await api.createSource({
+      engine: 'browser-session',
+      displayName: 'Browser source',
+      authKind: 'token',
+      loginMode: 'browser',
+      config: {
+        loginUrl: 'https://www.example.com/login',
+        authenticatedUrlPatterns: ['^https://www\\.example\\.com/'],
+        cookieDomains: ['www.example.com'],
+      },
+    })
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(created.value.configuration).toBe('configured')
+    expect(created.value.authentication).toBe('missing')
+    expect(created.value.adapterReady).toBe(false)
+    expect(created.value.syncHealth).toBe('never-synced')
+    expect(created.value.state).toBe('unconfigured')
+  })
+
+  it('rejects engine, auth and login combinations the engine does not support', async () => {
+    const { api } = await setup()
+
+    const fixtureToken = await api.createSource({
+      engine: 'fixture',
+      displayName: 'Bad fixture',
+      authKind: 'token',
+    })
+    expect(fixtureToken.ok).toBe(false)
+    if (!fixtureToken.ok) expect(fixtureToken.error.code).toBe('VALIDATION')
+
+    const fixtureLogin = await api.createSource({
+      engine: 'fixture',
+      displayName: 'Bad fixture login',
+      authKind: 'none',
+      loginMode: 'browser',
+    })
+    expect(fixtureLogin.ok).toBe(false)
+    if (!fixtureLogin.ok) expect(fixtureLogin.error.code).toBe('VALIDATION')
+
+    const browserNoAuth = await api.createSource({
+      engine: 'browser-session',
+      displayName: 'Bad browser source',
+      authKind: 'none',
+    })
+    expect(browserNoAuth.ok).toBe(false)
+    if (!browserNoAuth.ok) expect(browserNoAuth.error.code).toBe('VALIDATION')
+
+    const browserOk = await api.createSource({
+      engine: 'browser-session',
+      displayName: 'Good browser source',
+      authKind: 'token',
+      loginMode: 'browser',
+      config: {
+        loginUrl: 'https://www.example.com/login',
+        authenticatedUrlPatterns: ['^https://www\\.example\\.com/'],
+        cookieDomains: ['www.example.com'],
+      },
+    })
+    expect(browserOk.ok).toBe(true)
+
+    const invalidConfig = await api.createSource({
+      engine: 'browser-session',
+      displayName: 'Bad browser config',
+      authKind: 'token',
+      loginMode: 'browser',
+      config: {},
+    })
+    expect(invalidConfig.ok).toBe(false)
+    if (!invalidConfig.ok) {
+      expect(invalidConfig.error.code).toBe('VALIDATION')
+      expect(invalidConfig.error.message).toContain('配置无效')
+    }
+
+    const badUpdate = await api.updateSource({
+      sourceId: 'fixture-lms',
+      authKind: 'token',
+    })
+    expect(badUpdate.ok).toBe(false)
+    if (!badUpdate.ok) expect(badUpdate.error.code).toBe('VALIDATION')
+  })
 })

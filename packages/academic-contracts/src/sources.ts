@@ -1,6 +1,9 @@
 import type { DisposableRegistration } from './capabilities.js'
 import type { AcademicSourceAdapter } from './connector.js'
-import type { CredentialAccess } from './connections.js'
+import type { ConnectionAuthKind, CredentialAccess } from './connections.js'
+
+export const SOURCE_LOGIN_MODES = ['browser', 'manual'] as const
+export type SourceLoginMode = (typeof SOURCE_LOGIN_MODES)[number]
 
 export interface NormalizedCourse {
   sourceId: string
@@ -83,6 +86,12 @@ export interface SourceEngineDescriptor {
   supportsSync: boolean
   supportsLogin: boolean
   supportsVerify: boolean
+  /** Auth kinds this engine can actually use; omitted means unrestricted. */
+  authKinds?: ConnectionAuthKind[]
+  /** Login modes this engine can actually use; omitted means unrestricted. */
+  loginModes?: SourceLoginMode[]
+  /** Returns a user-facing message when the non-secret config is invalid. */
+  validateConfig?(config: Record<string, unknown>): string | undefined
 }
 
 export interface SourceEngineContext {

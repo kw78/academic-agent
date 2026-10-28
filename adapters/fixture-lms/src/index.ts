@@ -166,6 +166,8 @@ export function createFixtureSourceEngine(): import('@academic/contracts').Sourc
       supportsSync: true,
       supportsLogin: false,
       supportsVerify: false,
+      authKinds: ['none'],
+      loginModes: [],
     },
     createAdapter(context) {
       const fixturePath =

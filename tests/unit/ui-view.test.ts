@@ -6,8 +6,12 @@ import {
   formatDue,
   groupBlocksByDate,
   groupBlocksByWeek,
+  sourceAuthenticationLabel,
+  sourceConfigurationLabel,
   sourceStateLabel,
   sourceStateTone,
+  sourceSyncHealthLabel,
+  sourceSyncHealthTone,
 } from '../../packages/academic-dsh-ui/src/client/view.js'
 import {
   initialLoad,
@@ -173,9 +177,16 @@ describe('load state transitions', () => {
 
 describe('source status labels', () => {
   it('does not call a saved credential connected', () => {
-    expect(sourceStateLabel('configured')).toContain('未验证')
+    expect(sourceStateLabel('configured')).toBe('已配置')
     expect(sourceStateLabel('connected')).toBe('已连接')
     expect(sourceStateTone('configured')).toBe('warn')
     expect(sourceStateTone('unavailable')).toBe('bad')
+    expect(sourceConfigurationLabel('disabled')).toBe('已停用')
+    expect(sourceAuthenticationLabel('saved')).toBe('会话已保存')
+    expect(sourceAuthenticationLabel('verified')).toBe('会话已验证')
+    expect(sourceSyncHealthLabel('healthy')).toBe('同步正常')
+    expect(sourceSyncHealthLabel('stale')).toBe('同步过期')
+    expect(sourceSyncHealthTone('failed')).toBe('bad')
+    expect(sourceSyncHealthTone('healthy')).toBe('ok')
   })
 })
