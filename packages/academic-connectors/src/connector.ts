@@ -189,7 +189,11 @@ export class ConnectorService {
   async sync(adapter: AcademicSourceAdapter, options: SyncOptions = {}): Promise<SyncRunSummary> {
     const runId = this.#ids.next()
     const startedAt = this.#clock.now()
-    this.#insertRunningRun(runId, adapter.sourceId, startedAt)
+    const adapterInfo = {
+      adapterId: adapter.id,
+      ...(adapter.version ? { adapterVersion: adapter.version } : {}),
+    }
+    this.#insertRunningRun(runId, adapter.sourceId, startedAt, adapter)
 
     let credentials: CredentialAccess | undefined
     if (options.connection) {
@@ -211,6 +215,7 @@ export class ConnectorService {
           warnings: [],
           errorCode: 'CONNECTION_UNAVAILABLE',
           errorMessage: errorMessage(error),
+          ...adapterInfo,
         }
         this.#finishRun(summary)
         return summary
@@ -254,6 +259,7 @@ export class ConnectorService {
         warnings: [],
         errorCode: authFailure ? 'AUTH_REQUIRED' : 'TRANSIENT',
         errorMessage: errorMessage(error),
+        ...adapterInfo,
       }
       this.#finishRun(summary)
       return summary
@@ -348,6 +354,7 @@ export class ConnectorService {
         created,
         updated,
         warnings,
+        ...adapterInfo,
       }
       if (options.connection) {
         await options.connection.credentials.markSynced(
@@ -370,6 +377,7 @@ export class ConnectorService {
         warnings,
         errorCode: 'SYNC_FAILED',
         errorMessage: errorMessage(error),
+        ...adapterInfo,
       }
       this.#finishRun(summary)
       return summary
@@ -544,15 +552,27 @@ export class ConnectorService {
     })
   }
 
-  #insertRunningRun(runId: string, sourceId: string, startedAt: string): void {
+  #insertRunningRun(
+    runId: string,
+    sourceId: string,
+    startedAt: string,
+    adapter: AcademicSourceAdapter,
+  ): void {
     this.#db
       .prepare(
         `INSERT INTO sync_runs (
            run_id, source_id, status, started_at, items_seen, created,
-           updated, warnings_json, correlation_id
-         ) VALUES (?, ?, 'running', ?, 0, 0, 0, '[]', ?)`,
+           updated, warnings_json, correlation_id, adapter_id, adapter_version
+         ) VALUES (?, ?, 'running', ?, 0, 0, 0, '[]', ?, ?, ?)`,
       )
-      .run(runId, sourceId, startedAt, runId)
+      .run(
+        runId,
+        sourceId,
+        startedAt,
+        runId,
+        adapter.id,
+        adapter.version ?? null,
+      )
   }
 
   #finishRun(summary: SyncRunSummary): void {
@@ -560,7 +580,8 @@ export class ConnectorService {
       .prepare(
         `UPDATE sync_runs SET
            status = ?, finished_at = ?, items_seen = ?, created = ?, updated = ?,
-           warnings_json = ?, error_code = ?, error_message = ?
+           warnings_json = ?, error_code = ?, error_message = ?,
+           adapter_id = ?, adapter_version = ?
          WHERE run_id = ?`,
       )
       .run(
@@ -572,6 +593,8 @@ export class ConnectorService {
         JSON.stringify(summary.warnings),
         summary.errorCode ?? null,
         summary.errorMessage ?? null,
+        summary.adapterId ?? null,
+        summary.adapterVersion ?? null,
         summary.runId,
       )
   }

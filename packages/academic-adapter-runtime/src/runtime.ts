@@ -407,6 +407,7 @@ class ManifestClient {
 class ManifestAdapter implements AcademicSourceAdapter {
   readonly id: string
   readonly sourceId: string
+  readonly version: string
   readonly #manifest: AdapterManifest
   readonly #config: DeclarativeConfig
   readonly #options: RuntimeOptions
@@ -419,6 +420,7 @@ class ManifestAdapter implements AcademicSourceAdapter {
   ) {
     this.id = `declarative.${manifest.adapterId}`
     this.sourceId = sourceId
+    this.version = manifest.version
     this.#manifest = manifest
     this.#config = config
     this.#options = options

@@ -121,6 +121,7 @@ export interface FixtureLmsAdapterOptions {
 export class FixtureLmsAdapter implements AcademicSourceAdapter {
   readonly id: string
   readonly sourceId: string
+  readonly version = '1.0.0'
   readonly #fixturePath: string | undefined
   readonly #snapshot: FixtureSnapshotInput | undefined
 

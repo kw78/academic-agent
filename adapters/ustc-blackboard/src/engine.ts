@@ -189,6 +189,7 @@ class BlackboardClient {
 
 class BlackboardReadOnlyAdapter implements AcademicSourceAdapter {
   readonly id = 'blackboard.readonly'
+  readonly version = '1.0.0'
   readonly sourceId: string
   readonly #config: BlackboardConfig
   readonly #options: ClientOptions

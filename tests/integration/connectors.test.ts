@@ -80,6 +80,8 @@ describe('T05 duplicate sync is a no-op', () => {
       itemsSeen: 2,
       created: 2,
       updated: 0,
+      adapterId: 'fixture-lms',
+      adapterVersion: '1.0.0',
     })
     const eventCount = countRows(store, 'domain_events')
     const assignment = await findItem(store, 'assignment-1')
@@ -273,5 +275,11 @@ describe('T13 adapter failures preserve data', () => {
       'auth-required',
       'success',
     ])
+    expect(
+      runs.items.every(
+        (run) =>
+          run.adapterId === 'fixture-lms' && run.adapterVersion === '1.0.0',
+      ),
+    ).toBe(true)
   })
 })

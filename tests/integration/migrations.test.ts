@@ -29,7 +29,7 @@ describe('database upgrade', () => {
     const oldMigrations = join(root, 'old-migrations')
     mkdirSync(oldMigrations)
     for (const file of readdirSync(migrationsDir).sort()) {
-      if (file.startsWith('0011')) continue
+      if (Number(file.slice(0, 4)) >= 11) continue
       copyFileSync(join(migrationsDir, file), join(oldMigrations, file))
     }
 

@@ -419,6 +419,9 @@ export class SqliteQueryService implements QueryApi {
       warnings: parseJson<string[]>(row.warnings_json),
       errorCode: row.error_code == null ? undefined : String(row.error_code),
       errorMessage: row.error_message == null ? undefined : String(row.error_message),
+      adapterId: row.adapter_id == null ? undefined : String(row.adapter_id),
+      adapterVersion:
+        row.adapter_version == null ? undefined : String(row.adapter_version),
     }
   }
 }

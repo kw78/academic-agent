@@ -26,6 +26,7 @@ export interface AdapterResult {
 export interface AcademicSourceAdapter {
   readonly id: string
   readonly sourceId: string
+  readonly version?: string
   fetch(context?: AdapterFetchContext): Promise<AdapterResult>
 }
 
@@ -75,6 +76,8 @@ export interface SyncRunSummary {
   warnings: string[]
   errorCode?: string
   errorMessage?: string
+  adapterId?: string
+  adapterVersion?: string
 }
 
 export class AdapterAuthError extends Error {
