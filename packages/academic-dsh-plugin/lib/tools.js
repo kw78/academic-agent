@@ -20048,6 +20048,7 @@ var ACADEMIC_TOOL_NAMES = {
   ListSources: "academic_list_sources",
   ListSourceEngines: "academic_list_source_engines",
   ProbeSource: "academic_probe_source",
+  CrawlSource: "academic_crawl_source",
   CreateSource: "academic_create_source",
   ListWebSessions: "academic_list_web_sessions",
   FetchWebSession: "academic_fetch_web_session",
@@ -20143,6 +20144,14 @@ var updateSourceSchema = external_exports.object({
   capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
   enabled: external_exports.boolean().optional(),
   expectedVersion: external_exports.number().int().min(1).optional()
+});
+var crawlSourceSchema = external_exports.object({
+  sourceId: external_exports.string().min(1).max(200),
+  url: external_exports.string().url().max(2e3),
+  maxPages: external_exports.number().int().min(1).max(10).optional(),
+  maxDepth: external_exports.number().int().min(0).max(2).optional(),
+  pathPrefix: external_exports.string().min(1).max(500).optional(),
+  capture: external_exports.boolean().optional()
 });
 var materialListSchema = external_exports.object({
   courseId: external_exports.string().min(1).max(200).optional(),
@@ -20274,6 +20283,19 @@ var TOOL_SPECS = [
         type: "boolean",
         description: "Store the raw response in the host sample store and return an opaque sampleId for offline validation"
       }
+    },
+    write: false
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.CrawlSource,
+    description: "Read a bounded section of a site from one URL with a saved source session. Follows GET links only, stays on cookieDomains/probeAllowedHosts and a path prefix, never submits forms. Read-only; max 10 pages and depth 2.",
+    parameters: {
+      sourceId: { type: "string", required: true, description: "Source id with a saved session" },
+      url: { type: "string", required: true, description: "Start URL; host must be authorized" },
+      maxPages: { type: "integer", description: "Pages to fetch, 1-10; default 5" },
+      maxDepth: { type: "integer", description: "Link depth, 0-2; default 1" },
+      pathPrefix: { type: "string", description: "Optional path prefix, e.g. /space/" },
+      capture: { type: "boolean", description: "Keep raw page bodies in the host sample store" }
     },
     write: false
   },

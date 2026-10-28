@@ -4,7 +4,7 @@ import { TOOL_SPECS } from '../../packages/academic-dsh-plugin/src/tools.js'
 
 describe('DSH academic tool specs', () => {
   it('registers all specs with the real defineTool schema', () => {
-    expect(TOOL_SPECS).toHaveLength(23)
+    expect(TOOL_SPECS).toHaveLength(24)
     for (const spec of TOOL_SPECS) {
       expect(
         () =>

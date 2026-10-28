@@ -157,6 +157,43 @@ export interface SourceProbeContainer {
   id?: string
 }
 
+/** One failed page during a bounded crawl. */
+export interface SourceCrawlFailure {
+  url: string
+  message: string
+}
+
+/** Bounded, read-only crawl result used to explore one site section. */
+export interface SourceCrawlResult {
+  sourceId: string
+  startUrl: string
+  pages: SourceProbeEvidence[]
+  failures: SourceCrawlFailure[]
+  discovered: number
+  fetched: number
+  skipped: number
+  stopReason?:
+    | 'max-pages'
+    | 'time-limit'
+    | 'auth-required'
+    | 'rate-limited'
+    | 'login-page'
+  crawledAt: string
+}
+
+export interface SourceCrawlOptions {
+  /** Maximum pages fetched in this call, 1-10. */
+  maxPages?: number
+  /** Link depth from the start page, 0-2. */
+  maxDepth?: number
+  /** Optional path prefix; defaults to the start URL directory. */
+  pathPrefix?: string
+  captureSample?: boolean
+  totalTimeoutMs?: number
+  delayMs?: number
+  maxBytes?: number
+}
+
 /** Sanitized read-only evidence for onboarding and adapter candidates. */
 export interface SourceProbeEvidence {
   sourceId: string

@@ -26941,6 +26941,207 @@ var ProbeRateLimiter = class {
   }
 };
 
+// packages/academic-sources/src/crawl.ts
+var CRAWL_SKIP_PATH = /\/(?:logout|signout|sign-out|login|signin|sign-in|cas\/login)(?:[/?#]|$)/i;
+var CRAWL_SKIP_EXTENSION = /\.(?:pdf|zip|7z|rar|tar|gz|tgz|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|mp3|mp4|mov|avi|css|js|mjs)(?:$|[?#])/i;
+function uniqueStrings(values) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+function pathAllowedBy(prefixes, pathname) {
+  if (prefixes.length === 0) return true;
+  return prefixes.some((prefix) => {
+    const base = prefix.startsWith("/") ? prefix : `/${prefix}`;
+    return pathname === base || pathname.startsWith(base.endsWith("/") ? base : `${base}/`);
+  });
+}
+function crawlScope(config2, start) {
+  const cookieDomains = Array.isArray(config2.cookieDomains) ? config2.cookieDomains.filter(
+    (entry) => typeof entry === "string"
+  ) : [];
+  const extraHosts = Array.isArray(config2.probeAllowedHosts) ? config2.probeAllowedHosts.filter(
+    (entry) => typeof entry === "string"
+  ) : [];
+  const allowedHosts = uniqueStrings([...cookieDomains, ...extraHosts]);
+  if (allowedHosts.length === 0) {
+    throw new Error("\u8BE5\u6765\u6E90\u672A\u914D\u7F6E\u6388\u6743\u57DF\u540D\uFF0C\u4E0D\u80FD\u6293\u53D6\u7AD9\u70B9");
+  }
+  if (!hostAllowed(start.hostname, allowedHosts)) {
+    throw new Error(
+      `\u6293\u53D6 URL \u4E3B\u673A\u672A\u6388\u6743\uFF1A${start.hostname}\u3002\u5DF2\u6388\u6743\u4E3B\u673A\uFF1A${allowedHosts.join(", ")}\uFF1B\u8DE8\u4E3B\u673A\u53EA\u8BFB\u6293\u53D6\u9700\u5728\u6765\u6E90\u914D\u7F6E\u7684 probeAllowedHosts \u4E2D\u663E\u5F0F\u52A0\u5165\u8BE5\u4E3B\u673A`
+    );
+  }
+  const configured = Array.isArray(config2.probePathPrefixes) ? config2.probePathPrefixes.filter(
+    (entry) => typeof entry === "string" && entry.startsWith("/")
+  ) : [];
+  const defaultPathPrefix = start.pathname.endsWith("/") ? start.pathname : start.pathname.slice(0, start.pathname.lastIndexOf("/") + 1) || "/";
+  return {
+    allowedHosts,
+    pathPrefixes: configured.length > 0 ? configured : [defaultPathPrefix]
+  };
+}
+async function crawlSourcePages(input2) {
+  const start = new URL(input2.startUrl);
+  if (start.protocol !== "http:" && start.protocol !== "https:") {
+    throw new Error("\u53EA\u5141\u8BB8 http(s) \u6293\u53D6");
+  }
+  const options = input2.options ?? {};
+  const { allowedHosts, pathPrefixes } = crawlScope(input2.config, start);
+  const requestedPrefix = options.pathPrefix ? options.pathPrefix.startsWith("/") ? options.pathPrefix : `/${options.pathPrefix}` : void 0;
+  if (requestedPrefix) {
+    const normalized2 = requestedPrefix.replace(/\/+$/, "") || "/";
+    const within = pathPrefixes.some((prefix) => {
+      const base = prefix.replace(/\/+$/, "") || "/";
+      return normalized2 === base || normalized2.startsWith(base === "/" ? "/" : `${base}/`);
+    });
+    if (!within) {
+      throw new Error(
+        `\u6293\u53D6\u8DEF\u5F84\u524D\u7F00\u4E0D\u5728\u6765\u6E90\u6388\u6743\u8303\u56F4\u5185\uFF1A${requestedPrefix}\uFF08\u5DF2\u6388\u6743\uFF1A${pathPrefixes.join(", ")}\uFF09`
+      );
+    }
+  }
+  const prefixes = requestedPrefix ? [requestedPrefix] : pathPrefixes;
+  const maxPages = Math.min(Math.max(options.maxPages ?? 5, 1), 10);
+  const maxDepth = Math.min(Math.max(options.maxDepth ?? 1, 0), 2);
+  const totalTimeoutMs = Math.min(
+    Math.max(options.totalTimeoutMs ?? 25e3, 2e3),
+    6e4
+  );
+  const delayMs = Math.min(Math.max(options.delayMs ?? 200, 0), 2e3);
+  const maxBytes = options.maxBytes ?? 512 * 1024;
+  const cookies = cookiesFromSecret(input2.secret);
+  const queue = [];
+  const seen = /* @__PURE__ */ new Set();
+  const pages = [];
+  const failures = [];
+  let discovered = 0;
+  let fetched = 0;
+  let skipped = 0;
+  let stopReason;
+  const enqueue = (raw, base, depth) => {
+    if (depth > maxDepth) return;
+    let target;
+    try {
+      target = new URL(raw, base);
+    } catch {
+      skipped += 1;
+      return;
+    }
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
+      skipped += 1;
+      return;
+    }
+    if (!hostAllowed(target.hostname, allowedHosts)) {
+      skipped += 1;
+      return;
+    }
+    if (!pathAllowedBy(prefixes, target.pathname)) {
+      skipped += 1;
+      return;
+    }
+    if (CRAWL_SKIP_PATH.test(target.pathname)) {
+      skipped += 1;
+      return;
+    }
+    if (CRAWL_SKIP_EXTENSION.test(target.pathname)) {
+      skipped += 1;
+      return;
+    }
+    target.hash = "";
+    const url2 = target.toString();
+    if (seen.has(url2)) return;
+    seen.add(url2);
+    discovered += 1;
+    queue.push({ url: url2, depth });
+  };
+  enqueue(start.toString(), start.toString(), 0);
+  const deadline = Date.now() + totalTimeoutMs;
+  while (queue.length > 0 && fetched < maxPages) {
+    if (Date.now() > deadline) {
+      stopReason = "time-limit";
+      break;
+    }
+    const item = queue.shift();
+    fetched += 1;
+    try {
+      const result = await safeFetch(item.url, {
+        cookies,
+        allowedHosts,
+        allowedProtocols: input2.config.allowHttp === true ? ["http:", "https:"] : ["https:"],
+        ...prefixes.length > 0 ? { allowedPathPrefixes: prefixes } : {},
+        timeoutMs: 15e3,
+        maxBytes,
+        ...input2.fetchImpl ? { fetchImpl: input2.fetchImpl } : {},
+        ...input2.resolveHost ? { resolveHost: input2.resolveHost } : {}
+      });
+      const evidence = buildEvidence(
+        input2.sourceId,
+        item.url,
+        result,
+        allowedHosts,
+        input2.config.loggedOutPatterns,
+        (/* @__PURE__ */ new Date()).toISOString()
+      );
+      if (result.status === 401 || result.status === 403) {
+        pages.push(evidence);
+        stopReason = "auth-required";
+        break;
+      }
+      if (evidence.loginLike) {
+        pages.push(evidence);
+        stopReason = "login-page";
+        break;
+      }
+      if (options.captureSample && input2.sampleStore) {
+        const captured = input2.sampleStore.put(
+          {
+            url: item.url,
+            body: result.body,
+            ...result.contentType ? { contentType: result.contentType } : {}
+          },
+          evidence
+        );
+        pages.push({ ...evidence, sampleId: captured.sampleId });
+      } else {
+        pages.push(evidence);
+      }
+      if (item.depth < maxDepth) {
+        for (const match of result.body.matchAll(
+          /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/gi
+        )) {
+          const href = match[1] ?? match[2] ?? match[3] ?? "";
+          if (href) enqueue(href, result.finalUrl, item.depth + 1);
+        }
+      }
+    } catch (error62) {
+      if (error62 instanceof SafeFetchError && error62.code === "RATE_LIMITED") {
+        stopReason = "rate-limited";
+        break;
+      }
+      failures.push({
+        url: safeUrlForDisplay(item.url) ?? "[url]",
+        message: error62 instanceof Error ? error62.message : String(error62)
+      });
+    }
+    if (fetched < maxPages && Date.now() + delayMs <= deadline) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  if (!stopReason && fetched >= maxPages && queue.length > 0) {
+    stopReason = "max-pages";
+  }
+  return {
+    sourceId: input2.sourceId,
+    startUrl: safeUrlForDisplay(start.toString()) ?? start.toString(),
+    pages,
+    failures,
+    discovered,
+    fetched,
+    skipped,
+    ...stopReason ? { stopReason } : {},
+    crawledAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+
 // packages/academic-sources/src/index.ts
 var AUTH_KINDS = ["none", "password", "token", "oauth"];
 var MAX_CONFIG_BYTES = 64 * 1024;
@@ -42163,6 +42364,7 @@ var ACADEMIC_TOOL_NAMES = {
   ListSources: "academic_list_sources",
   ListSourceEngines: "academic_list_source_engines",
   ProbeSource: "academic_probe_source",
+  CrawlSource: "academic_crawl_source",
   CreateSource: "academic_create_source",
   ListWebSessions: "academic_list_web_sessions",
   FetchWebSession: "academic_fetch_web_session",
@@ -42296,6 +42498,14 @@ var updateSourceSchema = external_exports.object({
   capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
   enabled: external_exports.boolean().optional(),
   expectedVersion: external_exports.number().int().min(1).optional()
+});
+var crawlSourceSchema = external_exports.object({
+  sourceId: external_exports.string().min(1).max(200),
+  url: external_exports.string().url().max(2e3),
+  maxPages: external_exports.number().int().min(1).max(10).optional(),
+  maxDepth: external_exports.number().int().min(0).max(2).optional(),
+  pathPrefix: external_exports.string().min(1).max(500).optional(),
+  capture: external_exports.boolean().optional()
 });
 var materialListSchema = external_exports.object({
   courseId: external_exports.string().min(1).max(200).optional(),
@@ -42522,6 +42732,42 @@ function createAcademicTools(dependencies) {
           }
         )
       ] : [],
+      defineTool(
+        ACADEMIC_TOOL_NAMES.CrawlSource,
+        "Read a bounded section of a site starting from one URL using a saved source session. Follows GET links only, stays on cookieDomains/probeAllowedHosts and a path prefix, never submits forms, and returns sanitized page evidence. Read-only.",
+        crawlSourceSchema,
+        async (input2) => {
+          if (!dependencies.crawlSource) {
+            return failure2(
+              "CAPABILITY_UNAVAILABLE",
+              "Source crawl is not available in this host"
+            );
+          }
+          try {
+            const result = await dependencies.crawlSource(input2.sourceId, input2.url, {
+              ...input2.maxPages ? { maxPages: input2.maxPages } : {},
+              ...input2.maxDepth !== void 0 ? { maxDepth: input2.maxDepth } : {},
+              ...input2.pathPrefix ? { pathPrefix: input2.pathPrefix } : {},
+              ...input2.capture ? { captureSample: true } : {}
+            });
+            if (result.stopReason === "auth-required" || result.stopReason === "login-page") {
+              return failure2(
+                "AUTH_REQUIRED",
+                "The crawl reached a login page or was rejected by the platform; log in again before retrying."
+              );
+            }
+            if (result.stopReason === "rate-limited") {
+              return failure2("UNAVAILABLE", "The platform rate-limited the crawl; retry later.");
+            }
+            return success2(result);
+          } catch (error62) {
+            return failure2(
+              "UNAVAILABLE",
+              error62 instanceof Error ? error62.message : String(error62)
+            );
+          }
+        }
+      ),
       defineTool(
         ACADEMIC_TOOL_NAMES.CreateSource,
         "Create a database-backed source definition from a known engine and non-secret config. The host must authorize this write; this tool cannot install code.",
@@ -47252,6 +47498,34 @@ async function createAcademicApp(options) {
       ...options.probeResolveHost ? { resolveHost: options.probeResolveHost } : {}
     });
   };
+  const crawlSourceById = async (sourceId, startUrl, crawlOptions = {}) => {
+    const source = sources.get(sourceId);
+    if (!source || source.archived) {
+      throw new CapabilityUnavailableError(`source.${sourceId}`);
+    }
+    if (source.authKind === "none") {
+      throw new CapabilityUnavailableError(`source.session.${sourceId}`);
+    }
+    const connection = connections.list().find((entry) => entry.sourceId === sourceId);
+    if (!connection) {
+      throw new CapabilityUnavailableError(`source.session.${sourceId}`);
+    }
+    const credentials = await connections.openCredential(
+      connection.connectionId,
+      sourceId
+    );
+    await probeLimiter.acquire(sourceId);
+    return crawlSourcePages({
+      sourceId,
+      config: source.config,
+      secret: await credentials.getSecret(),
+      startUrl,
+      options: crawlOptions,
+      sampleStore: probeSamples,
+      ...options.probeFetch ? { fetchImpl: options.probeFetch } : {},
+      ...options.probeResolveHost ? { resolveHost: options.probeResolveHost } : {}
+    });
+  };
   const ensureCandidateSource = async (candidate) => {
     const manifest = manifestRegistry.get(candidate.adapterId, candidate.version);
     if (!manifest) return { warning: "Manifest \u672A\u6CE8\u518C\uFF0C\u65E0\u6CD5\u521B\u5EFA\u540C\u6B65\u6570\u636E\u6E90" };
@@ -47379,6 +47653,7 @@ async function createAcademicApp(options) {
     previewAdapterSource,
     syncAdapterSource,
     probeSource: probeSourceById,
+    crawlSource: crawlSourceById,
     getProbeSample: (sampleId) => probeSamples.get(sampleId),
     allowWrites: options.agentWrites ?? false,
     ...options.authorizeAgentWrite ? { authorizeWrite: options.authorizeAgentWrite } : {}
@@ -47603,6 +47878,7 @@ async function createAcademicApp(options) {
       return summary2;
     },
     probeSource: probeSourceById,
+    crawlSource: crawlSourceById,
     async previewSourceSync(sourceId, connectionId) {
       const source = sources.get(sourceId);
       if (!source || !source.enabled || source.archived) {

@@ -133,6 +133,20 @@ export const TOOL_SPECS: ToolSpec[] = [
     write: false,
   },
   {
+    name: ACADEMIC_TOOL_NAMES.CrawlSource,
+    description:
+      'Read a bounded section of a site from one URL with a saved source session. Follows GET links only, stays on cookieDomains/probeAllowedHosts and a path prefix, never submits forms. Read-only; max 10 pages and depth 2.',
+    parameters: {
+      sourceId: { type: 'string', required: true, description: 'Source id with a saved session' },
+      url: { type: 'string', required: true, description: 'Start URL; host must be authorized' },
+      maxPages: { type: 'integer', description: 'Pages to fetch, 1-10; default 5' },
+      maxDepth: { type: 'integer', description: 'Link depth, 0-2; default 1' },
+      pathPrefix: { type: 'string', description: 'Optional path prefix, e.g. /space/' },
+      capture: { type: 'boolean', description: 'Keep raw page bodies in the host sample store' },
+    },
+    write: false,
+  },
+  {
     name: ACADEMIC_TOOL_NAMES.CreateSource,
     description:
       'Create a database-backed source definition from a known engine and non-secret JSON config. Write; requires trusted host approval. Cannot install code.',

@@ -31,6 +31,8 @@ import {
   type Range,
   type ReplanReason,
   type SourceEngine,
+  type SourceCrawlOptions,
+  type SourceCrawlResult,
   type SourceProbeEvidence,
   type StudyPlanView,
   type SyncPreview,
@@ -41,7 +43,13 @@ import {
   createDefaultCredentialVault,
   type CredentialVault,
 } from '@academic/connections'
-import { SourceConfigStore, ProbeSampleStore, ProbeRateLimiter, probeSourcePage } from '@academic/sources'
+import {
+  SourceConfigStore,
+  ProbeSampleStore,
+  ProbeRateLimiter,
+  crawlSourcePages,
+  probeSourcePage,
+} from '@academic/sources'
 import {
   WebSessionStore,
   safeFetchBytes,
@@ -278,6 +286,11 @@ export interface AcademicApp {
     url?: string,
     options?: { captureSample?: boolean },
   ): Promise<SourceProbeEvidence>
+  crawlSource(
+    sourceId: string,
+    startUrl: string,
+    options?: SourceCrawlOptions,
+  ): Promise<SourceCrawlResult>
   previewSourceSync(sourceId: string, connectionId?: string): Promise<SyncPreview>
   syncSource(sourceId: string, connectionId?: string): Promise<SyncRunSummary>
   previewPlan(
@@ -720,6 +733,43 @@ export async function createAcademicApp(
     })
   }
 
+  const crawlSourceById = async (
+    sourceId: string,
+    startUrl: string,
+    crawlOptions: SourceCrawlOptions = {},
+  ): Promise<SourceCrawlResult> => {
+    const source = sources.get(sourceId)
+    if (!source || source.archived) {
+      throw new CapabilityUnavailableError(`source.${sourceId}`)
+    }
+    if (source.authKind === 'none') {
+      throw new CapabilityUnavailableError(`source.session.${sourceId}`)
+    }
+    const connection = connections
+      .list()
+      .find((entry) => entry.sourceId === sourceId)
+    if (!connection) {
+      throw new CapabilityUnavailableError(`source.session.${sourceId}`)
+    }
+    const credentials = await connections.openCredential(
+      connection.connectionId,
+      sourceId,
+    )
+    await probeLimiter.acquire(sourceId)
+    return crawlSourcePages({
+      sourceId,
+      config: source.config,
+      secret: await credentials.getSecret(),
+      startUrl,
+      options: crawlOptions,
+      sampleStore: probeSamples,
+      ...(options.probeFetch ? { fetchImpl: options.probeFetch } : {}),
+      ...(options.probeResolveHost
+        ? { resolveHost: options.probeResolveHost }
+        : {}),
+    })
+  }
+
   const ensureCandidateSource = async (
     candidate: AdapterCandidateSummary,
   ): Promise<{ sourceId?: string; warning?: string }> => {
@@ -896,6 +946,7 @@ export async function createAcademicApp(
     previewAdapterSource,
     syncAdapterSource,
     probeSource: probeSourceById,
+    crawlSource: crawlSourceById,
     getProbeSample: (sampleId: string) => probeSamples.get(sampleId),
     allowWrites: options.agentWrites ?? false,
     ...(options.authorizeAgentWrite
@@ -1157,6 +1208,7 @@ export async function createAcademicApp(
     },
 
     probeSource: probeSourceById,
+    crawlSource: crawlSourceById,
 
     async previewSourceSync(sourceId, connectionId) {
       const source = sources.get(sourceId)

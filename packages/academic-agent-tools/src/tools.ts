@@ -14,6 +14,8 @@ import {
   type ReplanRequestPort,
   type SourceConfigStoreApi,
   type SourceEngineRegistryApi,
+  type SourceCrawlOptions,
+  type SourceCrawlResult,
   type SourceProbeEvidence,
   type AdapterCandidatePort,
   type AdapterSample,
@@ -85,6 +87,11 @@ export interface AcademicToolDependencies {
   /** Preview/sync a declarative source with the host-held session. */
   previewAdapterSource?: (sourceId: string) => Promise<unknown>
   syncAdapterSource?: (sourceId: string) => Promise<unknown>
+  crawlSource?: (
+    sourceId: string,
+    startUrl: string,
+    options?: SourceCrawlOptions,
+  ) => Promise<SourceCrawlResult>
   probeSource?: (
     sourceId: string,
     url?: string,
@@ -101,6 +108,7 @@ export const ACADEMIC_TOOL_NAMES = {
   ListSources: 'academic_list_sources',
   ListSourceEngines: 'academic_list_source_engines',
   ProbeSource: 'academic_probe_source',
+  CrawlSource: 'academic_crawl_source',
   CreateSource: 'academic_create_source',
   ListWebSessions: 'academic_list_web_sessions',
   FetchWebSession: 'academic_fetch_web_session',
@@ -265,6 +273,15 @@ const updateSourceSchema = z.object({
   capabilities: z.array(z.string().min(1).max(200)).max(50).optional(),
   enabled: z.boolean().optional(),
   expectedVersion: z.number().int().min(1).optional(),
+})
+
+const crawlSourceSchema = z.object({
+  sourceId: z.string().min(1).max(200),
+  url: z.string().url().max(2_000),
+  maxPages: z.number().int().min(1).max(10).optional(),
+  maxDepth: z.number().int().min(0).max(2).optional(),
+  pathPrefix: z.string().min(1).max(500).optional(),
+  capture: z.boolean().optional(),
 })
 
 const materialListSchema = z.object({
@@ -539,6 +556,43 @@ export function createAcademicTools(
                 ),
               ]
             : []),
+
+          defineTool(
+            ACADEMIC_TOOL_NAMES.CrawlSource,
+            'Read a bounded section of a site starting from one URL using a saved source session. Follows GET links only, stays on cookieDomains/probeAllowedHosts and a path prefix, never submits forms, and returns sanitized page evidence. Read-only.',
+            crawlSourceSchema,
+            async (input) => {
+              if (!dependencies.crawlSource) {
+                return failure(
+                  'CAPABILITY_UNAVAILABLE',
+                  'Source crawl is not available in this host',
+                )
+              }
+              try {
+                const result = await dependencies.crawlSource(input.sourceId, input.url, {
+                  ...(input.maxPages ? { maxPages: input.maxPages } : {}),
+                  ...(input.maxDepth !== undefined ? { maxDepth: input.maxDepth } : {}),
+                  ...(input.pathPrefix ? { pathPrefix: input.pathPrefix } : {}),
+                  ...(input.capture ? { captureSample: true } : {}),
+                })
+                if (result.stopReason === 'auth-required' || result.stopReason === 'login-page') {
+                  return failure(
+                    'AUTH_REQUIRED',
+                    'The crawl reached a login page or was rejected by the platform; log in again before retrying.',
+                  )
+                }
+                if (result.stopReason === 'rate-limited') {
+                  return failure('UNAVAILABLE', 'The platform rate-limited the crawl; retry later.')
+                }
+                return success(result)
+              } catch (error) {
+                return failure(
+                  'UNAVAILABLE',
+                  error instanceof Error ? error.message : String(error),
+                )
+              }
+            },
+          ),
 
           defineTool(
             ACADEMIC_TOOL_NAMES.CreateSource,

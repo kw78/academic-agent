@@ -379,3 +379,7 @@ export {
   ProbeRateLimiter,
   type ProbeRateLimiterOptions,
 } from './probe-rate-limit.js'
+export {
+  crawlSourcePages,
+  type CrawlSourcePagesInput,
+} from './crawl.js'

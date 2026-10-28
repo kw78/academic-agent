@@ -1,6 +1,6 @@
 # @academic/dsh-plugin
 
-DSH（DeepSeek Harness）bundle，把 Academic Agent 的 23 个模型工具暴露给模型。默认只读；写入必须由可信宿主对每次操作授权，模型参数（包括旧版的 `confirmed`）不能作为授权依据。当前 bundle 尚未接入 DSH 审批适配器，因此写入会被拒绝。
+DSH（DeepSeek Harness）bundle，把 Academic Agent 的 24 个模型工具暴露给模型。默认只读；写入必须由可信宿主对每次操作授权，模型参数（包括旧版的 `confirmed`）不能作为授权依据。当前 bundle 尚未接入 DSH 审批适配器，因此写入会被拒绝。
 
 ## 插件拆分
 
@@ -8,7 +8,7 @@ bundle 现在由三个独立 Cordis fiber 组成：
 
 - `@academic/dsh-plugin/host`：创建 Academic App（Event Store、Scheduler、Dispatcher、Notification），提供 `academicApp` 服务。
 - `@academic/dsh-plugin/planner`：注册 Planner 能力；卸载后已有计划仍可读取，新规划请求不可用。
-- `@academic/dsh-plugin/tools`：Agent Bridge，注册 23 个模型工具；卸载后后台同步、调度、提醒继续运行。
+- `@academic/dsh-plugin/tools`：Agent Bridge，注册 24 个模型工具；卸载后后台同步、调度、提醒继续运行。
 
 `cordis.patch.yml` 按 host → planner → tools 插入三行。禁用 `academic-tools` 行即可验证 Agent Bridge 独立卸载。
 
@@ -27,6 +27,7 @@ bundle 现在由三个独立 Cordis fiber 组成：
 | `academic_list_sources` | 只读 | 列出数据库中的数据源与 engine |
 | `academic_list_source_engines` | 只读 | 列出当前 Host 可用的通用 engine |
 | `academic_probe_source` | 只读 | 用已保存会话读取授权页面（cookieDomains 或 probeAllowedHosts），返回脱敏结构证据 |
+| `academic_crawl_source` | 只读 | 从一个入口 URL 有界抓取同站/已授权主机的一个栏目，最多 10 页、深度 2 |
 | `academic_create_source` | 写入 | 用已知 engine 与非敏感 config 创建数据源；需可信宿主授权 |
 | `academic_update_source` | 写入 | 修改数据源配置；需可信宿主授权 |
 | `academic_list_web_sessions` | 只读 | 列出已保存的网站会话元数据，不返回 Cookie |
@@ -81,7 +82,7 @@ dsh academic --json "hello"
 ```text
 [academic-host] loaded db=<path-to-repo>/.data/dsh-academic.db
 [academic-planner] capability registered
-[academic-tools] tools=23 registered=true
+[academic-tools] tools=24 registered=true
 [academic-tools] selftest readIsError=false readCourses=0 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 

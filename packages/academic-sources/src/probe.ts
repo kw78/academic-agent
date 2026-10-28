@@ -50,7 +50,7 @@ export function probeUrlFor(config: Record<string, unknown>): string | undefined
   return undefined
 }
 
-function hostAllowed(host: string, allowed: string[]): boolean {
+export function hostAllowed(host: string, allowed: string[]): boolean {
   const value = host.toLowerCase()
   return allowed.some((entry) => {
     const base = entry.toLowerCase().replace(/^\./, '')
@@ -58,7 +58,7 @@ function hostAllowed(host: string, allowed: string[]): boolean {
   })
 }
 
-function cookiesFromSecret(secret: string): WebCookie[] {
+export function cookiesFromSecret(secret: string): WebCookie[] {
   const parsed = JSON.parse(secret) as { cookies?: unknown }
   if (!Array.isArray(parsed.cookies) || parsed.cookies.length === 0) {
     throw new Error('会话格式无效，请重新登录')
@@ -234,7 +234,7 @@ function containerEvidence(body: string): SourceProbeContainer[] {
   return containers
 }
 
-function buildEvidence(
+export function buildEvidence(
   sourceId: string,
   url: string,
   result: Awaited<ReturnType<typeof safeFetch>>,

@@ -595,7 +595,7 @@ HTTP/JSON、已登录浏览器会话、受限页面解析，最后才考虑额�
 
 **验收：** 采样有界、可审计，不演变为无界通用爬虫。
 
-已实现的安全子集：`academic_probe_source` 可带可选 `url`，只允许该来源的精确主机（可选 `probePathPrefixes`），返回脱敏的结构、同站脚本 URL 和从脚本中提取的候选接口路径；`capture=true` 时原始响应只进入宿主内存样本存储并返回 `sampleId`，Agent 用 `sampleIds` 做离线回放，原始 body 不进入模型上下文。尚未实现：自动多页发现、全局采样页数/并发上限与跨进程样本持久化。
+已实现的安全子集：`academic_probe_source` 可带可选 `url`，只允许该来源的精确主机（可选 `probePathPrefixes`），返回脱敏的结构、同站脚本 URL 和从脚本中提取的候选接口路径；`capture=true` 时原始响应只进入宿主内存样本存储并返回 `sampleId`，Agent 用 `sampleIds` 做离线回放，原始 body 不进入模型上下文。已提供有界栏目抓取 `academic_crawl_source`（最多 10 页、深度 2、GET、授权主机/路径、总时长上限）；仍未实现无界自动多页发现、跨进程样本持久化与全局并发调度。
 
 ### G-04 --- 候选生成、验证和修订 `[DONE]`
 
@@ -960,7 +960,7 @@ SaaS、分布式微服务、插件市场，以及没有数据依据的学习能�
 - **F-01/F-02/F-03 DONE**：Manifest 明确拒绝未知 `schemaVersion`；候选验证按 schema、字段契约、访问范围、样本回放分阶段报告；字段支持类型转换、默认值、必需字段与结构退化诊断；分页支持 `next`、页码与 offset，并受页数、行数、总字节、时长与请求数限制，截断不误报完整。
 - **G-01/G-02/G-04/G-05/G-06 DONE**：Host 返回统一接入阶段与唯一下一步；探测证据含 SHA-256 摘要；候选列表展示允许主机、路径、数据类型与字段；同步失败分类为认证/网络/权限/结构/质量并给出不扩大权限的修复建议。
 - **H-01/H-02 DONE**：课程优先级持久化在 `user_preferences`，仅作为任务优先级之后的排序依据；设置页可查看/修改。计划候选显示可安排/已安排/未安排时长，容量不足与截止已过分开解释，并用真实 Blackboard 任务快照评估。H-03/H-04 为 PARTIAL：UI 已带入课程上下文与按课程复习清单，但尚无持久化反馈与真实模型讲解验收；H-05 已 DONE：手动/URL/授权附件导入、PDF/HTML/MD/TXT/PPTX/DOCX 抽取、FTS5 检索、删除与索引重建、Agent 工具与 Tutor 引用规则均已落地，真实 PDF 检索已验证；真实模型引用、OCR 与自动多页发现未验证。
-- **G-03 PARTIAL**：已支持同主机 URL 探测、脚本 URL、候选接口路径和 Host 侧临时样本捕获（sampleId，60 分钟 TTL、按 URL 复用）；自动多页发现、全局采样上限与跨进程样本持久化仍未实现。
+- **G-03 PARTIAL**：已支持同主机/`probeAllowedHosts` URL 探测、脚本 URL、候选接口路径、Host 侧临时样本捕获（sampleId，60 分钟 TTL、按 URL 复用）和有界栏目抓取（`academic_crawl_source`，最多 10 页、深度 2）；无界自动多页发现、全局并发调度与跨进程样本持久化仍未实现。
 - **I-03/I-04/I-05 DONE**：`restore <backup> <target>` 在独立目录执行完整性与投影校验；1k/10k 事项性能基线由 `npm run benchmark` 记录；`sync_runs` 记录 Adapter ID/版本；0010→当前迁移升级测试验证数据保留。I-01/I-02/I-06 仍为 PARTIAL：事件本身未写 Adapter 版本、文件级 HMR/真实 DSH Session 生命周期与 profile 升级演练未完成。
 - **K-01/K-02 PARTIAL，K-03 DONE**：当前能力注册、停用与设置页只读能力/权限展示已有实现；未建设插件市场或额外抽象。J 组保持独立决策，未启动。
 
@@ -973,7 +973,7 @@ SaaS、分布式微服务、插件市场，以及没有数据依据的学习能�
 - **source 级作业请求**：Manifest 支持 `assignments.scope=source`，静态列表只请求一次并按行内 `courseExternalId` 归属；`scope` 只能用于 assignments，source 级 URL 不允许 `{{course.*}}`。
 - **导入与证据**：UI 候选导入支持选择 JSON 文件；验证结果标注“样本回放通过，未做真实同步”。
 - **Agent 自动接入**：设置页提供默认关闭的偏好；开启后 Agent 可启用 validated 候选，并预览/同步 declarative 源，不再逐次审核；仍未开放未验证候选、凭据读取、任务修改与学校平台操作。
-- **验证**：`npm run typecheck`、`npm test`（41 文件/219 项）、`npm run build:dsh`、`npm run build:ui` 通过。真实同步验收仍需用户在启用后执行预览/同步/重复 no-op。
+- **验证**：`npm run typecheck`、`npm test`（41 文件/220 项）、`npm run build:dsh`、`npm run build:ui` 通过。真实同步验收仍需用户在启用后执行预览/同步/重复 no-op。
 
 ## 18.3 个人数据可编辑与恢复（2026-10-28）
 
@@ -982,7 +982,7 @@ SaaS、分布式微服务、插件市场，以及没有数据依据的学习能�
 - **学习任务**：可编辑标题、本地截止、优先级、预计时长；可删除/恢复；Planner 与默认查询排除归档任务。
 - **数据源**：可编辑非敏感配置；归档后可恢复；彻底删除会清理 source、连接元数据与凭据，但保留学业事件。
 - **UI**：连接页、课程列表、任务页补齐编辑/删除/恢复入口，并提供“显示已归档/已删除”开关。
-- **验证**：`npm run typecheck`、`npm test`（41 文件/219 项）、`npm run build:dsh`、`npm run build:ui` 通过。新入口尚未做真实浏览器/Desktop 点验。
+- **验证**：`npm run typecheck`、`npm test`（41 文件/220 项）、`npm run build:dsh`、`npm run build:ui` 通过。新入口尚未做真实浏览器/Desktop 点验。
 
 ## 19. 当前唯一正确的推进策略
 

@@ -15,6 +15,7 @@
       "academic_list_sources",
       "academic_list_source_engines",
       "academic_probe_source",
+      "academic_crawl_source",
       "academic_create_source",
       "academic_update_source",
       "academic_list_web_sessions",

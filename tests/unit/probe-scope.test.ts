@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { probeSourcePage } from '@academic/sources'
+import { crawlSourcePages, probeSourcePage } from '@academic/sources'
 
 const publicAddress = async () => [{ address: '93.184.216.34', family: 4 }]
 
@@ -47,6 +47,47 @@ describe('source probe host scope', () => {
       }),
     ).rejects.toThrow(/probeAllowedHosts/)
     expect(calls).toBe(0)
+  })
+
+  it('crawls a bounded section without leaving the allowed host or path prefix', async () => {
+    const urls: string[] = []
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = String(input)
+      urls.push(url)
+      if (url.includes('/space/index')) {
+        return new Response(
+          '<a href="/space/course/1?x=1">一</a><a href="/space/course/2">二</a>' +
+            '<a href="/space/course/1/detail">详情</a>' +
+            '<a href="https://evil.example/x">外部</a>' +
+            '<a href="/logout">退出</a><a href="/files/a.pdf">PDF</a>',
+          { status: 200, headers: { 'content-type': 'text/html' } },
+        )
+      }
+      return new Response('<html><body>课程页</body></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      })
+    }) as typeof fetch
+
+    const result = await crawlSourcePages({
+      sourceId: 'source-1',
+      config: config(['i.mooc.chaoxing.com']),
+      secret: secret(),
+      startUrl: target,
+      options: { maxPages: 3, maxDepth: 1, pathPrefix: '/space', delayMs: 0 },
+      fetchImpl,
+      resolveHost: publicAddress,
+    })
+
+    expect(result.fetched).toBe(3)
+    expect(result.pages).toHaveLength(3)
+    expect(urls).toHaveLength(3)
+    expect(urls.some((url) => url.includes('/space/course/1?x=1'))).toBe(true)
+    expect(urls.some((url) => url.includes('evil.example'))).toBe(false)
+    expect(urls.some((url) => url.endsWith('/logout'))).toBe(false)
+    expect(urls.some((url) => url.endsWith('/a.pdf'))).toBe(false)
+    expect(result.stopReason).toBe('max-pages')
+    expect(result.discovered).toBeGreaterThanOrEqual(3)
   })
 
   it('probes an explicitly allowed cross-host page and keeps evidence on that host', async () => {
