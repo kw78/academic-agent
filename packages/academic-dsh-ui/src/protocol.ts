@@ -1,5 +1,8 @@
 import type {
   AcademicItemView,
+  AdapterCandidateReport,
+  AdapterCandidateSummary,
+  AdapterSample,
   ConnectionView,
   CourseView,
   Due,
@@ -10,6 +13,12 @@ import type {
   StudyTaskView,
   SyncRunSummary,
   SourceEngineDescriptor,
+} from '@academic/contracts'
+
+export type {
+  AdapterCandidateSummary,
+  SourceProbeEvidence,
+  SourceProbeLink,
 } from '@academic/contracts'
 
 export type UiErrorCode =
@@ -112,6 +121,36 @@ export interface SourceStatus {
   connection?: ConnectionView
   lastSync?: SyncRunSummary
   detail?: string
+}
+
+export interface AdapterCandidateManifestRequest {
+  manifest: unknown
+  samples: AdapterSample[]
+}
+
+export interface AdapterCandidateVersionRequest {
+  adapterId: string
+  version?: string
+}
+
+export interface AdapterCandidateValidationView {
+  report: AdapterCandidateReport
+}
+
+export interface AdapterCandidateRegistrationView {
+  candidate: AdapterCandidateSummary
+  report: AdapterCandidateReport
+}
+
+export interface AdapterCandidateActivationView {
+  candidate: AdapterCandidateSummary
+  source?: SourceStatus
+  warning?: string
+}
+
+export interface AdapterCandidatesView {
+  candidates: AdapterCandidateSummary[]
+  active: Array<{ adapterId: string; active?: string }>
 }
 
 export interface DashboardView {

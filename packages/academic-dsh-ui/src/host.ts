@@ -4,6 +4,11 @@ import type { AcademicUiApi } from './api.js'
 import { createAcademicUiApi } from './api.js'
 import type {
   AcceptPlanRequest,
+  AdapterCandidateActivationView,
+  AdapterCandidateRegistrationView,
+  AdapterCandidateSummary,
+  AdapterCandidateValidationView,
+  AdapterCandidatesView,
   AutomationJob,
   AutomationView,
   AvailabilityView,
@@ -27,6 +32,7 @@ import type {
   PlanView,
   SettingsView,
   SourceIdRequest,
+  SourceProbeEvidence,
   SourceSecretRequest,
   SourceStatus,
   SyncNowRequest,
@@ -65,6 +71,12 @@ const REMOTE_METHODS = [
   'updateSource',
   'archiveSource',
   'sourceLogin',
+  'probeSource',
+  'adapterCandidates',
+  'validateAdapterCandidate',
+  'registerAdapterCandidate',
+  'activateAdapterCandidate',
+  'rollbackAdapterCandidate',
   'sourceSetSecret',
   'setConnectionSecret',
   'webSessions',
@@ -209,6 +221,38 @@ export class AcademicUiService extends TypertRemoteService {
 
   async sourceLogin(request: unknown): Promise<UiResult<ConnectionView>> {
     return (await this.apiReady).sourceLogin(request as SourceIdRequest)
+  }
+
+  async probeSource(request: unknown): Promise<UiResult<SourceProbeEvidence>> {
+    return (await this.apiReady).probeSource(request)
+  }
+
+  async adapterCandidates(request: unknown): Promise<UiResult<AdapterCandidatesView>> {
+    return (await this.apiReady).adapterCandidates(request)
+  }
+
+  async validateAdapterCandidate(
+    request: unknown,
+  ): Promise<UiResult<AdapterCandidateValidationView>> {
+    return (await this.apiReady).validateAdapterCandidate(request)
+  }
+
+  async registerAdapterCandidate(
+    request: unknown,
+  ): Promise<UiResult<AdapterCandidateRegistrationView>> {
+    return (await this.apiReady).registerAdapterCandidate(request)
+  }
+
+  async activateAdapterCandidate(
+    request: unknown,
+  ): Promise<UiResult<AdapterCandidateActivationView>> {
+    return (await this.apiReady).activateAdapterCandidate(request)
+  }
+
+  async rollbackAdapterCandidate(
+    request: unknown,
+  ): Promise<UiResult<AdapterCandidateSummary>> {
+    return (await this.apiReady).rollbackAdapterCandidate(request)
   }
 
   async sourceSetSecret(

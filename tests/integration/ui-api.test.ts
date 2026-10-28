@@ -11,9 +11,18 @@ afterEach(() => {
   for (const dispose of cleanup.splice(0).reverse()) dispose()
 })
 
-async function setup() {
+async function setup(
+  options: {
+    probeFetch?: typeof fetch
+    probeResolveHost?: (hostname: string) => Promise<Array<{ address: string; family: number }>>
+  } = {},
+) {
   const clock = fixedClock()
-  const app = await createAcademicApp({ databasePath: ':memory:', clock })
+  const app = await createAcademicApp({
+    databasePath: ':memory:',
+    clock,
+    ...options,
+  })
   cleanup.push(() => app.close())
   await app.syncFixture()
   return { app, api: createAcademicUiApi(app), clock }
@@ -199,6 +208,211 @@ describe('academic UI host API', () => {
     expect(source?.adapterReady).toBe(false)
     expect(source?.syncAvailable).toBe(false)
     expect(source?.canLogin).toBe(true)
+  })
+
+  it('probes a saved session without writing and rejects expired sessions', async () => {
+    let mode: 'ok' | 'login' = 'ok'
+    let sentCookie: string | null = null
+    const { app, clock, api } = await setup({
+      probeResolveHost: async () => [
+        { address: '93.184.216.34', family: 4 },
+      ],
+      probeFetch: async (_input, init) => {
+        sentCookie = new Headers(init?.headers).get('cookie')
+        if (mode === 'login') {
+          return new Response(
+            '<html><head><title>登录</title></head><body></body></html>',
+            { status: 200, headers: { 'content-type': 'text/html' } },
+          )
+        }
+        return new Response(
+          '<html><head><title>Home</title></head><body>' +
+            '<h1>Courses</h1>' +
+            '<a href="https://lms.example.edu/course/1?token=should-not-leak">Course 1</a>' +
+            '</body></html>',
+          { status: 200, headers: { 'content-type': 'text/html' } },
+        )
+      },
+    })
+    const config = {
+      loginUrl: 'https://lms.example.edu/login',
+      verifyUrl: 'https://lms.example.edu/home',
+      authenticatedUrlPatterns: ['^https://lms\\.example\\.edu/'],
+      cookieDomains: ['lms.example.edu'],
+    }
+    app.sources.create({
+      sourceId: 'probe-source',
+      engine: 'browser-session',
+      displayName: 'Probe Source',
+      authKind: 'token',
+      loginMode: 'manual',
+      config,
+    })
+    const connection = app.connections.create({
+      sourceId: 'probe-source',
+      displayName: 'Probe Source',
+      authKind: 'token',
+    })
+    await app.connections.setSecret(
+      connection.connectionId,
+      JSON.stringify({
+        cookies: [
+          {
+            name: 'sid',
+            value: 'top-secret',
+            domain: 'lms.example.edu',
+            path: '/',
+          },
+        ],
+      }),
+    )
+    const itemCountBefore = (await app.store.queries.listAcademicItems()).items.length
+    const probed = await api.probeSource({ sourceId: 'probe-source' })
+    expect(probed.ok).toBe(true)
+    if (!probed.ok) return
+    expect(sentCookie).toContain('sid=top-secret')
+    expect(probed.value).toMatchObject({
+      status: 200,
+      title: 'Home',
+      headings: ['Courses'],
+      loginLike: false,
+      probedAt: clock.now(),
+    })
+    expect(probed.value.links[0]).toEqual({
+      text: 'Course 1',
+      url: 'https://lms.example.edu/course/1',
+    })
+    expect(JSON.stringify(probed.value)).not.toContain('top-secret')
+    expect(JSON.stringify(probed.value)).not.toContain('should-not-leak')
+    const toolProbe = await app.agentBridge.host.call('academic_probe_source', {
+      sourceId: 'probe-source',
+    })
+    expect(toolProbe.ok).toBe(true)
+    if (toolProbe.ok) {
+      expect(JSON.stringify(toolProbe.data)).not.toContain('top-secret')
+      expect(JSON.stringify(toolProbe.data)).not.toContain('should-not-leak')
+    }
+    expect((await app.store.queries.listAcademicItems()).items).toHaveLength(
+      itemCountBefore,
+    )
+
+    mode = 'login'
+    expect(await api.probeSource({ sourceId: 'probe-source' })).toMatchObject({
+      ok: false,
+      error: { code: 'AUTH_REQUIRED' },
+    })
+  })
+
+  it('activates a validated candidate and creates a syncable declarative source', async () => {
+    const { app, api } = await setup()
+    app.sources.create({
+      sourceId: 'session-source',
+      engine: 'browser-session',
+      displayName: 'LMS session',
+      authKind: 'token',
+      loginMode: 'manual',
+      config: {
+        loginUrl: 'https://lms.example.edu/login',
+        authenticatedUrlPatterns: ['^https://lms\\.example\\.edu/'],
+        cookieDomains: ['lms.example.edu'],
+      },
+    })
+    const sessionConnection = app.connections.create({
+      sourceId: 'session-source',
+      displayName: 'LMS session',
+      authKind: 'token',
+    })
+    await app.connections.setSecret(
+      sessionConnection.connectionId,
+      JSON.stringify({
+        cookies: [
+          {
+            name: 'sid',
+            value: 'copied-session',
+            domain: 'lms.example.edu',
+            path: '/',
+          },
+        ],
+      }),
+    )
+
+    const manifest = {
+      schemaVersion: 1,
+      adapterId: 'auto-demo',
+      version: '1.0.0',
+      displayName: 'Auto Demo',
+      baseUrl: 'https://lms.example.edu/',
+      allowedOrigins: ['lms.example.edu'],
+      courses: {
+        url: '/data',
+        responseType: 'json',
+        items: 'courses',
+        fields: {
+          externalCourseId: { path: 'id' },
+          code: { path: 'code' },
+          title: { path: 'title' },
+          termId: { path: 'term' },
+        },
+      },
+      assignments: {
+        url: '/data',
+        responseType: 'json',
+        items: 'assignments',
+        fields: {
+          externalItemId: { path: 'id' },
+          title: { path: 'title' },
+        },
+      },
+    }
+    const samples = [
+      {
+        url: 'https://lms.example.edu/data',
+        body: JSON.stringify({
+          courses: [
+            { id: 'C1', code: 'CS101', title: 'Data Structures', term: '2026FA' },
+          ],
+          assignments: [{ id: 'A1', title: 'HW1' }],
+        }),
+      },
+    ]
+
+    const validated = await api.validateAdapterCandidate({ manifest, samples })
+    expect(validated.ok).toBe(true)
+    const registered = await api.registerAdapterCandidate({ manifest, samples })
+    expect(registered.ok).toBe(true)
+    if (!registered.ok) return
+    expect(registered.value.candidate.status).toBe('validated')
+
+    const activated = await api.activateAdapterCandidate({
+      adapterId: 'auto-demo',
+      version: '1.0.0',
+    })
+    expect(activated.ok).toBe(true)
+    if (!activated.ok) return
+    expect(activated.value.source).toMatchObject({
+      sourceId: 'adapter-auto-demo',
+      engine: 'declarative',
+      adapterReady: true,
+    })
+    const target = app.sources.get('adapter-auto-demo')
+    expect(target?.config).toMatchObject({
+      manifestId: 'auto-demo',
+      manifestVersion: '1.0.0',
+    })
+    const copied = app.connections
+      .list()
+      .find((connection) => connection.sourceId === 'adapter-auto-demo')
+    expect(copied?.hasCredential).toBe(true)
+    expect(JSON.stringify(activated.value)).not.toContain('copied-session')
+
+    const listed = await api.adapterCandidates({})
+    expect(listed.ok).toBe(true)
+    if (listed.ok) {
+      expect(listed.value.active).toContainEqual({
+        adapterId: 'auto-demo',
+        active: '1.0.0',
+      })
+    }
   })
 
   it('rejects malformed requests with a validation error, not a fake success', async () => {

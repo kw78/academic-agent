@@ -4,6 +4,9 @@ import {
   CapabilityUnavailableError,
   dueSortKey,
   type AcademicItemView,
+  type AdapterCandidateReport,
+  type AdapterCandidateSummary,
+  type AdapterSample,
   type CommandResult,
   type ConnectionView,
   type CourseView,
@@ -23,6 +26,12 @@ import { zonedDateTimeToUtc, type PlanSuggestion } from '@academic/planner-basic
 import type { JobRun, ScheduledJob } from '@academic/scheduler'
 import type {
   AcceptPlanRequest,
+  AdapterCandidateActivationView,
+  AdapterCandidateManifestRequest,
+  AdapterCandidateRegistrationView,
+  AdapterCandidateValidationView,
+  AdapterCandidateVersionRequest,
+  AdapterCandidatesView,
   AutomationJob,
   AutomationRun,
   AutomationView,
@@ -50,6 +59,7 @@ import type {
   PreviewPlanRequest,
   SettingsView,
   SourceIdRequest,
+  SourceProbeEvidence,
   SourceSecretRequest,
   SourceStatus,
   SyncNowRequest,
@@ -161,6 +171,23 @@ const updateSourceSchema = z.object({
   expectedVersion: z.number().int().min(1).optional(),
 })
 const sourceIdSchema = z.object({ sourceId: z.string().min(1) })
+const candidateManifestSchema = z.object({
+  manifest: z.unknown(),
+  samples: z
+    .array(
+      z.object({
+        url: z.string().url().max(2_000),
+        body: z.string().max(2_000_000),
+        contentType: z.string().max(200).optional(),
+      }),
+    )
+    .min(1)
+    .max(20),
+})
+const candidateVersionSchema = z.object({
+  adapterId: z.string().min(1).max(200),
+  version: z.string().min(1).max(50).optional(),
+})
 const webLoginSchema = z.object({
   url: z.string().url(),
   label: z.string().min(1).max(200).optional(),
@@ -620,6 +647,137 @@ function sourceStatusFor(app: AcademicApp, sourceId: string): SourceStatus | und
   )
 }
 
+function escapePattern(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function candidateSourceId(adapterId: string): string {
+  const slug = adapterId.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').slice(0, 80)
+  return `adapter-${slug}`
+}
+
+function configAllowsHost(
+  config: Record<string, unknown>,
+  host: string,
+): boolean {
+  const domains = Array.isArray(config.cookieDomains)
+    ? config.cookieDomains.filter(
+        (entry): entry is string => typeof entry === 'string',
+      )
+    : []
+  const target = host.toLowerCase()
+  return domains.some((entry) => {
+    const domain = entry.toLowerCase().replace(/^\./, '')
+    return target === domain || target.endsWith(`.${domain}`)
+  })
+}
+
+/**
+ * Activation creates the declarative source that the scheduler can actually
+ * sync. If an authorized browser session already covers the manifest host,
+ * its secret is copied into the new connection instead of asking for a second
+ * login. The secret never leaves the Host.
+ */
+async function ensureCandidateSource(
+  app: AcademicApp,
+  candidate: AdapterCandidateSummary,
+): Promise<{ source?: SourceStatus; warning?: string }> {
+  const manifest = app.manifestRegistry.get(candidate.adapterId, candidate.version)
+  if (!manifest) return { warning: 'Manifest 未注册，无法创建同步数据源' }
+  if (!app.sourceEngines.get('declarative')) {
+    return { warning: 'declarative engine 未加载，无法创建同步数据源' }
+  }
+  const base = new URL(manifest.baseUrl)
+  const host = base.hostname
+  const config = {
+    manifestId: candidate.adapterId,
+    manifestVersion: candidate.version,
+    baseUrl: base.toString(),
+    loginUrl: base.toString(),
+    authenticatedUrlPatterns: [`^${escapePattern(base.origin)}/`],
+    cookieDomains: [host],
+    verifyUrl: base.toString(),
+    loggedOutPatterns: ['/login'],
+  }
+  let sourceId = candidateSourceId(candidate.adapterId)
+  let existing = app.sources.get(sourceId)
+  if (existing?.archived) {
+    sourceId = `${sourceId}-${candidate.version}`.slice(0, 200)
+    existing = app.sources.get(sourceId)
+  }
+  if (!existing) {
+    app.sources.create({
+      sourceId,
+      engine: 'declarative',
+      displayName: manifest.displayName,
+      authKind: 'token',
+      loginMode: 'browser',
+      capabilities: ['academic.sync'],
+      config,
+    })
+  } else {
+    app.sources.update(sourceId, {
+      displayName: manifest.displayName,
+      authKind: 'token',
+      loginMode: 'browser',
+      capabilities: ['academic.sync'],
+      config,
+    })
+  }
+
+  let warning: string | undefined
+  const loginSource = app.sources
+    .list()
+    .find(
+      (source) =>
+        source.sourceId !== sourceId &&
+        source.engine !== 'fixture' &&
+        source.engine !== 'declarative' &&
+        source.authKind !== 'none' &&
+        configAllowsHost(source.config, host),
+    )
+  const loginConnection = loginSource
+    ? app.connections
+        .list()
+        .find(
+          (connection) =>
+            connection.sourceId === loginSource.sourceId &&
+            connection.hasCredential &&
+            (connection.status === 'connected' ||
+              connection.status === 'configured'),
+        )
+    : undefined
+  if (loginSource && loginConnection) {
+    try {
+      const lease = await app.connections.openCredential(
+        loginConnection.connectionId,
+        loginSource.sourceId,
+      )
+      const secret = await lease.getSecret()
+      const target =
+        app.connections
+          .list()
+          .find((connection) => connection.sourceId === sourceId) ??
+        app.connections.create({
+          sourceId,
+          displayName: manifest.displayName,
+          authKind: 'token',
+        })
+      await app.connections.setSecret(target.connectionId, secret)
+    } catch {
+      warning = '已有会话无法复制；请在该数据源上重新登录'
+    }
+  } else {
+    warning = '请在该数据源上完成登录后再同步'
+  }
+  return {
+    ...(sourceStatusFor(app, sourceId)
+      ? { source: sourceStatusFor(app, sourceId)! }
+      : {}),
+    ...(warning ? { warning } : {}),
+  }
+}
+
 function syncHealth(
   lastSync: SyncRunSummary | undefined,
   now: string,
@@ -709,6 +867,20 @@ export interface AcademicUiApi {
   updateSource(request: unknown): Promise<UiResult<SourceStatus>>
   archiveSource(request: unknown): Promise<UiResult<SourceStatus>>
   sourceLogin(request: unknown): Promise<UiResult<ConnectionView>>
+  probeSource(request: unknown): Promise<UiResult<SourceProbeEvidence>>
+  adapterCandidates(request: unknown): Promise<UiResult<AdapterCandidatesView>>
+  validateAdapterCandidate(
+    request: unknown,
+  ): Promise<UiResult<AdapterCandidateValidationView>>
+  registerAdapterCandidate(
+    request: unknown,
+  ): Promise<UiResult<AdapterCandidateRegistrationView>>
+  activateAdapterCandidate(
+    request: unknown,
+  ): Promise<UiResult<AdapterCandidateActivationView>>
+  rollbackAdapterCandidate(
+    request: unknown,
+  ): Promise<UiResult<AdapterCandidateSummary>>
   sourceSetSecret(request: unknown): Promise<UiResult<ConnectionView>>
   webSessions(request: unknown): Promise<UiResult<{ sessions: WebSessionView[] }>>
   webLogin(request: unknown): Promise<UiResult<WebSessionView>>
@@ -1070,6 +1242,10 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       if (source.authKind !== 'unknown' && source.authKind !== body.authKind) {
         return failure('VALIDATION', '认证方式与数据源能力不匹配')
       }
+      const existing = app.connections
+        .list()
+        .find((entry) => entry.sourceId === body.sourceId)
+      if (existing) return ok(existing)
       try {
         return ok(app.connections.create(body))
       } catch (error) {
@@ -1081,6 +1257,21 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       const parsed = parse(createSourceSchema, request)
       if (!parsed.ok) return parsed
       const body: CreateSourceRequest = parsed.value
+      const configJson = JSON.stringify(body.config ?? {})
+      const existing = app.sources
+        .list()
+        .find(
+          (entry) =>
+            entry.engine === body.engine &&
+            entry.displayName === body.displayName &&
+            JSON.stringify(entry.config) === configJson,
+        )
+      if (existing) {
+        const source = sourceStatusFor(app, existing.sourceId)
+        return source
+          ? ok(source)
+          : failure('NOT_FOUND', '数据源存在但未能读取')
+      }
       const engine = app.sourceEngines.get(body.engine)
       if (!engine) {
         return failure('CAPABILITY_UNAVAILABLE', '该数据源引擎尚未加载')
@@ -1188,6 +1379,107 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
           return failure('AUTH_REQUIRED', verified.lastError ?? '登录会话验证失败')
         }
         return ok(verified)
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async probeSource(request) {
+      const parsed = parse(sourceIdSchema, request)
+      if (!parsed.ok) return parsed
+      const body: SourceIdRequest = parsed.value
+      const source = app.sources.get(body.sourceId)
+      if (!source) return failure('NOT_FOUND', '数据源不存在')
+      if (source.authKind === 'none') {
+        return failure('VALIDATION', '该数据源不需要会话探测')
+      }
+      try {
+        const evidence = await app.probeSource(source.sourceId)
+        if (evidence.loginLike) {
+          return failure('AUTH_REQUIRED', '会话可能已失效；请重新登录后再探测')
+        }
+        return ok(evidence)
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async adapterCandidates() {
+      return ok({
+        candidates: app.adapterCandidates.list(),
+        active: app.manifestRegistry.list().map((entry) => ({
+          adapterId: entry.adapterId,
+          ...(entry.active ? { active: entry.active } : {}),
+        })),
+      } satisfies AdapterCandidatesView)
+    },
+
+    async validateAdapterCandidate(request) {
+      const parsed = parse(candidateManifestSchema, request)
+      if (!parsed.ok) return parsed
+      const body: AdapterCandidateManifestRequest = parsed.value
+      try {
+        const report = await app.adapterCandidates.validate(
+          body.manifest,
+          body.samples as AdapterSample[],
+        )
+        return ok({ report } satisfies AdapterCandidateValidationView)
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async registerAdapterCandidate(request) {
+      const parsed = parse(candidateManifestSchema, request)
+      if (!parsed.ok) return parsed
+      const body: AdapterCandidateManifestRequest = parsed.value
+      try {
+        const result = await app.adapterCandidates.register(
+          body.manifest,
+          body.samples as AdapterSample[],
+        )
+        return ok({
+          candidate: result.summary,
+          report: result.report,
+        } satisfies AdapterCandidateRegistrationView)
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async activateAdapterCandidate(request) {
+      const parsed = parse(candidateVersionSchema, request)
+      if (!parsed.ok) return parsed
+      const body: AdapterCandidateVersionRequest = parsed.value
+      if (!body.version) {
+        return failure('VALIDATION', '启用候选需要明确版本')
+      }
+      try {
+        const candidate = app.adapterCandidates.activate(
+          body.adapterId,
+          body.version,
+        )
+        const activation = await ensureCandidateSource(app, candidate)
+        return ok({
+          candidate,
+          ...activation,
+        } satisfies AdapterCandidateActivationView)
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async rollbackAdapterCandidate(request) {
+      const parsed = parse(candidateVersionSchema, request)
+      if (!parsed.ok) return parsed
+      const body: AdapterCandidateVersionRequest = parsed.value
+      try {
+        const candidate = app.adapterCandidates.rollback(
+          body.adapterId,
+          body.version,
+        )
+        await ensureCandidateSource(app, candidate)
+        return ok(candidate)
       } catch (error) {
         return fromError(error)
       }

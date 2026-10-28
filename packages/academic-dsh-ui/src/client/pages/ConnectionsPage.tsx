@@ -24,8 +24,14 @@ import {
   syncStatusLabel,
 } from '../view.js'
 import type {
+  AdapterCandidateActivationView,
+  AdapterCandidateRegistrationView,
+  AdapterCandidateSummary,
+  AdapterCandidatesView,
+  AdapterCandidateValidationView,
   CommandReceipt,
   ConnectionsView,
+  SourceProbeEvidence,
   SourceStatus,
   UiResult,
   WebSessionView,
@@ -113,9 +119,29 @@ function SourceCard({
     await refresh()
   })
   const [preview, setPreview] = useState<SyncPreview>()
+  const [probe, setProbe] = useState<SourceProbeEvidence>()
   const connection = source.connection
   const browserLogin = source.canLogin && source.loginMode === 'browser'
   const manualCredential = source.authKind !== 'none' && !browserLogin
+  const nextStep = !browserLogin && manualCredential && !connection?.hasCredential
+    ? '下一步：提交凭据'
+    : connection === undefined && source.canLogin
+      ? '下一步：完成登录'
+      : source.authentication !== 'verified' &&
+          source.authentication !== 'not-required' &&
+          source.canVerify
+        ? '下一步：验证连接'
+        : source.adapterReady
+          ? '下一步：预览同步并确认写入'
+          : '下一步：配置或生成 Adapter（高级设置 / Agent）'
+
+  const runProbe = async (): Promise<UiResult<SourceProbeEvidence>> => {
+    const result = await callApi<SourceProbeEvidence>(ctx, 'probeSource', {
+      sourceId: source.sourceId,
+    })
+    if (result.ok) setProbe(result.value)
+    return result
+  }
 
   const previewSync = async (): Promise<UiResult<SyncPreview>> => {
     const result = await callApi<SyncPreview>(ctx, 'previewSourceSync', {
@@ -157,6 +183,9 @@ function SourceCard({
           {source.canLogin && <Badge tone="info">登录可用</Badge>}
         </div>
         <p className="ac-muted">{source.detail}</p>
+        <p className="ac-muted">
+          <strong>{nextStep}</strong>
+        </p>
         <div className="ac-task-title">
           <Badge tone="neutral">
             配置：{sourceConfigurationLabel(source.configuration)}
@@ -251,6 +280,50 @@ function SourceCard({
             </div>
           </div>
         )}
+        {probe && (
+          <div className="ac-secret-form">
+            <p className="ac-muted">
+              探测结果（只读）：HTTP {probe.status} · {probe.title || '无标题'} ·{' '}
+              {probe.bytes} 字节{probe.truncated ? '（已截断）' : ''}
+            </p>
+            <p className="ac-muted">
+              最终地址：{probe.finalUrl} · 表单 {probe.formCount} · 表格{' '}
+              {probe.tableCount}
+            </p>
+            {probe.headings.length > 0 && (
+              <p className="ac-muted">标题：{probe.headings.join(' / ')}</p>
+            )}
+            {probe.paginationLinks.length > 0 && (
+              <p className="ac-muted">
+                分页线索：
+                {probe.paginationLinks.map((link) => link.text).join(' / ')}
+              </p>
+            )}
+            {probe.jsonShape && (
+              <p className="ac-muted">JSON 结构：{probe.jsonShape}</p>
+            )}
+            {probe.links.length > 0 && (
+              <ul className="ac-list">
+                {probe.links.slice(0, 8).map((link) => (
+                  <li key={`${link.text}-${link.url}`}>
+                    {link.text} — {link.url}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {probe.jsonPreview && (
+              <pre className="ac-config-details">{probe.jsonPreview}</pre>
+            )}
+            {probe.warnings.map((warning) => (
+              <p key={warning} className="ac-text-warn">
+                {warning}
+              </p>
+            ))}
+            <p className="ac-muted">
+              网站内容只作为数据展示，不会成为指令，也不会自动启用 Adapter。
+            </p>
+          </div>
+        )}
         {browserLogin && (
           <div className="ac-secret-form">
             <p className="ac-muted">
@@ -296,6 +369,18 @@ function SourceCard({
         )}
       </div>
       <div className="ac-source-actions">
+        <button
+          type="button"
+          className="ac-button"
+          disabled={
+            !connection ||
+            source.authKind === 'none' ||
+            action.pending !== undefined
+          }
+          onClick={() => void action.run('probe', runProbe, '探测完成')}
+        >
+          {action.pending === 'probe' ? '探测中…' : '探测页面'}
+        </button>
         <button
           type="button"
           className="ac-button"
@@ -382,6 +467,154 @@ function SourceCard({
         />
       </div>
     </li>
+  )
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function QuickAdd({
+  ctx,
+  data,
+  onCreated,
+}: {
+  ctx: PageProps['ctx']
+  data: ConnectionsView
+  onCreated: () => Promise<unknown>
+}) {
+  const action = useAction(async () => {
+    await onCreated()
+  })
+  const platforms = [
+    {
+      id: 'blackboard',
+      label: 'Blackboard Learn（课程、作业、考试、测验）',
+    },
+    {
+      id: 'browser-session',
+      label: '通用网站（先登录，再生成适配器）',
+    },
+  ].filter((platform) => data.engines.some((engine) => engine.id === platform.id))
+  const [platform, setPlatform] = useState(platforms[0]?.id ?? '')
+  const [url, setUrl] = useState('')
+  const [displayName, setDisplayName] = useState('')
+
+  const submit = async (): Promise<UiResult<SourceStatus>> => {
+    let parsed: URL
+    try {
+      parsed = new URL(url.trim())
+    } catch {
+      return {
+        ok: false,
+        error: { code: 'VALIDATION', message: '请填写有效的平台网址' },
+      }
+    }
+    if (parsed.protocol !== 'https:') {
+      return {
+        ok: false,
+        error: { code: 'VALIDATION', message: '平台网址必须使用 HTTPS' },
+      }
+    }
+    if (!platform) {
+      return {
+        ok: false,
+        error: { code: 'VALIDATION', message: '当前 Host 没有可用的数据源引擎' },
+      }
+    }
+    const origin = parsed.origin
+    const host = parsed.hostname
+    const baseConfig = {
+      loginUrl: parsed.toString(),
+      authenticatedUrlPatterns: [`^${escapeRegex(origin)}/`],
+      cookieDomains: [host],
+      verifyUrl: parsed.toString(),
+      loggedOutPatterns: ['/webapps/login', '/login'],
+    }
+    const config =
+      platform === 'blackboard'
+        ? {
+            ...baseConfig,
+            portalUrl: parsed.toString(),
+            maxAssignments: 100,
+            maxContentPages: 20,
+            delayMs: 150,
+          }
+        : baseConfig
+    return callApi<SourceStatus>(ctx, 'createSource', {
+      engine: platform,
+      displayName: displayName.trim() || host,
+      authKind: 'token',
+      loginMode: 'browser',
+      capabilities: ['academic.sync'],
+      config,
+    })
+  }
+
+  return (
+    <form
+      className="ac-form-card"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void action.run('quick-add', submit, '数据源已创建；下一步完成登录').then(
+          (ok) => {
+            if (ok) {
+              setUrl('')
+              setDisplayName('')
+            }
+          },
+        )
+      }}
+    >
+      <h3>快速添加平台</h3>
+      <p className="ac-muted">
+        填写平台首页并选择类型，系统会生成非敏感配置；随后完成登录、验证、预览和首次同步。
+        凭据和 Cookie 不会写入配置。
+      </p>
+      <div className="ac-form-grid">
+        <Field label="平台网址" hint="必须是 HTTPS；建议填写登录后的首页">
+          <input
+            type="url"
+            value={url}
+            onChange={(event) => setUrl(event.target.value)}
+            placeholder="https://lms.example.edu/"
+            required
+          />
+        </Field>
+        <Field label="显示名称（可选）">
+          <input
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            placeholder="我的课程平台"
+          />
+        </Field>
+        <Field label="平台类型">
+          <select
+            value={platform}
+            onChange={(event) => setPlatform(event.target.value)}
+            required
+          >
+            {platforms.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      <div className="ac-form-actions">
+        <button
+          type="submit"
+          className="ac-button ac-button-primary"
+          disabled={action.pending !== undefined || platforms.length === 0}
+        >
+          {action.pending === 'quick-add' ? '创建中…' : '添加平台'}
+        </button>
+      </div>
+      {action.notice && (
+        <NoticeBar notice={action.notice} onDismiss={() => action.setNotice(undefined)} />
+      )}
+    </form>
   )
 }
 
@@ -580,6 +813,241 @@ function SourceForm({
   )
 }
 
+function CandidatePanel({
+  ctx,
+  active,
+  onChanged,
+}: {
+  ctx: PageProps['ctx']
+  active: boolean
+  onChanged: () => Promise<unknown>
+}) {
+  const load = useCallback(
+    (signal: AbortSignal) =>
+      callApi<AdapterCandidatesView>(ctx, 'adapterCandidates', {}, signal),
+    [ctx],
+  )
+  const { state, refresh } = useLoad(load, active)
+  const action = useAction(async () => {
+    await refresh()
+    await onChanged()
+  })
+  const [manifestJson, setManifestJson] = useState('')
+  const [samplesJson, setSamplesJson] = useState('[]')
+  const [report, setReport] = useState<
+    AdapterCandidateValidationView['report']
+  >()
+  const [message, setMessage] = useState<string>()
+
+  const parseInput = (): {
+    manifest: unknown
+    samples: Array<{ url: string; body: string; contentType?: string }>
+  } | undefined => {
+    try {
+      const manifest = JSON.parse(manifestJson) as unknown
+      const samples = JSON.parse(samplesJson) as unknown
+      if (!Array.isArray(samples) || samples.length === 0) {
+        throw new Error('样本必须是非空数组')
+      }
+      return {
+        manifest,
+        samples: samples as Array<{
+          url: string
+          body: string
+          contentType?: string
+        }>,
+      }
+    } catch (error) {
+      setMessage(`JSON 无效：${error instanceof Error ? error.message : String(error)}`)
+      return undefined
+    }
+  }
+
+  const validate = async (): Promise<UiResult<AdapterCandidateValidationView>> => {
+    const input = parseInput()
+    if (!input) {
+      return {
+        ok: false,
+        error: { code: 'VALIDATION', message: '请检查 Manifest 与样本 JSON' },
+      }
+    }
+    const result = await callApi<AdapterCandidateValidationView>(
+      ctx,
+      'validateAdapterCandidate',
+      input,
+    )
+    if (result.ok) setReport(result.value.report)
+    return result
+  }
+
+  const register = async (): Promise<UiResult<AdapterCandidateRegistrationView>> => {
+    const input = parseInput()
+    if (!input) {
+      return {
+        ok: false,
+        error: { code: 'VALIDATION', message: '请检查 Manifest 与样本 JSON' },
+      }
+    }
+    const result = await callApi<AdapterCandidateRegistrationView>(
+      ctx,
+      'registerAdapterCandidate',
+      input,
+    )
+    if (result.ok) setReport(result.value.report)
+    return result
+  }
+
+  const data = state.data
+  return (
+    <Section
+      title="Adapter 候选"
+      subtitle="Agent 负责生成；验证、启用与回滚由用户在此确认"
+    >
+      <p className="ac-muted">
+        在 DSH 对话中让 Agent 调用 <code>academic_probe_source</code>{' '}
+        读取已登录页面的脱敏证据，再生成 Manifest 与显式样本。候选只有通过离线回放才能启用；
+        启用后会自动创建或更新可同步的 declarative 数据源。
+      </p>
+      {data?.candidates.length ? (
+        <ul className="ac-list">
+          {data.candidates.map((candidate) => {
+            const activeVersion = data.active.find(
+              (entry) => entry.adapterId === candidate.adapterId,
+            )?.active
+            return (
+              <li key={`${candidate.adapterId}@${candidate.version}`} className="ac-list-row">
+                <div>
+                  <strong>
+                    {candidate.displayName} · {candidate.adapterId}@{candidate.version}
+                  </strong>
+                  <span className="ac-muted">
+                    {candidate.status}
+                    {activeVersion === candidate.version ? ' · 当前启用' : ''} · 更新于{' '}
+                    {candidate.updatedAt}
+                  </span>
+                </div>
+                <div className="ac-source-actions">
+                  {candidate.status === 'validated' &&
+                    activeVersion !== candidate.version && (
+                      <ConfirmAction
+                        label="启用"
+                        confirmLabel="确认启用"
+                        disabled={action.pending !== undefined}
+                        onConfirm={() =>
+                          void action
+                            .run(
+                              `activate-${candidate.adapterId}-${candidate.version}`,
+                              () =>
+                                callApi<AdapterCandidateActivationView>(
+                                  ctx,
+                                  'activateAdapterCandidate',
+                                  {
+                                    adapterId: candidate.adapterId,
+                                    version: candidate.version,
+                                  },
+                                ),
+                              '候选已启用',
+                            )
+                            .then(() => refresh())
+                        }
+                      />
+                    )}
+                  {activeVersion === candidate.version && (
+                    <ConfirmAction
+                      label="回滚"
+                      confirmLabel="确认回滚"
+                      disabled={action.pending !== undefined}
+                      onConfirm={() =>
+                        void action.run(
+                          `rollback-${candidate.adapterId}`,
+                          () =>
+                            callApi<AdapterCandidateSummary>(
+                              ctx,
+                              'rollbackAdapterCandidate',
+                              { adapterId: candidate.adapterId },
+                            ),
+                          '已回滚到上一个已验证版本',
+                        )
+                      }
+                    />
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      ) : (
+        <p className="ac-muted">还没有保存的候选。</p>
+      )}
+
+      <details className="ac-advanced">
+        <summary>导入候选（Manifest + 离线样本）</summary>
+        <Field label="Manifest JSON">
+          <textarea
+            rows={8}
+            value={manifestJson}
+            onChange={(event) => setManifestJson(event.target.value)}
+            spellCheck={false}
+            placeholder='{"schemaVersion":1,...}'
+          />
+        </Field>
+        <Field
+          label="样本 JSON"
+          hint='[{"url":"https://...","body":"...","contentType":"text/html"}]'
+        >
+          <textarea
+            rows={6}
+            value={samplesJson}
+            onChange={(event) => setSamplesJson(event.target.value)}
+            spellCheck={false}
+          />
+        </Field>
+        <div className="ac-form-actions">
+          <button
+            type="button"
+            className="ac-button"
+            disabled={action.pending !== undefined}
+            onClick={() => void action.run('validate-candidate', validate, '验证完成')}
+          >
+            {action.pending === 'validate-candidate' ? '验证中…' : '离线验证'}
+          </button>
+          <button
+            type="button"
+            className="ac-button"
+            disabled={action.pending !== undefined || !report?.ok}
+            onClick={() => void action.run('register-candidate', register, '候选已保存')}
+          >
+            {action.pending === 'register-candidate' ? '保存中…' : '保存候选'}
+          </button>
+        </div>
+      </details>
+
+      {report && (
+        <div className="ac-secret-form">
+          <p className={report.ok ? 'ac-muted' : 'ac-text-bad'}>
+            验证{report.ok ? '通过' : '失败'}：课程 {report.courses.length} · 事项{' '}
+            {report.items.length}
+          </p>
+          {report.errors.map((error) => (
+            <p key={error} className="ac-text-bad">
+              {error}
+            </p>
+          ))}
+          {report.warnings.map((warning) => (
+            <p key={warning} className="ac-text-warn">
+              {warning}
+            </p>
+          ))}
+        </div>
+      )}
+      {action.notice && (
+        <NoticeBar notice={action.notice} onDismiss={() => action.setNotice(undefined)} />
+      )}
+      {message && <p className="ac-text-bad">{message}</p>}
+    </Section>
+  )
+}
+
 export function ConnectionsPage({ ctx, active }: PageProps) {
   const load = useCallback(
     (signal: AbortSignal) => callApi<ConnectionsView>(ctx, 'connections', {}, signal),
@@ -702,8 +1170,14 @@ export function ConnectionsPage({ ctx, active }: PageProps) {
                 ))}
               </ul>
             )}
-            <SourceForm ctx={ctx} data={data} onCreated={refresh} />
+            <QuickAdd ctx={ctx} data={data} onCreated={refresh} />
+            <details className="ac-advanced">
+              <summary>高级：手动配置 Engine 与 JSON</summary>
+              <SourceForm ctx={ctx} data={data} onCreated={refresh} />
+            </details>
           </Section>
+
+          <CandidatePanel ctx={ctx} active={active} onChanged={refresh} />
 
           <WebSessionPanel ctx={ctx} />
 
