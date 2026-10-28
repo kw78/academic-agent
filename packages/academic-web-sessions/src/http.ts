@@ -1,5 +1,8 @@
 import { lookup as dnsLookup } from 'node:dns/promises'
+import { request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
 import { BlockList, isIP } from 'node:net'
+import { Readable } from 'node:stream'
 
 export interface WebCookie {
   name: string
@@ -22,6 +25,9 @@ export type ResolveHost = (hostname: string) => Promise<ResolvedAddress[]>
 export type SafeFetchErrorCode =
   | 'INVALID_URL'
   | 'UNSAFE_HOST'
+  | 'UNSAFE_PROTOCOL'
+  | 'UNSAFE_PORT'
+  | 'UNSAFE_PATH'
   | 'DNS_FAILED'
   | 'REDIRECT_LIMIT'
   | 'DOWNGRADE_BLOCKED'
@@ -40,13 +46,38 @@ export class SafeFetchError extends Error {
   }
 }
 
+export type AllowedProtocol = 'http:' | 'https:'
+
+export interface PinnedTarget {
+  address: string
+  family: number
+}
+
+export interface SafeRequestInit {
+  headers: Record<string, string>
+  signal: AbortSignal
+}
+
+/** Transport seam: receives only the address that passed validation. */
+export type PinnedRequest = (
+  url: URL,
+  init: SafeRequestInit,
+  target: PinnedTarget,
+) => Promise<Response>
+
 export interface SafeFetchOptions {
   allowedHosts: string[]
   cookies?: WebCookie[]
   timeoutMs?: number
   maxRedirects?: number
   maxBytes?: number
+  /** Defaults to HTTPS only; HTTP must be enabled explicitly. */
+  allowedProtocols?: AllowedProtocol[]
+  /** Defaults to 443 (and 80 only when HTTP is enabled). */
+  allowedPorts?: number[]
+  allowedPathPrefixes?: string[]
   fetchImpl?: typeof fetch
+  requestImpl?: PinnedRequest
   resolveHost?: ResolveHost
   now?: () => number
 }
@@ -196,12 +227,49 @@ function prepareUrl(value: string): URL {
   return url
 }
 
+function targetPort(url: URL): number {
+  if (url.port) return Number(url.port)
+  return url.protocol === 'https:' ? 443 : 80
+}
+
+function pathAllowed(pathname: string, prefixes: string[] | undefined): boolean {
+  if (!prefixes || prefixes.length === 0) return true
+  const path = pathname || '/'
+  return prefixes.some((prefix) => {
+    const base = prefix.startsWith('/') ? prefix : `/${prefix}`
+    if (path === base) return true
+    return path.startsWith(base.endsWith('/') ? base : `${base}/`)
+  })
+}
+
+function assertUrlPolicy(
+  url: URL,
+  allowedProtocols: AllowedProtocol[],
+  allowedPorts: number[],
+  allowedPathPrefixes: string[] | undefined,
+): void {
+  if (!allowedProtocols.includes(url.protocol as AllowedProtocol)) {
+    throw new SafeFetchError('UNSAFE_PROTOCOL', `目标协议不允许：${url.protocol}`)
+  }
+  const port = targetPort(url)
+  if (!allowedPorts.includes(port)) {
+    throw new SafeFetchError('UNSAFE_PORT', `目标端口不允许：${port}`)
+  }
+  if (!pathAllowed(url.pathname, allowedPathPrefixes)) {
+    throw new SafeFetchError('UNSAFE_PATH', `目标路径不在授权范围内：${url.pathname}`)
+  }
+}
+
 async function assertSafeTarget(
   url: URL,
   allowedHosts: string[],
   resolveHost: ResolveHost,
   signal: AbortSignal,
-): Promise<void> {
+  allowedProtocols: AllowedProtocol[],
+  allowedPorts: number[],
+  allowedPathPrefixes: string[] | undefined,
+): Promise<PinnedTarget> {
+  assertUrlPolicy(url, allowedProtocols, allowedPorts, allowedPathPrefixes)
   const host = normalizeHostname(url.hostname)
   if (!allowedHosts.some((allowed) => hostMatches(host, allowed))) {
     throw new SafeFetchError('UNSAFE_HOST', `目标主机不在授权范围内：${host}`)
@@ -237,6 +305,73 @@ async function assertSafeTarget(
       throw new SafeFetchError('UNSAFE_HOST', `目标主机解析到受限地址：${host}`)
     }
   }
+  const preferred =
+    addresses.find((entry) => entry.family === 4) ?? addresses[0]!
+  return { address: preferred.address, family: preferred.family }
+}
+
+function toResponseHeaders(headers: Record<string, string[] | undefined>): Headers {
+  const result = new Headers()
+  for (const [name, values] of Object.entries(headers)) {
+    if (!values) continue
+    for (const value of values) result.append(name, value)
+  }
+  return result
+}
+
+/** Connect only to the validated address; host/SNI stay those of the URL. */
+const pinnedNodeRequest: PinnedRequest = (url, init, target) =>
+  new Promise((resolve, reject) => {
+    const send = url.protocol === 'https:' ? httpsRequest : httpRequest
+    const request = send(
+      url,
+      {
+        method: 'GET',
+        headers: init.headers,
+        signal: init.signal,
+        lookup: (_hostname, options, callback) => {
+          const wantsAll =
+            typeof options === 'object' && options !== null && options.all === true
+          if (wantsAll) {
+            ;(callback as unknown as (error: null, addresses: unknown[]) => void)(
+              null,
+              [{ address: target.address, family: target.family }],
+            )
+            return
+          }
+          ;(callback as unknown as (error: null, address: string, family: number) => void)(
+            null,
+            target.address,
+            target.family,
+          )
+        },
+      },
+      (response) => {
+        const status = response.statusCode ?? 0
+        const body =
+          status === 204 || status === 304
+            ? null
+            : (Readable.toWeb(response) as unknown as BodyInit)
+        resolve(
+          new Response(body, {
+            status,
+            headers: toResponseHeaders(response.headersDistinct),
+          }),
+        )
+      },
+    )
+    request.on('error', reject)
+    request.end()
+  })
+
+function injectedFetch(fetchImpl: typeof fetch): PinnedRequest {
+  return (url, init) =>
+    fetchImpl(url.toString(), {
+      method: 'GET',
+      redirect: 'manual',
+      headers: init.headers,
+      signal: init.signal,
+    })
 }
 
 function cookieDomainMatches(hostname: string, domain: string): boolean {
@@ -386,7 +521,13 @@ export async function safeFetch(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS
   const maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_MAX_BYTES)
-  const fetchImpl = options.fetchImpl ?? fetch
+  const allowedProtocols = options.allowedProtocols ?? ['https:']
+  const allowedPorts =
+    options.allowedPorts ??
+    (allowedProtocols.includes('http:') ? [80, 443] : [443])
+  const request =
+    options.requestImpl ??
+    (options.fetchImpl ? injectedFetch(options.fetchImpl) : pinnedNodeRequest)
   const resolveHost = options.resolveHost ?? defaultResolveHost
   const now = options.now ?? Date.now
   const cookies = options.cookies ?? []
@@ -404,20 +545,31 @@ export async function safeFetch(
     const redirects: string[] = []
 
     for (let hop = 0; ; hop += 1) {
-      await assertSafeTarget(current, options.allowedHosts, resolveHost, controller.signal)
+      const target = await assertSafeTarget(
+        current,
+        options.allowedHosts,
+        resolveHost,
+        controller.signal,
+        allowedProtocols,
+        allowedPorts,
+        options.allowedPathPrefixes,
+      )
       const cookie = cookieHeaderFor(cookies, current, now())
 
       let response: Response
       try {
-        response = await fetchImpl(current.toString(), {
-          method: 'GET',
-          redirect: 'manual',
-          headers: {
-            Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
-            ...(cookie ? { Cookie: cookie } : {}),
+        response = await request(
+          current,
+          {
+            headers: {
+              Accept:
+                'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+              ...(cookie ? { Cookie: cookie } : {}),
+            },
+            signal: controller.signal,
           },
-          signal: controller.signal,
-        })
+          target,
+        )
       } catch (error) {
         if (timedOut || controller.signal.aborted) {
           throw new SafeFetchError('TIMEOUT', `请求超时（${timeoutMs}ms）`)

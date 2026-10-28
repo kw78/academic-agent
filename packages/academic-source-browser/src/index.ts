@@ -2,6 +2,8 @@ import { chromium, type Browser, type BrowserContext } from 'playwright-core'
 import { z } from 'zod'
 import {
   safeFetch,
+  type AllowedProtocol,
+  type PinnedRequest,
   type ResolveHost,
   type WebCookie,
 } from '@academic/web-sessions'
@@ -20,6 +22,7 @@ export const browserConfigSchema = z.object({
   loggedOutPatterns: z.array(z.string().min(1)).optional(),
   timeoutMs: z.number().int().min(1_000).max(10 * 60_000).optional(),
   channel: z.enum(['msedge', 'chrome']).optional(),
+  allowHttp: z.boolean().optional(),
 })
 
 export type BrowserSessionConfig = z.infer<typeof browserConfigSchema>
@@ -28,8 +31,13 @@ export interface BrowserSessionEngineOptions {
   /** Test seam: bypass the real browser while keeping the cookie result shape. */
   loginImpl?: (config: BrowserSessionConfig) => Promise<SourceLoginResult>
   fetchImpl?: typeof fetch
+  requestImpl?: PinnedRequest
   resolveHost?: ResolveHost
   timeoutMs?: number
+}
+
+function protocolsFor(config: { allowHttp?: boolean }): AllowedProtocol[] {
+  return config.allowHttp ? ['http:', 'https:'] : ['https:']
 }
 
 function matchesAny(patterns: string[], value: string): boolean {
@@ -146,7 +154,8 @@ async function browserLogin(
 async function verifySession(
   config: BrowserSessionConfig,
   secret: string,
-  fetchImpl: typeof fetch,
+  fetchImpl: typeof fetch | undefined,
+  requestImpl: PinnedRequest | undefined,
   resolveHost: ResolveHost | undefined,
   timeoutMs: number | undefined,
 ): Promise<SourceVerification> {
@@ -165,7 +174,9 @@ async function verifySession(
     const result = await safeFetch(config.verifyUrl, {
       cookies,
       allowedHosts: config.cookieDomains,
-      fetchImpl,
+      allowedProtocols: protocolsFor(config),
+      ...(fetchImpl ? { fetchImpl } : {}),
+      ...(requestImpl ? { requestImpl } : {}),
       ...(resolveHost ? { resolveHost } : {}),
       ...(timeoutMs ? { timeoutMs } : {}),
     })
@@ -186,7 +197,7 @@ async function verifySession(
 export function createBrowserSessionEngine(
   options: BrowserSessionEngineOptions = {},
 ): SourceEngine {
-  const fetchImpl = options.fetchImpl ?? fetch
+  const fetchImpl = options.fetchImpl
   return {
     descriptor: {
       id: 'browser-session',
@@ -218,6 +229,7 @@ export function createBrowserSessionEngine(
         config,
         secret,
         fetchImpl,
+        options.requestImpl,
         options.resolveHost,
         options.timeoutMs,
       )

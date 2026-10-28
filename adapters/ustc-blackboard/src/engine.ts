@@ -21,6 +21,7 @@ import {
 import {
   SafeFetchError,
   safeFetch,
+  type PinnedRequest,
   type ResolveHost,
   type WebCookie,
 } from '@academic/web-sessions'
@@ -51,12 +52,29 @@ export interface BlackboardEngineOptions extends BrowserSessionEngineOptions {
 
 interface ClientOptions {
   fetchImpl?: typeof fetch
+  requestImpl?: PinnedRequest
   resolveHost?: ResolveHost
   now?: () => string
 }
 
+function protocolError(config: BlackboardConfig): string | undefined {
+  if (config.allowHttp) return undefined
+  const urls = [config.loginUrl, config.portalUrl, config.verifyUrl].filter(
+    (value): value is string => Boolean(value),
+  )
+  for (const value of urls) {
+    if (new URL(value).protocol !== 'https:') {
+      return `Blackboard 地址必须使用 HTTPS：${value}`
+    }
+  }
+  return undefined
+}
+
 function parseConfig(config: Record<string, unknown>): BlackboardConfig {
-  return blackboardConfigSchema.parse(config)
+  const parsed = blackboardConfigSchema.parse(config)
+  const error = protocolError(parsed)
+  if (error) throw new Error(error)
+  return parsed
 }
 
 function sessionCookies(secret: string): WebCookie[] {
@@ -74,7 +92,8 @@ function sessionCookies(secret: string): WebCookie[] {
 class BlackboardClient {
   readonly #config: BlackboardConfig
   readonly #cookies: WebCookie[]
-  readonly #fetchImpl: typeof fetch
+  readonly #fetchImpl: typeof fetch | undefined
+  readonly #requestImpl: PinnedRequest | undefined
   readonly #resolveHost: ResolveHost | undefined
 
   constructor(
@@ -84,7 +103,8 @@ class BlackboardClient {
   ) {
     this.#config = config
     this.#cookies = cookies
-    this.#fetchImpl = options.fetchImpl ?? fetch
+    this.#fetchImpl = options.fetchImpl
+    this.#requestImpl = options.requestImpl
     this.#resolveHost = options.resolveHost
   }
 
@@ -109,8 +129,12 @@ class BlackboardClient {
       const result = await safeFetch(url, {
         cookies: this.#cookies,
         allowedHosts: this.#config.cookieDomains,
+        allowedProtocols: this.#config.allowHttp
+          ? ['http:', 'https:']
+          : ['https:'],
         ...(this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {}),
-        fetchImpl: this.#fetchImpl,
+        ...(this.#fetchImpl ? { fetchImpl: this.#fetchImpl } : {}),
+        ...(this.#requestImpl ? { requestImpl: this.#requestImpl } : {}),
         ...(this.#resolveHost ? { resolveHost: this.#resolveHost } : {}),
       })
       if (result.status === 401 || result.status === 403) {
@@ -317,10 +341,12 @@ export function createBlackboardEngine(
       loginModes: ['browser'],
       validateConfig(config) {
         const parsed = blackboardConfigSchema.safeParse(config)
-        if (parsed.success) return undefined
-        return parsed.error.issues
-          .map((issue) => `${issue.path.join('.') || 'config'}: ${issue.message}`)
-          .join('; ')
+        if (!parsed.success) {
+          return parsed.error.issues
+            .map((issue) => `${issue.path.join('.') || 'config'}: ${issue.message}`)
+            .join('; ')
+        }
+        return protocolError(parsed.data)
       },
     },
     async login(context: SourceEngineContext): Promise<SourceLoginResult> {

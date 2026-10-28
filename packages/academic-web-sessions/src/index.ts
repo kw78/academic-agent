@@ -7,12 +7,20 @@ import {
   safeFetch,
   safeUrlForDisplay,
   validateCookies,
+  type AllowedProtocol,
+  type PinnedRequest,
   type ResolveHost,
   type WebCookie,
 } from './http.js'
 
 export { SafeFetchError, safeFetch, safeUrlForDisplay, validateCookies } from './http.js'
-export type { ResolveHost, WebCookie } from './http.js'
+export type {
+  AllowedProtocol,
+  PinnedRequest,
+  PinnedTarget,
+  ResolveHost,
+  WebCookie,
+} from './http.js'
 
 const DEFAULT_LOGIN_TIMEOUT_MS = 5 * 60_000
 
@@ -59,9 +67,13 @@ export interface WebSessionStoreOptions {
   clock: Clock
   ids: IdGenerator
   fetchImpl?: typeof fetch
+  requestImpl?: PinnedRequest
   resolveHost?: ResolveHost
   timeoutMs?: number
   maxBytes?: number
+  allowedProtocols?: AllowedProtocol[]
+  allowedPorts?: number[]
+  allowedPathPrefixes?: string[]
 }
 
 function vaultRef(sessionId: string): string {
@@ -110,20 +122,28 @@ export class WebSessionStore {
   readonly #vault: CredentialVault
   readonly #clock: Clock
   readonly #ids: IdGenerator
-  readonly #fetch: typeof fetch
+  readonly #fetch: typeof fetch | undefined
+  readonly #request: PinnedRequest | undefined
   readonly #resolveHost: ResolveHost | undefined
   readonly #timeoutMs: number | undefined
   readonly #maxBytes: number | undefined
+  readonly #allowedProtocols: AllowedProtocol[]
+  readonly #allowedPorts: number[] | undefined
+  readonly #allowedPathPrefixes: string[] | undefined
 
   constructor(options: WebSessionStoreOptions) {
     this.#db = options.db
     this.#vault = options.vault
     this.#clock = options.clock
     this.#ids = options.ids
-    this.#fetch = options.fetchImpl ?? fetch
+    this.#fetch = options.fetchImpl
+    this.#request = options.requestImpl
     this.#resolveHost = options.resolveHost
     this.#timeoutMs = options.timeoutMs
     this.#maxBytes = options.maxBytes
+    this.#allowedProtocols = options.allowedProtocols ?? ['https:']
+    this.#allowedPorts = options.allowedPorts
+    this.#allowedPathPrefixes = options.allowedPathPrefixes
   }
 
   async create(input: {
@@ -132,6 +152,12 @@ export class WebSessionStore {
     label?: string
   }): Promise<WebSessionView> {
     const url = assertHttpUrl(input.loginUrl)
+    if (!this.#allowedProtocols.includes(url.protocol as AllowedProtocol)) {
+      throw new SafeFetchError(
+        'UNSAFE_PROTOCOL',
+        `登录站点协议未授权：${url.protocol}`,
+      )
+    }
     const cookies = input.cookies
       .filter((cookie) => cookie.name && cookie.value)
       .map((cookie) => ({
@@ -209,10 +235,16 @@ export class WebSessionStore {
     const result = await safeFetch(targetUrl, {
       cookies,
       allowedHosts: [row.domain],
+      allowedProtocols: this.#allowedProtocols,
+      ...(this.#allowedPorts ? { allowedPorts: this.#allowedPorts } : {}),
+      ...(this.#allowedPathPrefixes
+        ? { allowedPathPrefixes: this.#allowedPathPrefixes }
+        : {}),
       ...(this.#resolveHost ? { resolveHost: this.#resolveHost } : {}),
       ...(this.#timeoutMs ? { timeoutMs: this.#timeoutMs } : {}),
       ...(this.#maxBytes ? { maxBytes: this.#maxBytes } : {}),
-      fetchImpl: this.#fetch,
+      ...(this.#fetch ? { fetchImpl: this.#fetch } : {}),
+      ...(this.#request ? { requestImpl: this.#request } : {}),
     })
 
     const now = this.#clock.now()

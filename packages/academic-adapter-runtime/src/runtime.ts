@@ -26,6 +26,8 @@ import {
 import {
   SafeFetchError,
   safeFetch,
+  type AllowedProtocol,
+  type PinnedRequest,
   type ResolveHost,
   type WebCookie,
 } from '@academic/web-sessions'
@@ -56,6 +58,7 @@ export interface DeclarativeEngineOptions extends BrowserSessionEngineOptions {
 
 interface RuntimeOptions {
   fetchImpl?: typeof fetch
+  requestImpl?: PinnedRequest
   resolveHost?: ResolveHost
   now?: () => string
 }
@@ -148,6 +151,8 @@ class ManifestClient {
   readonly #cookies: WebCookie[]
   readonly #baseUrl: string
   readonly #options: RuntimeOptions
+  readonly #protocols: AllowedProtocol[]
+  readonly #ports: number[]
 
   constructor(
     manifest: AdapterManifest,
@@ -160,6 +165,14 @@ class ManifestClient {
     this.#cookies = cookies
     this.#baseUrl = config.baseUrl ?? manifest.baseUrl
     this.#options = options
+    const allowHttp = config.allowHttp ?? manifest.allowHttp ?? false
+    this.#protocols = allowHttp ? ['http:', 'https:'] : ['https:']
+    const baseUrl = new URL(this.#baseUrl)
+    this.#ports = baseUrl.port
+      ? [Number(baseUrl.port)]
+      : allowHttp
+        ? [80, 443]
+        : [443]
   }
 
   get baseUrl(): string {
@@ -187,8 +200,11 @@ class ManifestClient {
       const result = await safeFetch(url, {
         cookies: this.#cookies,
         allowedHosts: this.#manifest.allowedOrigins,
+        allowedProtocols: this.#protocols,
+        allowedPorts: this.#ports,
         ...(this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {}),
         ...(this.#options.fetchImpl ? { fetchImpl: this.#options.fetchImpl } : {}),
+        ...(this.#options.requestImpl ? { requestImpl: this.#options.requestImpl } : {}),
         ...(this.#options.resolveHost ? { resolveHost: this.#options.resolveHost } : {}),
       })
       if (result.status === 401 || result.status === 403) {

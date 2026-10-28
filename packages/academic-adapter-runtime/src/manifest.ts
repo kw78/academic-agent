@@ -33,6 +33,7 @@ export const adapterManifestSchema = z.object({
     .array(z.string().regex(/^[a-z0-9.-]+$/i, 'Expected a host name'))
     .min(1)
     .max(20),
+  allowHttp: z.boolean().optional(),
   timeZone: z.string().min(1).optional(),
   utcOffsetMinutes: z.number().int().min(-840).max(840).optional(),
   courses: requestSchema,

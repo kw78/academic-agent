@@ -38,6 +38,7 @@ function setup(
     ids: sequentialIds('web'),
     fetchImpl,
     resolveHost: publicResolver,
+    allowedProtocols: ['http:', 'https:'],
     ...options,
   })
   return { webSessions, vault, store }
@@ -250,6 +251,7 @@ describe('safe session fetch', () => {
       await expect(
         safeFetch(url, {
           allowedHosts: [allowed],
+          allowedProtocols: ['http:', 'https:'],
           fetchImpl,
           resolveHost: async () => [
             { address, family: address.includes(':') ? 6 : 4 },
@@ -266,6 +268,65 @@ describe('safe session fetch', () => {
     })
     expect(result.status).toBe(200)
     expect(called).toBe(1)
+  })
+
+  it('pins each hop to the validated address and enforces protocol, port and path policy', async () => {
+    const targets: Array<{ url: string; address: string }> = []
+    let resolutions = 0
+    const resolveHost: ResolveHost = async () => {
+      resolutions += 1
+      return [{ address: PUBLIC_ADDRESS, family: 4 }]
+    }
+    const requestImpl = async (url: URL, _init: unknown, target: { address: string }) => {
+      targets.push({ url: url.toString(), address: target.address })
+      if (targets.length === 1) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: '/app/next' },
+        })
+      }
+      return new Response('ok')
+    }
+
+    const result = await safeFetch('https://public.example.com/app/page', {
+      allowedHosts: ['example.com'],
+      allowedPathPrefixes: ['/app'],
+      resolveHost,
+      requestImpl,
+    })
+    expect(result.status).toBe(200)
+    expect(resolutions).toBe(2)
+    expect(targets).toEqual([
+      { url: 'https://public.example.com/app/page', address: PUBLIC_ADDRESS },
+      { url: 'https://public.example.com/app/next', address: PUBLIC_ADDRESS },
+    ])
+
+    const rejected = async (url: string, extra: Record<string, unknown>) => {
+      let calls = 0
+      const error = await safeFetch(url, {
+        allowedHosts: ['example.com'],
+        resolveHost,
+        requestImpl: async () => {
+          calls += 1
+          return new Response('ok')
+        },
+        ...extra,
+      }).catch((caught: unknown) => caught)
+      expect(calls).toBe(0)
+      return error
+    }
+
+    expect(await rejected('http://public.example.com/app', {})).toMatchObject({
+      code: 'UNSAFE_PROTOCOL',
+    })
+    expect(
+      await rejected('https://public.example.com:8443/app', {}),
+    ).toMatchObject({ code: 'UNSAFE_PORT' })
+    expect(
+      await rejected('https://public.example.com/other', {
+        allowedPathPrefixes: ['/app'],
+      }),
+    ).toMatchObject({ code: 'UNSAFE_PATH' })
   })
 
   it('caps response bytes and times out slow requests', async () => {
