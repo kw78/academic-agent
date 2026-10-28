@@ -112,7 +112,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     name: ACADEMIC_TOOL_NAMES.ProbeSource,
     description:
-      'Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host\'s cookies. Read-only; never returns cookies or URL query strings.',
+      'Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host\'s cookies. POST is allowed only as an explicit JSON body for read-only list/detail APIs; forms and custom headers are never sent. Read-only; never returns cookies or URL query strings.',
     parameters: {
       sourceId: {
         type: 'string',
@@ -128,6 +128,18 @@ export const TOOL_SPECS: ToolSpec[] = [
         type: 'boolean',
         description:
           'Store the raw response in the host sample store and return an opaque sampleId for offline validation',
+      },
+      method: {
+        type: 'string',
+        enum: ['GET', 'POST'],
+        description:
+          'HTTP method; default GET. Use POST only for read-only JSON list/detail APIs.',
+      },
+      body: {
+        type: 'object',
+        additionalProperties: true,
+        description:
+          'JSON body for POST (max 16 KB); requires method POST. No form encoding or custom headers.',
       },
     },
     write: false,

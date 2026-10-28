@@ -10,6 +10,7 @@ import {
 import {
   ManifestRegistry,
   createDeclarativeEngine,
+  replayManifest,
   type AdapterManifest,
 } from '@academic/adapter-runtime'
 
@@ -517,8 +518,184 @@ describe('declarative adapter runtime', () => {
     expect(again.counts.unchanged).toBe(3)
   })
 
-  it('registers and activates an AI-style manifest candidate before syncing', async () => {
-    const state = router()
+  it('sends explicit JSON POST bodies and paginates inside the body', async () => {
+    const calls: Array<{ path: string; method: string; body?: string }> = []
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = new URL(String(input))
+      calls.push({
+        path: url.pathname,
+        method: init?.method ?? 'GET',
+        ...(init?.body ? { body: String(init.body) } : {}),
+      })
+      const payload = JSON.parse(String(init?.body ?? '{}')) as {
+        action?: string
+        page?: number
+      }
+      const data =
+        payload.action === 'courses'
+          ? [{ id: 'C1', code: 'CS101', title: 'Data Structures', term: '2026FA' }]
+          : payload.action === 'assignments' && payload.page === 1
+            ? [{ id: 'A1', title: 'HW1', courseId: 'C1' }]
+            : payload.action === 'assignments' && payload.page === 2
+              ? [{ id: 'A2', title: 'HW2', courseId: 'C1' }]
+              : []
+      return new Response(JSON.stringify({ data }), {
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    const manifest = {
+      schemaVersion: 1,
+      adapterId: 'demo-post',
+      version: '1.0.0',
+      displayName: 'Demo POST',
+      baseUrl: 'https://lms.example.edu/',
+      allowedOrigins: ['lms.example.edu'],
+      allowedPathPrefixes: ['/api/'],
+      timeZone: 'Asia/Shanghai',
+      utcOffsetMinutes: 480,
+      courses: {
+        url: '/api/feed',
+        method: 'POST',
+        responseType: 'json',
+        body: { action: 'courses', term: '2026FA' },
+        items: 'data',
+        fields: {
+          externalCourseId: { path: 'id' },
+          code: { path: 'code' },
+          title: { path: 'title' },
+          termId: { path: 'term' },
+        },
+      },
+      assignments: {
+        url: '/api/feed',
+        method: 'POST',
+        responseType: 'json',
+        scope: 'source',
+        body: { action: 'assignments' },
+        pageParam: 'page',
+        pageIn: 'body',
+        pageStart: 1,
+        maxPages: 3,
+        items: 'data',
+        fields: {
+          externalItemId: { path: 'id' },
+          title: { path: 'title' },
+          courseExternalId: { path: 'courseId' },
+        },
+      },
+    }
+    const registry = new ManifestRegistry()
+    registry.register(manifest)
+    const engine = createDeclarativeEngine(registry, {
+      fetchImpl,
+      resolveHost: publicResolver,
+      now: () => '2026-10-28T00:00:00.000Z',
+    })
+    const context = { sourceId: 'post', config: configFor('demo-post') }
+    const result = await engine.createAdapter!(context).fetch({ credentials })
+    expect(result.completeness).toBe('full')
+    expect(result.items.map((item) => item.title)).toEqual(['HW1', 'HW2'])
+    expect(calls).toEqual([
+      {
+        path: '/api/feed',
+        method: 'POST',
+        body: '{"action":"courses","term":"2026FA"}',
+      },
+      { path: '/api/feed', method: 'POST', body: '{"action":"assignments","page":1}' },
+      { path: '/api/feed', method: 'POST', body: '{"action":"assignments","page":2}' },
+      { path: '/api/feed', method: 'POST', body: '{"action":"assignments","page":3}' },
+    ])
+  })
+
+  it('replays POST samples only when the request body matches', async () => {
+    const manifest = {
+      schemaVersion: 1,
+      adapterId: 'demo-post-replay',
+      version: '1.0.0',
+      displayName: 'Demo POST Replay',
+      baseUrl: 'https://lms.example.edu/',
+      allowedOrigins: ['lms.example.edu'],
+      allowedPathPrefixes: ['/api/'],
+      courses: {
+        url: '/api/feed',
+        method: 'POST',
+        responseType: 'json',
+        body: { action: 'courses' },
+        items: 'data',
+        fields: {
+          externalCourseId: { path: 'id' },
+          code: { path: 'code' },
+          title: { path: 'title' },
+          termId: { path: 'term' },
+        },
+      },
+      assignments: {
+        url: '/api/feed',
+        method: 'POST',
+        responseType: 'json',
+        scope: 'source',
+        body: { action: 'assignments' },
+        items: 'data',
+        fields: {
+          externalItemId: { path: 'id' },
+          title: { path: 'title' },
+          courseExternalId: { path: 'courseId' },
+        },
+      },
+    }
+    const samples = [
+      {
+        url: 'https://lms.example.edu/api/feed',
+        method: 'POST' as const,
+        requestBody: '{"action":"courses"}',
+        body: JSON.stringify({
+          data: [{ id: 'C1', code: 'CS101', title: 'Data Structures', term: '2026FA' }],
+        }),
+      },
+      {
+        url: 'https://lms.example.edu/api/feed',
+        method: 'POST' as const,
+        requestBody: '{"action":"assignments"}',
+        body: JSON.stringify({ data: [{ id: 'A1', title: 'HW1', courseId: 'C1' }] }),
+      },
+    ]
+    const report = await replayManifest(manifest, samples, {
+      now: () => '2026-10-28T00:00:00.000Z',
+    })
+    expect(report.ok).toBe(true)
+    expect(report.items.map((item) => item.title)).toEqual(['HW1'])
+
+    const mismatched = await replayManifest(manifest, [
+      samples[0]!,
+      { ...samples[1]!, requestBody: '{"action":"other"}' },
+    ])
+    expect(mismatched.ok).toBe(false)
+    expect(mismatched.errors.join(' ')).toMatch(/样本|404/)
+  })
+
+  it('rejects a body on a GET request and POST next pagination', () => {
+    const registry = new ManifestRegistry()
+    expect(() =>
+      registry.register({
+        ...jsonManifest,
+        adapterId: 'bad-body',
+        courses: { ...jsonManifest.courses, body: { q: 'x' } },
+      }),
+    ).toThrow(/body requires method/)
+    expect(() =>
+      registry.register({
+        ...jsonManifest,
+        adapterId: 'bad-next',
+        assignments: {
+          ...jsonManifest.assignments,
+          method: 'POST',
+          body: { q: 'x' },
+        },
+      }),
+    ).toThrow(/must paginate with pageParam/)
+  })
+
+  it('registers and activates an AI-style manifest candidate before syncing', async () => {    const state = router()
     const registry = new ManifestRegistry()
     const app = await createAcademicApp({
       databasePath: ':memory:',

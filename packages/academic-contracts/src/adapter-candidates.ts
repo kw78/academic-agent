@@ -4,6 +4,10 @@ export interface AdapterSample {
   url: string
   body: string
   contentType?: string
+  /** Defaults to GET. POST samples must also carry requestBody. */
+  method?: 'GET' | 'POST'
+  /** Exact JSON body sent by POST requests, so replay matches the real call. */
+  requestBody?: string
 }
 
 export type AdapterCandidateCheckStage =

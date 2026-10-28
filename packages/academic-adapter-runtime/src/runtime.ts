@@ -106,6 +106,75 @@ function withQuery(url: string, param: string, value: number): string {
   return parsed.toString()
 }
 
+const MAX_POST_BODY_BYTES = 16 * 1024
+
+function renderBodyText(template: string, vars: Row): string {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, path: string) => {
+    const value = readJsonPath(vars, path)
+    if (value === undefined || value === null || value === '') {
+      throw new Error(`Template variable is missing: ${path}`)
+    }
+    return String(value)
+  })
+}
+
+export function renderManifestBody(
+  body: Record<string, unknown>,
+  vars: Row,
+): Record<string, unknown> {
+  const rendered: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(body)) {
+    if (typeof value !== 'string') {
+      rendered[key] = value
+      continue
+    }
+    const whole = /^\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}$/.exec(value)
+    if (!whole) {
+      rendered[key] = renderBodyText(value, vars)
+      continue
+    }
+    const resolved = readJsonPath(vars, whole[1]!)
+    if (resolved === undefined || resolved === null || resolved === '') {
+      throw new Error(`Template variable is missing: ${whole[1]}`)
+    }
+    rendered[key] =
+      typeof resolved === 'object' ? JSON.stringify(resolved) : resolved
+  }
+  return rendered
+}
+
+function setJsonPath(
+  target: Record<string, unknown>,
+  path: string,
+  value: number,
+): void {
+  const parts = path.split('.')
+  let cursor = target
+  for (const part of parts.slice(0, -1)) {
+    const next = cursor[part]
+    if (next && typeof next === 'object' && !Array.isArray(next)) {
+      cursor = next as Record<string, unknown>
+    } else {
+      const created: Record<string, unknown> = {}
+      cursor[part] = created
+      cursor = created
+    }
+  }
+  cursor[parts[parts.length - 1]!] = value
+}
+
+function sampleKey(
+  url: string,
+  method: string,
+  requestBody?: string,
+): string {
+  const bodyHash =
+    requestBody === undefined
+      ? ''
+      : createHash('sha256').update(requestBody).digest('hex')
+  return `${method} ${url} ${bodyHash}`
+}
+
 export function renderManifestUrl(
   template: string,
   vars: Row,
@@ -241,6 +310,14 @@ class ManifestClient {
   }
 
   async get(url: string): Promise<string> {
+    return this.request(url, 'GET')
+  }
+
+  async request(
+    url: string,
+    method: 'GET' | 'POST',
+    body?: string,
+  ): Promise<string> {
     if (this.#requests >= (this.#config.maxRequests ?? 100)) {
       throw new AdapterTransientError('声明式抓取请求次数超过上限')
     }
@@ -251,12 +328,12 @@ class ManifestClient {
     let lastError: unknown
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        const body = await this.#getOnce(url)
-        this.#bytes += Buffer.byteLength(body, 'utf8')
+        const responseBody = await this.#requestOnce(url, method, body)
+        this.#bytes += Buffer.byteLength(responseBody, 'utf8')
         if (this.#bytes > (this.#config.maxBytes ?? 5 * 1024 * 1024)) {
           throw new Error('声明式抓取响应总大小超过上限')
         }
-        return body
+        return responseBody
       } catch (error) {
         lastError = error
         if (!(error instanceof AdapterTransientError) || attempt >= 2) {
@@ -268,7 +345,11 @@ class ManifestClient {
     throw lastError
   }
 
-  async #getOnce(url: string): Promise<string> {
+  async #requestOnce(
+    url: string,
+    method: 'GET' | 'POST',
+    body?: string,
+  ): Promise<string> {
     try {
       const result = await safeFetch(url, {
         cookies: this.#cookies,
@@ -277,6 +358,8 @@ class ManifestClient {
         allowSubdomains: false,
         allowedProtocols: this.#protocols,
         allowedPorts: this.#ports,
+        method,
+        ...(body !== undefined ? { body } : {}),
         ...(this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {}),
         ...(this.#options.fetchImpl ? { fetchImpl: this.#options.fetchImpl } : {}),
         ...(this.#options.requestImpl ? { requestImpl: this.#options.requestImpl } : {}),
@@ -352,13 +435,17 @@ class ManifestClient {
       diagnostics: [...diagnostics.values()],
     })
     const firstUrl = renderManifestUrl(request.url, vars, this.#baseUrl)
+    const method = request.method ?? 'GET'
+    const baseBody = request.body ?? {}
+    const pageInBody = method === 'POST' && request.pageIn === 'body'
+    const offsetInBody = method === 'POST' && request.offsetIn === 'body'
     const pageStart = request.pageStart ?? 1
     const pageStep = request.pageStep ?? 1
     let offset = request.offsetStart ?? 0
     let nextUrl: string | undefined
     for (let page = 0; page < maxPages; page += 1) {
       let currentUrl: string
-      if (page === 0) {
+      if (page === 0 || pageInBody || offsetInBody) {
         currentUrl = firstUrl
       } else if (request.pageParam) {
         currentUrl = withQuery(
@@ -373,7 +460,21 @@ class ManifestClient {
       } else {
         return result(true)
       }
-      const body = await this.get(currentUrl)
+      let requestBody: string | undefined
+      if (method === 'POST') {
+        const value = renderManifestBody(baseBody, vars)
+        if (request.pageParam && pageInBody) {
+          setJsonPath(value, request.pageParam, pageStart + page * pageStep)
+        }
+        if (request.offsetParam && offsetInBody) {
+          setJsonPath(value, request.offsetParam, offset)
+        }
+        requestBody = JSON.stringify(value)
+        if (Buffer.byteLength(requestBody, 'utf8') > MAX_POST_BODY_BYTES) {
+          throw new Error('声明式请求 body 超过 16 KB 上限')
+        }
+      }
+      const body = await this.request(currentUrl, method, requestBody)
       const extracted = extractPage(body, request)
       collect(extracted.diagnostics)
       const remaining = MAX_TOTAL_ROWS - rows.length
@@ -835,6 +936,23 @@ function validateManifestStatic(manifest: AdapterManifest): ManifestIssue[] {
     } catch {
       fail('contract', `${name} URL 无效`)
     }
+    if (request.body) {
+      const serialized = JSON.stringify(request.body)
+      if (Buffer.byteLength(serialized, 'utf8') > MAX_POST_BODY_BYTES) {
+        fail('contract', `${name} body 超过 16 KB 上限`)
+      }
+      for (const value of Object.values(request.body)) {
+        if (typeof value !== 'string') continue
+        for (const match of value.matchAll(
+          /\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g,
+        )) {
+          const root = match[1]?.split('.')[0]
+          if (!root || !vars.includes(root)) {
+            fail('contract', `${name} body 使用了不允许的模板变量：${match[1]}`)
+          }
+        }
+      }
+    }
     for (const [field, extractor] of Object.entries(request.fields)) {
       const derived =
         extractor.constant !== undefined || extractor.template !== undefined
@@ -931,7 +1049,12 @@ export async function replayManifest(
   const sampleMap = new Map<string, AdapterSample>()
   for (const sample of samples) {
     try {
-      sampleMap.set(new URL(sample.url).toString(), sample)
+      const method = sample.method ?? 'GET'
+      const requestBody = method === 'POST' ? sample.requestBody : undefined
+      sampleMap.set(
+        sampleKey(new URL(sample.url).toString(), method, requestBody),
+        sample,
+      )
     } catch {
       errors.push(`样本 URL 无效：${sample.url}`)
     }
@@ -941,9 +1064,14 @@ export async function replayManifest(
     return { ok: false, errors, warnings: [], courses: [], items: [], testedAt, checks }
   }
 
-  const fetchImpl: typeof fetch = async (request) => {
-    const key = new URL(String(request)).toString()
-    const sample = sampleMap.get(key)
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = new URL(String(input)).toString()
+    const method = (init?.method ?? 'GET').toUpperCase()
+    const requestBody =
+      init?.body === undefined || init.body === null
+        ? undefined
+        : String(init.body)
+    const sample = sampleMap.get(sampleKey(url, method, requestBody))
     if (!sample) return new Response('missing sample', { status: 404 })
     const contentType =
       sample.contentType ??

@@ -8,7 +8,7 @@
 | 检查 | 命令 | 结果 |
 |---|---|---|
 | 类型检查 | `npm run typecheck` | 通过 |
-| 全量测试 | `npm test` | 通过：41 个文件、224 项 |
+| 全量测试 | `npm test` | 通过：42 个文件、231 项 |
 | DSH 构建 | `npm run build:dsh` | 通过 |
 | UI 构建 | `npm run build:ui` | 通过 |
 | DSH 自测 | `ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=.data/dsh-academic.db dsh academic --json "hello"` | 通过：host/planner/tools 加载，`tools=17 registered=true`，只读查询成功，未授权写入 `FORBIDDEN` |
@@ -119,3 +119,11 @@ USTC 教务（第二平台，Manifest）：
 - Manifest XML、完整课表/成绩/作业、附件与提交历史。
 - 通用 Agent 写审批弹窗、文件级 HMR 手工验收。
 - 多页自动采样（G-03）仍为 PARTIAL（已有有界栏目抓取，未做无界自动发现）；资料索引（H-05）已 DONE（真实模型引用、OCR、自动多页发现未验证）；H-03/H-04 仍为 PARTIAL（无持久化反馈与真实模型讲解验收），H-02 已完成真实案例评估。
+
+## 声明式只读 POST（2026-10-28）
+
+- Manifest 新增可选 `method: "POST"` 与 JSON `body`（值可含 `{{course.*}}` 等模板）；POST 必须用 `pageParam`/`offsetParam` 翻页，可配 `pageIn`/`offsetIn: "body"`，不支持 `next`。
+- 传输层只发送 `application/json; charset=utf-8`，body ≤16 KB，不发送表单编码或自定义头；301/302/303 回退为 GET，307/308 才重发 body，每一跳仍重新校验主机/路径/端口。
+- 样本以 URL+方法+body 三者精确匹配，GET 与 POST 样本不会互相误用；`academic_probe_source` 支持 `method`/`body` 并捕获 POST 样本，`capture=true` 仍只返回 `sampleId`。
+- 验证：`npm run typecheck`、`npm test`（42 文件/231 项）通过；覆盖 POST body 模板、body 内分页、样本体不匹配、GET 带 body/POST 缺 body 拒绝与 302 降级。
+- 未验证：真实超星/智慧树 POST 接口同步（需用户重新登录并提供真实接口）。

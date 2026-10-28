@@ -19,6 +19,9 @@ export interface ProbeSourcePageInput {
   secret: string
   probedAt: string
   url?: string
+  /** POST is for read-only JSON APIs; the body must be a JSON object. */
+  method?: 'GET' | 'POST'
+  body?: Record<string, unknown>
   captureSample?: boolean
   sampleStore?: ProbeSampleStore
   fetchImpl?: typeof fetch
@@ -401,8 +404,29 @@ export async function probeSourcePage(
         (entry): entry is string => typeof entry === 'string' && entry.startsWith('/'),
       )
     : []
+  const method = input.method ?? 'GET'
+  let requestBody: string | undefined
+  if (method === 'POST') {
+    if (
+      !input.body ||
+      typeof input.body !== 'object' ||
+      Array.isArray(input.body)
+    ) {
+      throw new Error('POST 探测需要 JSON 对象 body')
+    }
+    requestBody = JSON.stringify(input.body)
+    if (Buffer.byteLength(requestBody, 'utf8') > 16 * 1024) {
+      throw new Error('POST 探测 body 超过 16 KB 上限')
+    }
+  } else if (input.body !== undefined) {
+    throw new Error('GET 探测不能携带 body')
+  }
   if (input.captureSample && input.sampleStore) {
-    const cached = input.sampleStore.findByUrl(url)
+    const cached = input.sampleStore.findByRequest(
+      url,
+      method,
+      requestBody,
+    )
     if (cached?.evidence) {
       return { ...cached.evidence, sampleId: cached.sampleId }
     }
@@ -413,6 +437,8 @@ export async function probeSourcePage(
     allowedProtocols:
       input.config.allowHttp === true ? ['http:', 'https:'] : ['https:'],
     ...(pathPrefixes.length > 0 ? { allowedPathPrefixes: pathPrefixes } : {}),
+    method,
+    ...(requestBody !== undefined ? { body: requestBody } : {}),
     timeoutMs: input.timeoutMs ?? 15_000,
     maxBytes: input.maxBytes ?? 512 * 1024,
     ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
@@ -430,6 +456,8 @@ export async function probeSourcePage(
   const captured = input.sampleStore.put(
     {
       url,
+      method,
+      ...(requestBody !== undefined ? { requestBody } : {}),
       body: result.body,
       ...(result.contentType ? { contentType: result.contentType } : {}),
     },

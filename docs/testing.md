@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**217 项测试通过**（40 个测试文件）。
+当前基线：**231 项测试通过**（42 个测试文件）。
 
 ## 分层
 
@@ -151,7 +151,7 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 
 - `packages/academic-adapter-runtime/test/manifest.test.ts`：Manifest Schema、版本注册/激活、HTML/JSON 字段提取、嵌套 JSON path、类型转换/默认值/必需字段诊断、无效选择器受控错误。
 - `tests/integration/declarative.test.ts`：JSON 课程/作业/详情、作业分页、HTML CSS 提取、相对 URL、未授权响应、预览不写库、Connector/Kernel 同步与重复预览 no-op；总响应字节上限。
-- 已覆盖：允许域名与路径、GET-only、`next`/页码/offset 分页与页数/行数/字节/时长上限、正则/trim、ISO/日期截止时间、`constant`/`template`、`type`/`default`/`required` 字段转换；XPath、XML、POST 与代码沙箱仍未实现。
+- 已覆盖：允许域名与路径、GET、显式 `method: "POST"` 的 JSON body（含模板与 `pageIn`/`offsetIn: "body"` 分页）、`next`/页码/offset 分页与页数/行数/字节/时长上限、正则/trim、ISO/日期截止时间、`constant`/`template`、`type`/`default`/`required` 字段转换；POST 样本按 URL+方法+body 精确匹配，body 不匹配不会误用样本。XPath、XML、自定义请求头/表单编码与代码沙箱仍未实现。
 - `packages/academic-adapter-runtime/test/candidate.test.ts`：不支持 `schemaVersion` 明确拒绝；验证报告按 schema/contract/permissions/sample-replay 分阶段；候选摘要包含允许主机、路径、数据类型与字段；页码/offset 分页与 maxPages 截断标记 partial。
 - `tests/integration/declarative.test.ts` 的第二平台用例：USTC 教务考试表经 Manifest 得到 1 门课程/2 个考试，时间 `2026-12-20 09:00` 正确转 UTC；同一 source 预览/同步/重复同步走 Connector/Kernel。
 - 真实验证：`jw.ustc.edu.cn` 使用应用登录会话完成候选注册→启用→自动建源→预览→同步→重复 no-op，写入 1 个真实考试；课表/成绩/作业未覆盖。

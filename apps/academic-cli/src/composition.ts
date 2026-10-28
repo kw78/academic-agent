@@ -698,7 +698,11 @@ export async function createAcademicApp(
   const probeSourceById = async (
     sourceId: string,
     url?: string,
-    probeOptions: { captureSample?: boolean } = {},
+    probeOptions: {
+      captureSample?: boolean
+      method?: 'GET' | 'POST'
+      body?: Record<string, unknown>
+    } = {},
   ): Promise<SourceProbeEvidence> => {
     const source = sources.get(sourceId)
     if (!source || source.archived) {
@@ -724,6 +728,8 @@ export async function createAcademicApp(
       secret: await credentials.getSecret(),
       probedAt: clock.now(),
       ...(url ? { url } : {}),
+      ...(probeOptions.method ? { method: probeOptions.method } : {}),
+      ...(probeOptions.body ? { body: probeOptions.body } : {}),
       ...(probeOptions.captureSample ? { captureSample: true } : {}),
       sampleStore: probeSamples,
       ...(options.probeFetch ? { fetchImpl: options.probeFetch } : {}),

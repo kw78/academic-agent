@@ -24,6 +24,7 @@ export type ResolveHost = (hostname: string) => Promise<ResolvedAddress[]>
 
 export type SafeFetchErrorCode =
   | 'INVALID_URL'
+  | 'INVALID_REQUEST'
   | 'UNSAFE_HOST'
   | 'UNSAFE_PROTOCOL'
   | 'UNSAFE_PORT'
@@ -54,8 +55,11 @@ export interface PinnedTarget {
 }
 
 export interface SafeRequestInit {
+  method: 'GET' | 'POST'
   headers: Record<string, string>
   signal: AbortSignal
+  /** UTF-8 JSON body; only sent for POST and never form-encoded. */
+  body?: string
 }
 
 /** Transport seam: receives only the address that passed validation. */
@@ -78,6 +82,10 @@ export interface SafeFetchOptions {
   allowedPathPrefixes?: string[]
   /** Defaults true for existing session callers; manifests use exact hosts. */
   allowSubdomains?: boolean
+  /** Defaults to GET. POST is only for explicit read-only JSON calls. */
+  method?: 'GET' | 'POST'
+  /** UTF-8 JSON body for POST; max 64 KB. Never form-encoded. */
+  body?: string
   fetchImpl?: typeof fetch
   requestImpl?: PinnedRequest
   resolveHost?: ResolveHost
@@ -346,7 +354,7 @@ const pinnedNodeRequest: PinnedRequest = (url, init, target) =>
     const request = send(
       url,
       {
-        method: 'GET',
+        method: init.method,
         headers: init.headers,
         signal: init.signal,
         lookup: (_hostname, options, callback) => {
@@ -381,16 +389,17 @@ const pinnedNodeRequest: PinnedRequest = (url, init, target) =>
       },
     )
     request.on('error', reject)
-    request.end()
+    request.end(init.body)
   })
 
 function injectedFetch(fetchImpl: typeof fetch): PinnedRequest {
   return (url, init) =>
     fetchImpl(url.toString(), {
-      method: 'GET',
+      method: init.method,
       redirect: 'manual',
       headers: init.headers,
       signal: init.signal,
+      ...(init.body !== undefined ? { body: init.body } : {}),
     })
 }
 
@@ -555,6 +564,18 @@ async function fetchBytesInternal(
   input: string,
   options: SafeFetchOptions,
 ): Promise<SafeFetchBytesResult> {
+  let method = options.method ?? 'GET'
+  let requestBody = options.body
+  if (method === 'POST') {
+    if (requestBody === undefined) {
+      throw new SafeFetchError('INVALID_REQUEST', 'POST 请求缺少 JSON body')
+    }
+    if (Buffer.byteLength(requestBody, 'utf8') > 64 * 1024) {
+      throw new SafeFetchError('INVALID_REQUEST', 'POST 请求 body 超过 64 KB 上限')
+    }
+  } else if (requestBody !== undefined) {
+    throw new SafeFetchError('INVALID_REQUEST', '只有 POST 请求可以携带 body')
+  }
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS
   const maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_MAX_BYTES)
@@ -593,19 +614,28 @@ async function fetchBytesInternal(
         options.allowSubdomains ?? true,
       )
       const cookie = cookieHeaderFor(cookies, current, now())
+      const headers: Record<string, string> = {
+        Accept:
+          'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+        'Accept-Encoding': 'identity',
+        ...(cookie ? { Cookie: cookie } : {}),
+      }
+      if (requestBody !== undefined) {
+        headers['Content-Type'] = 'application/json; charset=utf-8'
+        headers['Content-Length'] = String(
+          Buffer.byteLength(requestBody, 'utf8'),
+        )
+      }
 
       let response: Response
       try {
         response = await request(
           current,
           {
-            headers: {
-              Accept:
-                'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
-              'Accept-Encoding': 'identity',
-              ...(cookie ? { Cookie: cookie } : {}),
-            },
+            method,
+            headers,
             signal: controller.signal,
+            ...(requestBody !== undefined ? { body: requestBody } : {}),
           },
           target,
         )
@@ -644,6 +674,12 @@ async function fetchBytesInternal(
         }
         redirects.push(safeUrlForDisplay(next.toString()))
         await response.body?.cancel().catch(() => undefined)
+        // 301/302/303 behave like browsers and fall back to GET; only 307/308
+        // keep the method and body, and each hop is re-validated.
+        if (method === 'POST' && response.status !== 307 && response.status !== 308) {
+          method = 'GET'
+          requestBody = undefined
+        }
         current = next
         continue
       }

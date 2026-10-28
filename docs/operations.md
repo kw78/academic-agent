@@ -4,7 +4,7 @@
 
 1. 在“连接”页“快速添加平台”填写 HTTPS 首页；新平台优先选择“通用网站”，Blackboard 专用引擎只作为旧版兼容选项；engine 与 JSON 收在“高级”中。
 2. 需要登录的 engine 选择 `browser` 登录方式；用户在 Edge/Chrome 中完成 SSO/验证码后，宿主把会话写入 DPAPI。若打开的是门户首页且该 URL 本身已匹配“已认证”规则（如 `i.ustc.edu.cn`），登录窗口不会自动关闭：完成登录后点击右上角“已完成登录，保存会话”，宿主校验通过后才保存。
-3. 点击“验证连接”，再点击“探测页面”查看脱敏证据与下一步提示。探测默认读取配置的 portal/verify URL；Agent 可用 `academic_probe_source` 探测单页，或用 `academic_crawl_source` 从一个入口 URL 有界抓取同站/`probeAllowedHosts` 授权主机的一个栏目（最多 10 页、深度 2、只跟 GET 链接），继续查看脚本、分页链接或候选接口；跨主机请求不会自动携带该主机 Cookie，Manifest 的 `allowedOrigins` 需列出所有实际请求主机；`loggedOutPatterns` 只匹配最终 URL/标题，不会因为 bundle 正文出现 `/login` 误判。只读探测/有界抓取默认允许任意公开 HTTPS 主机；如需收紧，在来源配置设 `probeAllowAnyPublicHost: false`。它仍只读、有限页/深度/路径/时长，不带跨域 Cookie，拒绝私网地址；路径范围由 `probePathPrefixes` 控制，并查看表格表头/class 与容器 class，每次仍重新校验主机、协议与安全抓取限制。
+3. 点击“验证连接”，再点击“探测页面”查看脱敏证据与下一步提示。探测默认读取配置的 portal/verify URL；Agent 可用 `academic_probe_source` 探测单页（列表只接受 POST 时可传 `method: "POST"` 与 JSON `body`，仍只读、限 16 KB、不带自定义头或表单编码），或用 `academic_crawl_source` 从一个入口 URL 有界抓取同站/`probeAllowedHosts` 授权主机的一个栏目（最多 10 页、深度 2、只跟 GET 链接），继续查看脚本、分页链接或候选接口；跨主机请求不会自动携带该主机 Cookie，Manifest 的 `allowedOrigins` 需列出所有实际请求主机；`loggedOutPatterns` 只匹配最终 URL/标题，不会因为 bundle 正文出现 `/login` 误判。只读探测/有界抓取默认允许任意公开 HTTPS 主机；如需收紧，在来源配置设 `probeAllowAnyPublicHost: false`。它仍只读、有限页/深度/路径/时长，不带跨域 Cookie，拒绝私网地址；路径范围由 `probePathPrefixes` 控制，并查看表格表头/class 与容器 class，每次仍重新校验主机、协议与安全抓取限制。
 4. 对 Blackboard 直接“预览同步”；对通用网站先在 DSH 对话中让 Agent 用 `academic_probe_source` 生成 Manifest 候选，再到“Adapter 候选”面板验证、启用。
 5. 点击“预览同步”，确认新增/更新/未变/未返回/跳过数量和警告。
 6. 确认后点击“立即同步”；同步经 Adapter → Schema/标准化 → Connector → Kernel → Event Store。
@@ -55,7 +55,7 @@ ACADEMIC_DB=.data/academic.db npm run demo -- adapter rollback <adapterId> [vers
 ACADEMIC_DB=.data/academic.db npm run demo -- adapter list
 ```
 
-- `samples.json` 是 `[{ "url": "https://...", "body": "..." }]`，必须覆盖 Manifest 会请求的每个 URL。Agent 也可以对真实页面调用 `academic_probe_source` 并传 `capture=true`，宿主把原始响应保存在内存（60 分钟 TTL、按 URL 复用、最多 30 个），只把 `sampleId` 返回给 Agent；随后用 `sampleIds` 调用验证，原始 body 不进入模型上下文。合成 HTML 只能用于开发测试，不能用于验收。
+- `samples.json` 是 `[{ "url": "https://...", "body": "..." }]`，必须覆盖 Manifest 会请求的每个 URL。POST Manifest 的样本还要带 `"method": "POST"` 与 `"requestBody": "<与 Manifest 发出的 JSON 完全一致>"`；同一 URL 的 GET 与 POST 样本互不复用。Agent 也可以对真实页面调用 `academic_probe_source` 并传 `capture=true`（POST 加 `method`/`body`），宿主把原始响应保存在内存（60 分钟 TTL、按 URL+方法+body、最多 30 个），只把 `sampleId` 返回给 Agent；随后用 `sampleIds` 调用验证，原始 body 不进入模型上下文。合成 HTML 只能用于开发测试，不能用于验收。
 - 探测限速：每个来源最多 6 次/分钟，按 10 秒间隔执行，不做连续突发；过早请求会立即返回“约 N 秒后再试”，不会把工具调用阻塞到 30 秒超时。429/403/登录页/验证码立即停止，不自动重试；相同 URL 的捕获样本在 TTL 内复用，避免重复抓取。测试环境可通过 `probeMinIntervalMs: 0` 关闭间隔。
 - 新建数据库的内置同步任务默认 60 分钟；已有数据库保持原周期，需在设置页调整。提醒扫描仍是本地确定性操作，不访问外部站点。
 - 候选不会自动进入同步；只有显式启用的 validated 版本会被 `engine=declarative` 使用。UI 或 CLI 启用后会创建/更新 `adapter-<adapterId>` 数据源，名称为 `<Manifest 显示名>（同步）`；原浏览器登录源保留用于重新登录/验证，UI 卡片分别标记“同步源/登录源”。若已有同站点浏览器会话，Host 在内部复制会话到新连接，成功响应不包含秘密。启用不需要重启 Host：候选表里的 Manifest 会在激活时重新注册；旧版本同名同步源会在启动时自动补上“（同步）”后缀。
@@ -116,7 +116,7 @@ find .data -maxdepth 2 -type f \( -name '*.html' -o -name '*.log' -o -name '*.tx
 
 - DNS 解析结果已固定到实际连接；仍不支持显式 HTTP（需 `allowHttp`）与跨域 SSO 的细粒度域名授权。
 - Blackboard 覆盖课程、作业、考试/测验与文件夹分页；当前账号没有真实测试项样本，考试/测验仍以 fixture 验证；附件、成绩、提交历史未覆盖。
-- 声明式 Runtime 只支持 GET、CSS/JSON path、常量/模板、类型转换与默认值、`next`/页码/offset 分页；XPath、XML、POST/登录交互与任意脚本沙箱未实现。每次分页都会重新校验主机/协议/端口/路径，并受总请求数、总行数、总字节与总时长限制。
+- 声明式 Runtime 支持 GET 与显式 `method: "POST"` 的只读 JSON 请求、CSS/JSON path、常量/模板、类型转换与默认值、`next`/页码/offset 分页（POST 用 `pageIn`/`offsetIn: "body"`）；POST 请求只能发送 JSON body（≤16 KB），不发送表单编码或自定义头，301/302/303 回退为 GET，307/308 才重发 body；XPath、XML、登录交互与任意脚本沙箱仍未实现。每次分页都会重新校验主机/协议/端口/路径，并受总请求数、总行数、总字节与总时长限制。
 - 候选生成由 DSH Agent 完成，Host 不直接调用模型；样本需显式提供，未实现多页自动采样。候选验证按 schema、字段契约、访问范围、样本回放分阶段报告；真实数据预检仍需用户执行预览。
 - 第二个平台（USTC 教务）目前只覆盖考试表；课表/选课接口为内嵌 XML 或需额外参数，Manifest 不支持 XML，成绩与作业未接入。
 - DSH 候选审批在“连接”页完成；Agent 的注册/启用工具仍需要可信宿主逐次授权，没有通用审批弹窗或文件级 HMR 验收。

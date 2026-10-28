@@ -26049,7 +26049,7 @@ var pinnedNodeRequest = (url2, init, target) => new Promise((resolve, reject) =>
   const request = send(
     url2,
     {
-      method: "GET",
+      method: init.method,
       headers: init.headers,
       signal: init.signal,
       lookup: (_hostname, options, callback) => {
@@ -26082,14 +26082,15 @@ var pinnedNodeRequest = (url2, init, target) => new Promise((resolve, reject) =>
     }
   );
   request.on("error", reject);
-  request.end();
+  request.end(init.body);
 });
 function injectedFetch(fetchImpl) {
   return (url2, init) => fetchImpl(url2.toString(), {
-    method: "GET",
+    method: init.method,
     redirect: "manual",
     headers: init.headers,
-    signal: init.signal
+    signal: init.signal,
+    ...init.body !== void 0 ? { body: init.body } : {}
   });
 }
 function cookieDomainMatches(hostname3, domain2) {
@@ -26222,6 +26223,18 @@ async function readBodyBytes(response, finalUrl, maxBytes, signal) {
   };
 }
 async function fetchBytesInternal(input2, options) {
+  let method = options.method ?? "GET";
+  let requestBody = options.body;
+  if (method === "POST") {
+    if (requestBody === void 0) {
+      throw new SafeFetchError("INVALID_REQUEST", "POST \u8BF7\u6C42\u7F3A\u5C11 JSON body");
+    }
+    if (Buffer.byteLength(requestBody, "utf8") > 64 * 1024) {
+      throw new SafeFetchError("INVALID_REQUEST", "POST \u8BF7\u6C42 body \u8D85\u8FC7 64 KB \u4E0A\u9650");
+    }
+  } else if (requestBody !== void 0) {
+    throw new SafeFetchError("INVALID_REQUEST", "\u53EA\u6709 POST \u8BF7\u6C42\u53EF\u4EE5\u643A\u5E26 body");
+  }
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
   const maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_MAX_BYTES);
@@ -26253,17 +26266,26 @@ async function fetchBytesInternal(input2, options) {
         options.allowSubdomains ?? true
       );
       const cookie = cookieHeaderFor(cookies, current, now());
+      const headers = {
+        Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+        "Accept-Encoding": "identity",
+        ...cookie ? { Cookie: cookie } : {}
+      };
+      if (requestBody !== void 0) {
+        headers["Content-Type"] = "application/json; charset=utf-8";
+        headers["Content-Length"] = String(
+          Buffer.byteLength(requestBody, "utf8")
+        );
+      }
       let response;
       try {
         response = await request(
           current,
           {
-            headers: {
-              Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
-              "Accept-Encoding": "identity",
-              ...cookie ? { Cookie: cookie } : {}
-            },
-            signal: controller.signal
+            method,
+            headers,
+            signal: controller.signal,
+            ...requestBody !== void 0 ? { body: requestBody } : {}
           },
           target
         );
@@ -26299,6 +26321,10 @@ async function fetchBytesInternal(input2, options) {
         }
         redirects.push(safeUrlForDisplay(next.toString()));
         await response.body?.cancel().catch(() => void 0);
+        if (method === "POST" && response.status !== 307 && response.status !== 308) {
+          method = "GET";
+          requestBody = void 0;
+        }
         current = next;
         continue;
       }
@@ -26799,8 +26825,25 @@ async function probeSourcePage(input2) {
   const pathPrefixes = Array.isArray(input2.config.probePathPrefixes) ? input2.config.probePathPrefixes.filter(
     (entry) => typeof entry === "string" && entry.startsWith("/")
   ) : [];
+  const method = input2.method ?? "GET";
+  let requestBody;
+  if (method === "POST") {
+    if (!input2.body || typeof input2.body !== "object" || Array.isArray(input2.body)) {
+      throw new Error("POST \u63A2\u6D4B\u9700\u8981 JSON \u5BF9\u8C61 body");
+    }
+    requestBody = JSON.stringify(input2.body);
+    if (Buffer.byteLength(requestBody, "utf8") > 16 * 1024) {
+      throw new Error("POST \u63A2\u6D4B body \u8D85\u8FC7 16 KB \u4E0A\u9650");
+    }
+  } else if (input2.body !== void 0) {
+    throw new Error("GET \u63A2\u6D4B\u4E0D\u80FD\u643A\u5E26 body");
+  }
   if (input2.captureSample && input2.sampleStore) {
-    const cached2 = input2.sampleStore.findByUrl(url2);
+    const cached2 = input2.sampleStore.findByRequest(
+      url2,
+      method,
+      requestBody
+    );
     if (cached2?.evidence) {
       return { ...cached2.evidence, sampleId: cached2.sampleId };
     }
@@ -26810,6 +26853,8 @@ async function probeSourcePage(input2) {
     allowedHosts: allowAnyPublicHost ? [host] : effectiveHosts,
     allowedProtocols: input2.config.allowHttp === true ? ["http:", "https:"] : ["https:"],
     ...pathPrefixes.length > 0 ? { allowedPathPrefixes: pathPrefixes } : {},
+    method,
+    ...requestBody !== void 0 ? { body: requestBody } : {},
     timeoutMs: input2.timeoutMs ?? 15e3,
     maxBytes: input2.maxBytes ?? 512 * 1024,
     ...input2.fetchImpl ? { fetchImpl: input2.fetchImpl } : {},
@@ -26827,6 +26872,8 @@ async function probeSourcePage(input2) {
   const captured = input2.sampleStore.put(
     {
       url: url2,
+      method,
+      ...requestBody !== void 0 ? { requestBody } : {},
       body: result.body,
       ...result.contentType ? { contentType: result.contentType } : {}
     },
@@ -26850,7 +26897,9 @@ var ProbeSampleStore = class {
   put(sample, evidence) {
     const now = this.#now();
     this.#evict(now);
-    const existing = this.findByUrl(sample.url);
+    const method = sample.method ?? "GET";
+    const requestBody = method === "POST" ? sample.requestBody : void 0;
+    const existing = this.findByRequest(sample.url, method, requestBody);
     if (existing && existing.digest === createHash4("sha256").update(sample.body).digest("hex")) {
       if (evidence) existing.evidence = { ...evidence, sampleId: existing.sampleId };
       return existing;
@@ -26861,6 +26910,8 @@ var ProbeSampleStore = class {
     const captured = {
       sampleId: randomUUID(),
       url: sample.url,
+      method,
+      ...requestBody !== void 0 ? { requestBody } : {},
       body,
       ...sample.contentType ? { contentType: sample.contentType } : {},
       digest: createHash4("sha256").update(body).digest("hex"),
@@ -26877,10 +26928,16 @@ var ProbeSampleStore = class {
     return captured;
   }
   findByUrl(url2) {
+    return this.findByRequest(url2, "GET");
+  }
+  findByRequest(url2, method, requestBody) {
     this.#evict(this.#now());
     let found;
     for (const sample of this.#samples.values()) {
-      if (sample.url === url2) found = sample;
+      if (sample.url !== url2) continue;
+      if ((sample.method ?? "GET") !== method) continue;
+      if ((sample.requestBody ?? "") !== (requestBody ?? "")) continue;
+      found = sample;
     }
     return found;
   }
@@ -26891,6 +26948,8 @@ var ProbeSampleStore = class {
     return {
       url: sample.url,
       body: sample.body,
+      method: sample.method ?? "GET",
+      ...sample.requestBody ? { requestBody: sample.requestBody } : {},
       ...sample.contentType ? { contentType: sample.contentType } : {}
     };
   }
@@ -26901,6 +26960,7 @@ var ProbeSampleStore = class {
     return {
       sampleId: sample.sampleId,
       url: sample.url,
+      method: sample.method ?? "GET",
       ...sample.contentType ? { contentType: sample.contentType } : {},
       bytes: sample.bytes,
       digest: sample.digest,
@@ -28698,14 +28758,25 @@ var extractorSchema = external_exports.object({
 var requestSchema = external_exports.object({
   url: external_exports.string().min(1).max(2e3),
   responseType: external_exports.enum(["html", "json"]).default("html"),
+  /**
+   * POST is for read-only JSON list/detail APIs; it is never form-encoded and
+   * cannot carry custom headers.
+   */
+  method: external_exports.enum(["GET", "POST"]).optional(),
+  body: external_exports.record(
+    external_exports.string().max(100),
+    external_exports.union([external_exports.string().max(2e3), external_exports.number(), external_exports.boolean(), external_exports.null()])
+  ).optional(),
   items: external_exports.string().min(1).max(500),
   fields: external_exports.record(external_exports.string(), extractorSchema),
   next: external_exports.string().min(1).max(500).optional(),
   maxPages: external_exports.number().int().min(1).max(50).optional(),
   pageParam: external_exports.string().regex(/^[A-Za-z0-9_.-]{1,80}$/, "Expected a query parameter name").optional(),
+  pageIn: external_exports.enum(["query", "body"]).optional(),
   pageStart: external_exports.number().int().min(0).max(1e4).optional(),
   pageStep: external_exports.number().int().min(1).max(100).optional(),
   offsetParam: external_exports.string().regex(/^[A-Za-z0-9_.-]{1,80}$/, "Expected a query parameter name").optional(),
+  offsetIn: external_exports.enum(["query", "body"]).optional(),
   offsetStart: external_exports.number().int().min(0).max(1e6).optional(),
   offsetStep: external_exports.number().int().min(1).max(1e4).optional(),
   /**
@@ -28713,14 +28784,46 @@ var requestSchema = external_exports.object({
    * 'source' runs it once and relies on row courseExternalId.
    */
   scope: external_exports.enum(["course", "source"]).optional()
-}).refine(
-  (value) => [value.next, value.pageParam, value.offsetParam].filter(
+}).superRefine((value, ctx) => {
+  if ([value.next, value.pageParam, value.offsetParam].filter(
     (entry) => entry !== void 0
-  ).length <= 1,
-  {
-    message: "Use at most one pagination strategy: next, pageParam or offsetParam"
+  ).length > 1) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["pageParam"],
+      message: "Use at most one pagination strategy: next, pageParam or offsetParam"
+    });
   }
-);
+  const post = value.method === "POST";
+  if (value.body !== void 0 && !post) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["body"],
+      message: 'body requires method: "POST"'
+    });
+  }
+  if (post && value.next !== void 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["next"],
+      message: "POST requests must paginate with pageParam or offsetParam"
+    });
+  }
+  if (value.pageIn === "body" && (!post || !value.pageParam)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["pageIn"],
+      message: 'pageIn: "body" requires method POST and pageParam'
+    });
+  }
+  if (value.offsetIn === "body" && (!post || !value.offsetParam)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["offsetIn"],
+      message: 'offsetIn: "body" requires method POST and offsetParam'
+    });
+  }
+});
 var adapterManifestSchema = external_exports.object({
   schemaVersion: external_exports.literal(1),
   adapterId: external_exports.string().min(1).max(200),
@@ -39645,6 +39748,55 @@ function withQuery(url2, param, value) {
   parsed.searchParams.set(param, String(value));
   return parsed.toString();
 }
+var MAX_POST_BODY_BYTES = 16 * 1024;
+function renderBodyText(template, vars) {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, path) => {
+    const value = readJsonPath(vars, path);
+    if (value === void 0 || value === null || value === "") {
+      throw new Error(`Template variable is missing: ${path}`);
+    }
+    return String(value);
+  });
+}
+function renderManifestBody(body, vars) {
+  const rendered = {};
+  for (const [key2, value] of Object.entries(body)) {
+    if (typeof value !== "string") {
+      rendered[key2] = value;
+      continue;
+    }
+    const whole = /^\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}$/.exec(value);
+    if (!whole) {
+      rendered[key2] = renderBodyText(value, vars);
+      continue;
+    }
+    const resolved = readJsonPath(vars, whole[1]);
+    if (resolved === void 0 || resolved === null || resolved === "") {
+      throw new Error(`Template variable is missing: ${whole[1]}`);
+    }
+    rendered[key2] = typeof resolved === "object" ? JSON.stringify(resolved) : resolved;
+  }
+  return rendered;
+}
+function setJsonPath(target, path, value) {
+  const parts = path.split(".");
+  let cursor = target;
+  for (const part of parts.slice(0, -1)) {
+    const next = cursor[part];
+    if (next && typeof next === "object" && !Array.isArray(next)) {
+      cursor = next;
+    } else {
+      const created = {};
+      cursor[part] = created;
+      cursor = created;
+    }
+  }
+  cursor[parts[parts.length - 1]] = value;
+}
+function sampleKey(url2, method, requestBody) {
+  const bodyHash = requestBody === void 0 ? "" : createHash7("sha256").update(requestBody).digest("hex");
+  return `${method} ${url2} ${bodyHash}`;
+}
 function renderManifestUrl(template, vars, baseUrl) {
   return absoluteUrl2(renderTemplate(template, vars), baseUrl);
 }
@@ -39745,6 +39897,9 @@ var ManifestClient = class {
     return this.#baseUrl;
   }
   async get(url2) {
+    return this.request(url2, "GET");
+  }
+  async request(url2, method, body) {
     if (this.#requests >= (this.#config.maxRequests ?? 100)) {
       throw new AdapterTransientError("\u58F0\u660E\u5F0F\u6293\u53D6\u8BF7\u6C42\u6B21\u6570\u8D85\u8FC7\u4E0A\u9650");
     }
@@ -39755,12 +39910,12 @@ var ManifestClient = class {
     let lastError;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        const body = await this.#getOnce(url2);
-        this.#bytes += Buffer.byteLength(body, "utf8");
+        const responseBody = await this.#requestOnce(url2, method, body);
+        this.#bytes += Buffer.byteLength(responseBody, "utf8");
         if (this.#bytes > (this.#config.maxBytes ?? 5 * 1024 * 1024)) {
           throw new Error("\u58F0\u660E\u5F0F\u6293\u53D6\u54CD\u5E94\u603B\u5927\u5C0F\u8D85\u8FC7\u4E0A\u9650");
         }
-        return body;
+        return responseBody;
       } catch (error62) {
         lastError = error62;
         if (!(error62 instanceof AdapterTransientError) || attempt >= 2) {
@@ -39771,7 +39926,7 @@ var ManifestClient = class {
     }
     throw lastError;
   }
-  async #getOnce(url2) {
+  async #requestOnce(url2, method, body) {
     try {
       const result = await safeFetch(url2, {
         cookies: this.#cookies,
@@ -39780,6 +39935,8 @@ var ManifestClient = class {
         allowSubdomains: false,
         allowedProtocols: this.#protocols,
         allowedPorts: this.#ports,
+        method,
+        ...body !== void 0 ? { body } : {},
         ...this.#config.timeoutMs ? { timeoutMs: this.#config.timeoutMs } : {},
         ...this.#options.fetchImpl ? { fetchImpl: this.#options.fetchImpl } : {},
         ...this.#options.requestImpl ? { requestImpl: this.#options.requestImpl } : {},
@@ -39845,13 +40002,17 @@ ${result.body.slice(0, 4e3)}`);
       diagnostics: [...diagnostics.values()]
     });
     const firstUrl = renderManifestUrl(request.url, vars, this.#baseUrl);
+    const method = request.method ?? "GET";
+    const baseBody = request.body ?? {};
+    const pageInBody = method === "POST" && request.pageIn === "body";
+    const offsetInBody = method === "POST" && request.offsetIn === "body";
     const pageStart = request.pageStart ?? 1;
     const pageStep = request.pageStep ?? 1;
     let offset = request.offsetStart ?? 0;
     let nextUrl;
     for (let page = 0; page < maxPages; page += 1) {
       let currentUrl;
-      if (page === 0) {
+      if (page === 0 || pageInBody || offsetInBody) {
         currentUrl = firstUrl;
       } else if (request.pageParam) {
         currentUrl = withQuery(
@@ -39866,7 +40027,21 @@ ${result.body.slice(0, 4e3)}`);
       } else {
         return result(true);
       }
-      const body = await this.get(currentUrl);
+      let requestBody;
+      if (method === "POST") {
+        const value = renderManifestBody(baseBody, vars);
+        if (request.pageParam && pageInBody) {
+          setJsonPath(value, request.pageParam, pageStart + page * pageStep);
+        }
+        if (request.offsetParam && offsetInBody) {
+          setJsonPath(value, request.offsetParam, offset);
+        }
+        requestBody = JSON.stringify(value);
+        if (Buffer.byteLength(requestBody, "utf8") > MAX_POST_BODY_BYTES) {
+          throw new Error("\u58F0\u660E\u5F0F\u8BF7\u6C42 body \u8D85\u8FC7 16 KB \u4E0A\u9650");
+        }
+      }
+      const body = await this.request(currentUrl, method, requestBody);
       const extracted = extractPage(body, request);
       collect(extracted.diagnostics);
       const remaining = MAX_TOTAL_ROWS - rows.length;
@@ -40251,6 +40426,23 @@ function validateManifestStatic(manifest) {
     } catch {
       fail("contract", `${name} URL \u65E0\u6548`);
     }
+    if (request.body) {
+      const serialized = JSON.stringify(request.body);
+      if (Buffer.byteLength(serialized, "utf8") > MAX_POST_BODY_BYTES) {
+        fail("contract", `${name} body \u8D85\u8FC7 16 KB \u4E0A\u9650`);
+      }
+      for (const value of Object.values(request.body)) {
+        if (typeof value !== "string") continue;
+        for (const match of value.matchAll(
+          /\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g
+        )) {
+          const root = match[1]?.split(".")[0];
+          if (!root || !vars.includes(root)) {
+            fail("contract", `${name} body \u4F7F\u7528\u4E86\u4E0D\u5141\u8BB8\u7684\u6A21\u677F\u53D8\u91CF\uFF1A${match[1]}`);
+          }
+        }
+      }
+    }
     for (const [field, extractor] of Object.entries(request.fields)) {
       const derived2 = extractor.constant !== void 0 || extractor.template !== void 0;
       if (request.responseType === "html" && !derived2 && !extractor.selector) {
@@ -40330,7 +40522,12 @@ async function replayManifest(input2, samples, options = {}) {
   const sampleMap = /* @__PURE__ */ new Map();
   for (const sample of samples) {
     try {
-      sampleMap.set(new URL(sample.url).toString(), sample);
+      const method = sample.method ?? "GET";
+      const requestBody = method === "POST" ? sample.requestBody : void 0;
+      sampleMap.set(
+        sampleKey(new URL(sample.url).toString(), method, requestBody),
+        sample
+      );
     } catch {
       errors.push(`\u6837\u672C URL \u65E0\u6548\uFF1A${sample.url}`);
     }
@@ -40339,9 +40536,11 @@ async function replayManifest(input2, samples, options = {}) {
     checks.push({ stage: "sample-replay", ok: false, detail: errors[0] });
     return { ok: false, errors, warnings: [], courses: [], items: [], testedAt, checks };
   }
-  const fetchImpl = async (request) => {
-    const key2 = new URL(String(request)).toString();
-    const sample = sampleMap.get(key2);
+  const fetchImpl = async (input3, init) => {
+    const url2 = new URL(String(input3)).toString();
+    const method = (init?.method ?? "GET").toUpperCase();
+    const requestBody = init?.body === void 0 || init.body === null ? void 0 : String(init.body);
+    const sample = sampleMap.get(sampleKey(url2, method, requestBody));
     if (!sample) return new Response("missing sample", { status: 404 });
     const contentType = sample.contentType ?? (sample.body.trimStart().startsWith("{") || sample.body.trimStart().startsWith("[") ? "application/json" : "text/html");
     return new Response(sample.body, {
@@ -42477,7 +42676,9 @@ var requestReplanSchema = external_exports.object({
 var adapterSampleSchema = external_exports.object({
   url: external_exports.string().url(),
   body: external_exports.string().max(2e6),
-  contentType: external_exports.string().max(200).optional()
+  contentType: external_exports.string().max(200).optional(),
+  method: external_exports.enum(["GET", "POST"]).optional(),
+  requestBody: external_exports.string().max(16384).optional()
 });
 var adapterManifestSchema2 = external_exports.record(external_exports.string(), external_exports.unknown());
 var adapterCandidateSchema = external_exports.object({
@@ -42721,17 +42922,26 @@ function createAcademicTools(dependencies) {
       ...dependencies.probeSource ? [
         defineTool(
           ACADEMIC_TOOL_NAMES.ProbeSource,
-          "Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host's cookies. Read-only; never returns cookies or URL query strings.",
+          "Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host's cookies. POST is allowed only as an explicit JSON body for read-only list/detail APIs; forms and custom headers are never sent. Read-only; never returns cookies or URL query strings.",
           external_exports.object({
             sourceId: external_exports.string().min(1).max(200),
             url: external_exports.string().url().optional(),
-            capture: external_exports.boolean().optional()
-          }),
+            capture: external_exports.boolean().optional(),
+            method: external_exports.enum(["GET", "POST"]).optional(),
+            body: external_exports.record(external_exports.string(), external_exports.unknown()).optional()
+          }).refine(
+            (value) => value.method === "POST" || value.body === void 0,
+            { message: "body requires method: POST", path: ["body"] }
+          ),
           async (input2) => {
             const evidence = await dependencies.probeSource(
               input2.sourceId,
               input2.url,
-              input2.capture ? { captureSample: true } : void 0
+              {
+                ...input2.capture ? { captureSample: true } : {},
+                ...input2.method ? { method: input2.method } : {},
+                ...input2.body ? { body: input2.body } : {}
+              }
             );
             if (evidence.status === 401 || evidence.status === 403) {
               return failure2(
@@ -47509,6 +47719,8 @@ async function createAcademicApp(options) {
       secret: await credentials.getSecret(),
       probedAt: clock.now(),
       ...url2 ? { url: url2 } : {},
+      ...probeOptions.method ? { method: probeOptions.method } : {},
+      ...probeOptions.body ? { body: probeOptions.body } : {},
       ...probeOptions.captureSample ? { captureSample: true } : {},
       sampleStore: probeSamples,
       ...options.probeFetch ? { fetchImpl: options.probeFetch } : {},

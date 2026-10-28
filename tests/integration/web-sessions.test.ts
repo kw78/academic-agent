@@ -246,6 +246,75 @@ describe('generic web sessions', () => {
 })
 
 describe('safe session fetch', () => {
+  it('sends an explicit JSON POST and falls back to GET on 302', async () => {
+    const calls: Array<{
+      url: string
+      method: string
+      body?: string
+      contentType?: string
+    }> = []
+    const requestImpl = async (
+      url: URL,
+      init: { method: string; headers: Record<string, string>; body?: string },
+    ) => {
+      calls.push({
+        url: url.toString(),
+        method: init.method,
+        ...(init.body !== undefined ? { body: init.body } : {}),
+        ...(init.headers['Content-Type']
+          ? { contentType: init.headers['Content-Type'] }
+          : {}),
+      })
+      if (calls.length === 1) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: '/api/list' },
+        })
+      }
+      return new Response('{"ok":true}', {
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+
+    const result = await safeFetch('https://public.example.com/api/search', {
+      allowedHosts: ['example.com'],
+      resolveHost: publicResolver,
+      requestImpl,
+      method: 'POST',
+      body: '{"q":"x"}',
+    })
+
+    expect(result.status).toBe(200)
+    expect(calls[0]).toEqual({
+      url: 'https://public.example.com/api/search',
+      method: 'POST',
+      body: '{"q":"x"}',
+      contentType: 'application/json; charset=utf-8',
+    })
+    expect(calls[1]).toEqual({
+      url: 'https://public.example.com/api/list',
+      method: 'GET',
+    })
+  })
+
+  it('rejects POST without a body and GET with one', async () => {
+    await expect(
+      safeFetch('https://public.example.com/', {
+        allowedHosts: ['example.com'],
+        resolveHost: publicResolver,
+        method: 'POST',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    await expect(
+      safeFetch('https://public.example.com/', {
+        allowedHosts: ['example.com'],
+        resolveHost: publicResolver,
+        method: 'GET',
+        body: '{"q":"x"}',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+  })
+
   it('blocks loopback, private, metadata and private DNS targets', async () => {
     let called = 0
     const fetchImpl = async () => {

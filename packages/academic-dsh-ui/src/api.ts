@@ -223,6 +223,8 @@ const candidateManifestSchema = z.object({
         url: z.string().url().max(2_000),
         body: z.string().max(2_000_000),
         contentType: z.string().max(200).optional(),
+        method: z.enum(['GET', 'POST']).optional(),
+        requestBody: z.string().max(16_384).optional(),
       }),
     )
     .min(1)

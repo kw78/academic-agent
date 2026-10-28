@@ -281,9 +281,9 @@ function SourceCard({
       ctx,
       `请为数据源 ${source.sourceId}（${source.displayName}）生成可验证的声明式 Adapter。按阶段执行，证据不足时停止并说明，不要猜测。\n` +
         '1. 先调用 academic_probe_source 探测当前配置页面，记录 status/title/headings/links/scripts/endpointCandidates/tables/containers/jsonShape/digest；不要记录 Cookie。\n' +
-        '2. 若页面是 SPA 外壳（标题/列表/表格/链接基本为空，只有“加载中”），不要生成 selector 占位候选；用 academic_probe_source 的可选 url 参数继续探测同站脚本、分页/列表链接和候选接口，优先找同源 JSON 接口并记录字段/数组形状。默认允许探测任意公开 HTTPS 主机；只有来源显式设置 probeAllowAnyPublicHost=false 时才限制在 cookieDomains/probeAllowedHosts。跨主机不会自动带该域名 Cookie；Manifest 的 allowedOrigins 要列出所有实际请求主机。需要先摸清一个栏目时，可调用 academic_crawl_source 从入口 URL 有界抓取（最多 10 页、深度 2、只跟 GET 链接，仍受 probePathPrefixes 限制）。\n' +
+        '2. 若页面是 SPA 外壳（标题/列表/表格/链接基本为空，只有“加载中”），不要生成 selector 占位候选；用 academic_probe_source 的可选 url 参数继续探测同站脚本、分页/列表链接和候选接口，优先找同源 JSON 接口并记录字段/数组形状。默认允许探测任意公开 HTTPS 主机；只有来源显式设置 probeAllowAnyPublicHost=false 时才限制在 cookieDomains/probeAllowedHosts。跨主机不会自动带该域名 Cookie；Manifest 的 allowedOrigins 要列出所有实际请求主机。需要先摸清一个栏目时，可调用 academic_crawl_source 从入口 URL 有界抓取（最多 10 页、深度 2、只跟 GET 链接，仍受 probePathPrefixes 限制）。若列表只能 POST 取得，可对候选接口用 method=POST + JSON body 探测并 capture；Manifest 用 method/body 表达同样的只读 JSON 请求（POST 不支持 next 翻页，改用 pageParam/pageIn=body 或 offsetParam/offsetIn=body）。\n' +
         '3. 找到真实列表页或 JSON 接口后，先根据 tables[].className/headers、containers[].className 和 links 推断选择器，再用 academic_probe_source 的 capture=true 捕获响应，拿到 sampleId；原始页面只留在宿主，不要把整页内容粘贴到对话里。\n' +
-        '4. 只有拿到真实页面/真实 JSON 样本后才生成字段映射；用 sampleIds（或真实 samples）调用 academic_validate_adapter_candidate，样本必须覆盖所有请求 URL。禁止用合成 HTML 让验证变绿，失败只报告结构化原因。\n' +
+        '4. 只有拿到真实页面/真实 JSON 样本后才生成字段映射；用 sampleIds（或真实 samples）调用 academic_validate_adapter_candidate，样本必须覆盖所有请求 URL；POST 样本需带 method:"POST" 和与 Manifest 完全一致的 requestBody。禁止用合成 HTML 让验证变绿，失败只报告结构化原因。\n' +
         '5. 不注册、不启用、不扩大域名/路径；需要更宽路径时给出精确 URL/前缀，交由我在“连接”页确认。\n' +
         '6. 输出：已探测 URL/状态、尝试过的脚本/接口、捕获到的 sampleId、阻塞点、需要我提供的唯一信息、候选是否已保存/验证。',
     )
@@ -1171,7 +1171,13 @@ function CandidatePanel({
 
   const parseInput = (): {
     manifest: unknown
-    samples: Array<{ url: string; body: string; contentType?: string }>
+    samples: Array<{
+      url: string
+      body: string
+      contentType?: string
+      method?: 'GET' | 'POST'
+      requestBody?: string
+    }>
   } | undefined => {
     try {
       const manifest = JSON.parse(manifestJson) as unknown
@@ -1185,6 +1191,8 @@ function CandidatePanel({
           url: string
           body: string
           contentType?: string
+          method?: 'GET' | 'POST'
+          requestBody?: string
         }>,
       }
     } catch (error) {

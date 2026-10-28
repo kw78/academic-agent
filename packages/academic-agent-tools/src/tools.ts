@@ -95,7 +95,11 @@ export interface AcademicToolDependencies {
   probeSource?: (
     sourceId: string,
     url?: string,
-    options?: { captureSample?: boolean },
+    options?: {
+      captureSample?: boolean
+      method?: 'GET' | 'POST'
+      body?: Record<string, unknown>
+    },
   ) => Promise<SourceProbeEvidence>
   getProbeSample?: (sampleId: string) => AdapterSample | undefined
 }
@@ -231,6 +235,8 @@ const adapterSampleSchema = z.object({
   url: z.string().url(),
   body: z.string().max(2_000_000),
   contentType: z.string().max(200).optional(),
+  method: z.enum(['GET', 'POST']).optional(),
+  requestBody: z.string().max(16_384).optional(),
 })
 const adapterManifestSchema = z.record(z.string(), z.unknown())
 const adapterCandidateSchema = z
@@ -527,17 +533,29 @@ export function createAcademicTools(
             ? [
                 defineTool(
                   ACADEMIC_TOOL_NAMES.ProbeSource,
-                  'Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host\'s cookies. Read-only; never returns cookies or URL query strings.',
-                  z.object({
-                    sourceId: z.string().min(1).max(200),
-                    url: z.string().url().optional(),
-                    capture: z.boolean().optional(),
-                  }),
+                  'Read one page with a saved source session and return sanitized evidence (title, headings, links, scripts, endpoint candidates, JSON shape). Any public HTTPS host is allowed by default (SSRF checks still apply); a source can restrict this with probeAllowAnyPublicHost=false or list extra hosts in probeAllowedHosts. Cross-host requests do not carry the other host\'s cookies. POST is allowed only as an explicit JSON body for read-only list/detail APIs; forms and custom headers are never sent. Read-only; never returns cookies or URL query strings.',
+                  z
+                    .object({
+                      sourceId: z.string().min(1).max(200),
+                      url: z.string().url().optional(),
+                      capture: z.boolean().optional(),
+                      method: z.enum(['GET', 'POST']).optional(),
+                      body: z.record(z.string(), z.unknown()).optional(),
+                    })
+                    .refine(
+                      (value) =>
+                        value.method === 'POST' || value.body === undefined,
+                      { message: 'body requires method: POST', path: ['body'] },
+                    ),
                   async (input) => {
                     const evidence = await dependencies.probeSource!(
                       input.sourceId,
                       input.url,
-                      input.capture ? { captureSample: true } : undefined,
+                      {
+                        ...(input.capture ? { captureSample: true } : {}),
+                        ...(input.method ? { method: input.method } : {}),
+                        ...(input.body ? { body: input.body } : {}),
+                      },
                     )
                     if (evidence.status === 401 || evidence.status === 403) {
                       return failure(

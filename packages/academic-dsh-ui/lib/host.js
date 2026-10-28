@@ -20414,7 +20414,9 @@ var candidateManifestSchema = external_exports.object({
     external_exports.object({
       url: external_exports.string().url().max(2e3),
       body: external_exports.string().max(2e6),
-      contentType: external_exports.string().max(200).optional()
+      contentType: external_exports.string().max(200).optional(),
+      method: external_exports.enum(["GET", "POST"]).optional(),
+      requestBody: external_exports.string().max(16384).optional()
     })
   ).min(1).max(20)
 });

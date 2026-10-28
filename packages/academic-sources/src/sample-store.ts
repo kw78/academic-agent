@@ -12,6 +12,7 @@ export interface CapturedProbeSample extends AdapterSample {
 export interface ProbeSampleSummary {
   sampleId: string
   url: string
+  method: 'GET' | 'POST'
   contentType?: string
   bytes: number
   digest: string
@@ -43,7 +44,9 @@ export class ProbeSampleStore {
   put(sample: AdapterSample, evidence?: SourceProbeEvidence): CapturedProbeSample {
     const now = this.#now()
     this.#evict(now)
-    const existing = this.findByUrl(sample.url)
+    const method = sample.method ?? 'GET'
+    const requestBody = method === 'POST' ? sample.requestBody : undefined
+    const existing = this.findByRequest(sample.url, method, requestBody)
     if (existing && existing.digest === createHash('sha256').update(sample.body).digest('hex')) {
       if (evidence) existing.evidence = { ...evidence, sampleId: existing.sampleId }
       return existing
@@ -54,6 +57,8 @@ export class ProbeSampleStore {
     const captured: CapturedProbeSample = {
       sampleId: randomUUID(),
       url: sample.url,
+      method,
+      ...(requestBody !== undefined ? { requestBody } : {}),
       body,
       ...(sample.contentType ? { contentType: sample.contentType } : {}),
       digest: createHash('sha256').update(body).digest('hex'),
@@ -71,10 +76,21 @@ export class ProbeSampleStore {
   }
 
   findByUrl(url: string): CapturedProbeSample | undefined {
+    return this.findByRequest(url, 'GET')
+  }
+
+  findByRequest(
+    url: string,
+    method: 'GET' | 'POST',
+    requestBody?: string,
+  ): CapturedProbeSample | undefined {
     this.#evict(this.#now())
     let found: CapturedProbeSample | undefined
     for (const sample of this.#samples.values()) {
-      if (sample.url === url) found = sample
+      if (sample.url !== url) continue
+      if ((sample.method ?? 'GET') !== method) continue
+      if ((sample.requestBody ?? '') !== (requestBody ?? '')) continue
+      found = sample
     }
     return found
   }
@@ -86,6 +102,8 @@ export class ProbeSampleStore {
     return {
       url: sample.url,
       body: sample.body,
+      method: sample.method ?? 'GET',
+      ...(sample.requestBody ? { requestBody: sample.requestBody } : {}),
       ...(sample.contentType ? { contentType: sample.contentType } : {}),
     }
   }
@@ -97,6 +115,7 @@ export class ProbeSampleStore {
     return {
       sampleId: sample.sampleId,
       url: sample.url,
+      method: sample.method ?? 'GET',
       ...(sample.contentType ? { contentType: sample.contentType } : {}),
       bytes: sample.bytes,
       digest: sample.digest,
