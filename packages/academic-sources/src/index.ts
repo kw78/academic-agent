@@ -321,6 +321,29 @@ export class SourceConfigStore implements SourceConfigStoreApi {
     return this.get(sourceId)!
   }
 
+  restore(sourceId: string): SourceConfig {
+    const current = this.get(sourceId)
+    if (!current) throw new SourceNotFoundError(sourceId)
+    if (!current.archived) return current
+    const now = this.#clock.now()
+    this.#db
+      .prepare(
+        `UPDATE academic_sources SET
+           archived = 0, enabled = 1, version = version + 1, updated_at = ?
+         WHERE source_id = ?`,
+      )
+      .run(now, sourceId)
+    return this.get(sourceId)!
+  }
+
+  delete(sourceId: string): void {
+    const current = this.get(sourceId)
+    if (!current) throw new SourceNotFoundError(sourceId)
+    this.#db
+      .prepare('DELETE FROM academic_sources WHERE source_id = ?')
+      .run(sourceId)
+  }
+
   #toConfig(row: SourceRow): SourceConfig {
     return {
       sourceId: row.source_id,

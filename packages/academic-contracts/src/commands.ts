@@ -72,7 +72,16 @@ export const COMMAND_SCHEMAS = {
   'academic.course.rename.v1': z.object({
     title: z.string().min(1),
   }),
+  'academic.course.update.v1': z.object({
+    termId: z.string().min(1).optional(),
+    code: z.string().min(1).optional(),
+    title: z.string().min(1).optional(),
+  }),
   'academic.course.archive.v1': z.object({
+    reason: z.string().max(500).optional(),
+  }),
+  'academic.course.restore.v1': emptyPayloadSchema,
+  'academic.course.delete.v1': z.object({
     reason: z.string().max(500).optional(),
   }),
   'academic.item.discover.v1': academicItemSnapshotSchema,
@@ -83,6 +92,7 @@ export const COMMAND_SCHEMAS = {
   'academic.item.archive.v1': z.object({
     reason: z.string().max(500).optional(),
   }),
+  'academic.item.restore.v1': emptyPayloadSchema,
   'academic.task.create.v1': z.object({
     title: z.string().min(1),
     itemId: z.string().min(1).optional(),
@@ -93,6 +103,16 @@ export const COMMAND_SCHEMAS = {
   'academic.task.change-estimate.v1': z.object({
     estimateMinutes: z.number().int().min(5).max(1440),
   }),
+  'academic.task.change-details.v1': z.object({
+    title: z.string().min(1).optional(),
+    dueAt: isoDateTimeSchema.nullable().optional(),
+    priority: z.number().int().min(0).max(3).optional(),
+    estimateMinutes: z.number().int().min(5).max(1440).optional(),
+  }),
+  'academic.task.archive.v1': z.object({
+    reason: z.string().max(500).optional(),
+  }),
+  'academic.task.restore.v1': emptyPayloadSchema,
   'academic.task.complete.v1': emptyPayloadSchema,
   'academic.task.reopen.v1': emptyPayloadSchema,
   'academic.plan.accept.v1': z.object({
@@ -117,13 +137,20 @@ export type CommandPayload<T extends CommandType> = z.infer<(typeof COMMAND_SCHE
 export const COMMAND = {
   CourseCreate: 'academic.course.create.v1',
   CourseRename: 'academic.course.rename.v1',
+  CourseUpdate: 'academic.course.update.v1',
   CourseArchive: 'academic.course.archive.v1',
+  CourseRestore: 'academic.course.restore.v1',
+  CourseDelete: 'academic.course.delete.v1',
   AcademicItemDiscover: 'academic.item.discover.v1',
   AcademicItemSync: 'academic.item.sync.v1',
   AcademicItemSetProgress: 'academic.item.set-progress.v1',
   AcademicItemArchive: 'academic.item.archive.v1',
+  AcademicItemRestore: 'academic.item.restore.v1',
   StudyTaskCreate: 'academic.task.create.v1',
   StudyTaskChangeEstimate: 'academic.task.change-estimate.v1',
+  StudyTaskChangeDetails: 'academic.task.change-details.v1',
+  StudyTaskArchive: 'academic.task.archive.v1',
+  StudyTaskRestore: 'academic.task.restore.v1',
   StudyTaskComplete: 'academic.task.complete.v1',
   StudyTaskReopen: 'academic.task.reopen.v1',
   StudyPlanAccept: 'academic.plan.accept.v1',

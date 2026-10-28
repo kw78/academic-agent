@@ -27,6 +27,7 @@ export interface CourseView {
   code: string
   title: string
   archived: boolean
+  deleted: boolean
   source?: CourseSource
   createdAt: string
   updatedAt: string
@@ -66,6 +67,7 @@ export interface StudyTaskView {
   dueAt?: string
   priority: number
   status: StudyTaskStatus
+  archived: boolean
   completedAt?: string
   createdAt: string
   updatedAt: string
@@ -76,6 +78,8 @@ export interface ListStudyTasksParams {
   from?: string
   to?: string
   status?: StudyTaskStatus | 'all'
+  /** Archived tasks stay in history but are excluded from planning by default. */
+  includeArchived?: boolean
 }
 
 export interface StudyPlanView {

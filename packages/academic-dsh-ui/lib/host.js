@@ -19829,7 +19829,16 @@ var COMMAND_SCHEMAS = {
   "academic.course.rename.v1": external_exports.object({
     title: external_exports.string().min(1)
   }),
+  "academic.course.update.v1": external_exports.object({
+    termId: external_exports.string().min(1).optional(),
+    code: external_exports.string().min(1).optional(),
+    title: external_exports.string().min(1).optional()
+  }),
   "academic.course.archive.v1": external_exports.object({
+    reason: external_exports.string().max(500).optional()
+  }),
+  "academic.course.restore.v1": emptyPayloadSchema,
+  "academic.course.delete.v1": external_exports.object({
     reason: external_exports.string().max(500).optional()
   }),
   "academic.item.discover.v1": academicItemSnapshotSchema,
@@ -19840,6 +19849,7 @@ var COMMAND_SCHEMAS = {
   "academic.item.archive.v1": external_exports.object({
     reason: external_exports.string().max(500).optional()
   }),
+  "academic.item.restore.v1": emptyPayloadSchema,
   "academic.task.create.v1": external_exports.object({
     title: external_exports.string().min(1),
     itemId: external_exports.string().min(1).optional(),
@@ -19850,6 +19860,16 @@ var COMMAND_SCHEMAS = {
   "academic.task.change-estimate.v1": external_exports.object({
     estimateMinutes: external_exports.number().int().min(5).max(1440)
   }),
+  "academic.task.change-details.v1": external_exports.object({
+    title: external_exports.string().min(1).optional(),
+    dueAt: isoDateTimeSchema.nullable().optional(),
+    priority: external_exports.number().int().min(0).max(3).optional(),
+    estimateMinutes: external_exports.number().int().min(5).max(1440).optional()
+  }),
+  "academic.task.archive.v1": external_exports.object({
+    reason: external_exports.string().max(500).optional()
+  }),
+  "academic.task.restore.v1": emptyPayloadSchema,
   "academic.task.complete.v1": emptyPayloadSchema,
   "academic.task.reopen.v1": emptyPayloadSchema,
   "academic.plan.accept.v1": external_exports.object({
@@ -19892,7 +19912,22 @@ var EVENT_SCHEMAS = {
     title: external_exports.string().min(1),
     previousTitle: external_exports.string().min(1)
   }),
+  "academic.course.updated": external_exports.object({
+    termId: external_exports.string().min(1),
+    code: external_exports.string().min(1),
+    title: external_exports.string().min(1),
+    previous: external_exports.object({
+      termId: external_exports.string().min(1),
+      code: external_exports.string().min(1),
+      title: external_exports.string().min(1)
+    }),
+    changedFields: external_exports.array(external_exports.enum(["termId", "code", "title"])).min(1)
+  }),
   "academic.course.archived": external_exports.object({
+    reason: external_exports.string().max(500).optional()
+  }),
+  "academic.course.restored": external_exports.object({}),
+  "academic.course.deleted": external_exports.object({
     reason: external_exports.string().max(500).optional()
   }),
   "academic.item.discovered": academicItemSnapshotSchema,
@@ -19911,6 +19946,7 @@ var EVENT_SCHEMAS = {
   "academic.item.archived": external_exports.object({
     reason: external_exports.string().max(500).optional()
   }),
+  "academic.item.restored": external_exports.object({}),
   "academic.task.created": external_exports.object({
     title: external_exports.string().min(1),
     itemId: external_exports.string().min(1).optional(),
@@ -19922,6 +19958,23 @@ var EVENT_SCHEMAS = {
     estimateMinutes: external_exports.number().int().min(5).max(1440),
     previousEstimateMinutes: external_exports.number().int().min(5).max(1440)
   }),
+  "academic.task.details-changed": external_exports.object({
+    title: external_exports.string().min(1),
+    dueAt: isoDateTimeSchema.optional(),
+    priority: external_exports.number().int().min(0).max(3),
+    estimateMinutes: external_exports.number().int().min(5).max(1440),
+    previous: external_exports.object({
+      title: external_exports.string().min(1),
+      dueAt: isoDateTimeSchema.optional(),
+      priority: external_exports.number().int().min(0).max(3),
+      estimateMinutes: external_exports.number().int().min(5).max(1440)
+    }),
+    changedFields: external_exports.array(external_exports.enum(["title", "dueAt", "priority", "estimateMinutes"])).min(1)
+  }),
+  "academic.task.archived": external_exports.object({
+    reason: external_exports.string().max(500).optional()
+  }),
+  "academic.task.restored": external_exports.object({}),
   "academic.task.completed": external_exports.object({
     completedAt: isoDateTimeSchema
   }),
@@ -20248,7 +20301,8 @@ var itemsSchema = external_exports.object({
   cursor: external_exports.string().min(1).optional()
 });
 var tasksSchema = external_exports.object({
-  status: external_exports.enum(["active", "completed", "all"]).optional()
+  status: external_exports.enum(["active", "completed", "all"]).optional(),
+  includeArchived: external_exports.boolean().optional()
 });
 var previewSchema = external_exports.object({
   start: external_exports.string().min(1),
@@ -20316,6 +20370,19 @@ var createSourceSchema = external_exports.object({
   config: external_exports.record(external_exports.string(), external_exports.unknown()).optional(),
   capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
   enabled: external_exports.boolean().optional()
+});
+var updateCourseSchema = external_exports.object({
+  id: external_exports.string().min(1),
+  termId: external_exports.string().min(1).max(100).optional(),
+  code: external_exports.string().min(1).max(100).optional(),
+  title: external_exports.string().min(1).max(300).optional()
+});
+var updateTaskSchema = external_exports.object({
+  taskId: external_exports.string().min(1),
+  title: external_exports.string().min(1).max(500).optional(),
+  dueAt: external_exports.string().min(1).nullable().optional(),
+  priority: external_exports.number().int().min(0).max(3).optional(),
+  estimateMinutes: external_exports.number().int().min(5).max(1440).optional()
 });
 var updateSourceSchema = external_exports.object({
   sourceId: external_exports.string().min(1),
@@ -20555,7 +20622,7 @@ async function buildPreferencesView(app) {
   const page = await app.store.queries.listCourses();
   return {
     coursePriorities: preferences.coursePriorities,
-    courses: page.items.filter((course) => !course.archived).map((course) => ({
+    courses: page.items.filter((course) => !course.archived && !course.deleted).map((course) => ({
       courseId: course.courseId,
       code: course.code,
       title: course.title,
@@ -20785,7 +20852,7 @@ function sourceDetail(source) {
 }
 function buildSources(app, connections, syncRuns) {
   const catalog = /* @__PURE__ */ new Map();
-  for (const config2 of app.sources.list()) {
+  for (const config2 of app.sources.list({ includeArchived: true })) {
     const engine = app.sourceEngines.get(config2.engine);
     const available = Boolean(engine) && config2.enabled && !config2.archived;
     const adapterReady = available && Boolean(engine?.createAdapter);
@@ -20869,100 +20936,6 @@ function sourceStatusFor(app, sourceId) {
     (source) => source.sourceId === sourceId
   );
 }
-function escapePattern(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-function candidateSourceId(adapterId) {
-  const slug = adapterId.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 80);
-  return `adapter-${slug}`;
-}
-function configAllowsHost(config2, host) {
-  const domains = Array.isArray(config2.cookieDomains) ? config2.cookieDomains.filter(
-    (entry) => typeof entry === "string"
-  ) : [];
-  const target = host.toLowerCase();
-  return domains.some((entry) => {
-    const domain2 = entry.toLowerCase().replace(/^\./, "");
-    return target === domain2 || target.endsWith(`.${domain2}`);
-  });
-}
-async function ensureCandidateSource(app, candidate) {
-  const manifest = app.manifestRegistry.get(candidate.adapterId, candidate.version);
-  if (!manifest) return { warning: "Manifest \u672A\u6CE8\u518C\uFF0C\u65E0\u6CD5\u521B\u5EFA\u540C\u6B65\u6570\u636E\u6E90" };
-  if (!app.sourceEngines.get("declarative")) {
-    return { warning: "declarative engine \u672A\u52A0\u8F7D\uFF0C\u65E0\u6CD5\u521B\u5EFA\u540C\u6B65\u6570\u636E\u6E90" };
-  }
-  const base = new URL(manifest.baseUrl);
-  const host = base.hostname;
-  const config2 = {
-    manifestId: candidate.adapterId,
-    manifestVersion: candidate.version,
-    baseUrl: base.toString(),
-    loginUrl: base.toString(),
-    authenticatedUrlPatterns: [`^${escapePattern(base.origin)}/`],
-    cookieDomains: [host],
-    verifyUrl: base.toString(),
-    loggedOutPatterns: ["/login"]
-  };
-  let sourceId = candidateSourceId(candidate.adapterId);
-  let existing = app.sources.get(sourceId);
-  if (existing?.archived) {
-    sourceId = `${sourceId}-${candidate.version}`.slice(0, 200);
-    existing = app.sources.get(sourceId);
-  }
-  if (!existing) {
-    app.sources.create({
-      sourceId,
-      engine: "declarative",
-      displayName: manifest.displayName,
-      authKind: "token",
-      loginMode: "browser",
-      capabilities: ["academic.sync"],
-      config: config2
-    });
-  } else {
-    app.sources.update(sourceId, {
-      displayName: manifest.displayName,
-      authKind: "token",
-      loginMode: "browser",
-      capabilities: ["academic.sync"],
-      config: config2
-    });
-  }
-  let warning;
-  const loginSource = app.sources.list().find(
-    (source) => source.sourceId !== sourceId && source.engine !== "fixture" && source.engine !== "declarative" && source.authKind !== "none" && configAllowsHost(source.config, host)
-  );
-  const loginConnection = loginSource ? app.connections.list().find(
-    (connection) => connection.sourceId === loginSource.sourceId && connection.hasCredential && connection.status === "connected"
-  ) : void 0;
-  if (loginSource && loginConnection) {
-    try {
-      const lease = await app.connections.openCredential(
-        loginConnection.connectionId,
-        loginSource.sourceId
-      );
-      const secret = await lease.getSecret();
-      const target = app.connections.list().find((connection) => connection.sourceId === sourceId) ?? app.connections.create({
-        sourceId,
-        displayName: manifest.displayName,
-        authKind: "token"
-      });
-      await app.connections.setSecret(target.connectionId, secret);
-      await app.connections.verify(target.connectionId, async () => ({ ok: true }));
-    } catch {
-      warning = "\u5DF2\u6709\u4F1A\u8BDD\u65E0\u6CD5\u590D\u5236\uFF1B\u8BF7\u5728\u8BE5\u6570\u636E\u6E90\u4E0A\u91CD\u65B0\u767B\u5F55";
-    }
-  } else if (loginSource && loginConnection === void 0) {
-    warning = "\u8BF7\u5148\u9A8C\u8BC1\u539F\u4F1A\u8BDD\uFF0C\u518D\u542F\u7528\u5019\u9009";
-  } else {
-    warning = "\u8BF7\u5728\u8BE5\u6570\u636E\u6E90\u4E0A\u5B8C\u6210\u767B\u5F55\u540E\u518D\u540C\u6B65";
-  }
-  return {
-    ...sourceStatusFor(app, sourceId) ? { source: sourceStatusFor(app, sourceId) } : {},
-    ...warning ? { warning } : {}
-  };
-}
 function syncHealth(lastSync, now, staleAfterMs) {
   if (!lastSync) return "unknown";
   if (lastSync.status === "auth-required") return "auth-required";
@@ -20974,9 +20947,10 @@ function syncHealth(lastSync, now, staleAfterMs) {
 }
 async function loadTasks(app, options = {}) {
   const [taskPage, itemPage, coursePage, plan] = await Promise.all([
-    app.store.queries.listStudyTasks(
-      options.status ? { status: options.status } : {}
-    ),
+    app.store.queries.listStudyTasks({
+      ...options.status ? { status: options.status } : {},
+      ...options.includeArchived ? { includeArchived: true } : {}
+    }),
     app.store.queries.listAcademicItems({ status: "all", limit: MAX_ITEMS }),
     app.store.queries.listCourses(),
     app.getLatestPlan()
@@ -21404,6 +21378,32 @@ function createAcademicUiApi(app) {
         return fromError(error62);
       }
     },
+    async restoreSource(request) {
+      const parsed = parse3(sourceIdSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        app.sources.restore(body.sourceId);
+        const source = sourceStatusFor(app, body.sourceId);
+        return source ? ok(source) : failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async deleteSource(request) {
+      const parsed = parse3(sourceIdSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      const source = app.sources.get(body.sourceId);
+      if (!source) return failure2("NOT_FOUND", "\u6570\u636E\u6E90\u4E0D\u5B58\u5728");
+      try {
+        await app.connections.deleteBySource(body.sourceId);
+        app.sources.delete(body.sourceId);
+        return ok({ deleted: true });
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
     async sourceLogin(request) {
       const parsed = parse3(sourceIdSchema, request);
       if (!parsed.ok) return parsed;
@@ -21514,14 +21514,15 @@ function createAcademicUiApi(app) {
         return failure2("VALIDATION", "\u542F\u7528\u5019\u9009\u9700\u8981\u660E\u786E\u7248\u672C");
       }
       try {
-        const candidate = app.adapterCandidates.activate(
+        const activation = await app.activateAdapterCandidate(
           body.adapterId,
           body.version
         );
-        const activation = await ensureCandidateSource(app, candidate);
+        const source = activation.sourceId ? sourceStatusFor(app, activation.sourceId) : void 0;
         return ok({
-          candidate,
-          ...activation
+          candidate: activation.candidate,
+          ...source ? { source } : {},
+          ...activation.warning ? { warning: activation.warning } : {}
         });
       } catch (error62) {
         return fromError(error62);
@@ -21532,12 +21533,11 @@ function createAcademicUiApi(app) {
       if (!parsed.ok) return parsed;
       const body = parsed.value;
       try {
-        const candidate = app.adapterCandidates.rollback(
+        const activation = await app.rollbackAdapterCandidate(
           body.adapterId,
           body.version
         );
-        await ensureCandidateSource(app, candidate);
-        return ok(candidate);
+        return ok(activation.candidate);
       } catch (error62) {
         return fromError(error62);
       }
@@ -21853,17 +21853,69 @@ function createAcademicUiApi(app) {
       const body = parsed.value;
       return commandReceipt(await app.addCourse(body));
     },
+    async updateCourse(request) {
+      const parsed = parse3(updateCourseSchema, request);
+      if (!parsed.ok) return parsed;
+      const { id, ...input2 } = parsed.value;
+      return commandReceipt(await app.updateCourse(id, input2));
+    },
     async archiveCourse(request) {
       const parsed = parse3(idSchema, request);
       if (!parsed.ok) return parsed;
       const body = parsed.value;
       return commandReceipt(await app.archiveCourse(body.id));
     },
+    async restoreCourse(request) {
+      const parsed = parse3(idSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      return commandReceipt(await app.restoreCourse(body.id));
+    },
+    async deleteCourse(request) {
+      const parsed = parse3(idSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      return commandReceipt(await app.deleteCourse(body.id));
+    },
+    async archiveItem(request) {
+      const parsed = parse3(idSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      return commandReceipt(await app.archiveItem(body.id));
+    },
+    async restoreItem(request) {
+      const parsed = parse3(idSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      return commandReceipt(await app.restoreItem(body.id));
+    },
     async createTask(request) {
       const parsed = parse3(createTaskSchema, request);
       if (!parsed.ok) return parsed;
       const body = parsed.value;
       const result = commandReceipt(await app.createTask(body));
+      if (result.ok) previews.clear();
+      return result;
+    },
+    async updateTask(request) {
+      const parsed = parse3(updateTaskSchema, request);
+      if (!parsed.ok) return parsed;
+      const { taskId, ...input2 } = parsed.value;
+      const result = commandReceipt(await app.updateTask(taskId, input2));
+      if (result.ok) previews.clear();
+      return result;
+    },
+    async archiveTask(request) {
+      const parsed = parse3(idSchema, request);
+      if (!parsed.ok) return parsed;
+      const result = commandReceipt(await app.archiveTask(parsed.value.id));
+      if (result.ok) previews.clear();
+      return result;
+    },
+    async restoreTask(request) {
+      const parsed = parse3(idSchema, request);
+      if (!parsed.ok) return parsed;
+      const result = commandReceipt(await app.restoreTask(parsed.value.id));
       if (result.ok) previews.clear();
       return result;
     },
@@ -21914,6 +21966,8 @@ var REMOTE_METHODS = [
   "createSource",
   "updateSource",
   "archiveSource",
+  "restoreSource",
+  "deleteSource",
   "sourceLogin",
   "probeSource",
   "adapterCandidates",
@@ -21940,8 +21994,16 @@ var REMOTE_METHODS = [
   "settings",
   "updateReminderSettings",
   "addCourse",
+  "updateCourse",
   "archiveCourse",
+  "restoreCourse",
+  "deleteCourse",
+  "archiveItem",
+  "restoreItem",
   "createTask",
+  "updateTask",
+  "archiveTask",
+  "restoreTask",
   "completeTask",
   "reopenTask",
   "changeTaskEstimate"
@@ -22021,6 +22083,12 @@ var AcademicUiService = class extends TypertRemoteService {
   }
   async archiveSource(request) {
     return (await this.apiReady).archiveSource(request);
+  }
+  async restoreSource(request) {
+    return (await this.apiReady).restoreSource(request);
+  }
+  async deleteSource(request) {
+    return (await this.apiReady).deleteSource(request);
   }
   async sourceLogin(request) {
     return (await this.apiReady).sourceLogin(request);
@@ -22108,11 +22176,35 @@ var AcademicUiService = class extends TypertRemoteService {
   async addCourse(request) {
     return (await this.apiReady).addCourse(request);
   }
+  async updateCourse(request) {
+    return (await this.apiReady).updateCourse(request);
+  }
   async archiveCourse(request) {
     return (await this.apiReady).archiveCourse(request);
   }
+  async restoreCourse(request) {
+    return (await this.apiReady).restoreCourse(request);
+  }
+  async deleteCourse(request) {
+    return (await this.apiReady).deleteCourse(request);
+  }
+  async archiveItem(request) {
+    return (await this.apiReady).archiveItem(request);
+  }
+  async restoreItem(request) {
+    return (await this.apiReady).restoreItem(request);
+  }
   async createTask(request) {
     return (await this.apiReady).createTask(request);
+  }
+  async updateTask(request) {
+    return (await this.apiReady).updateTask(request);
+  }
+  async archiveTask(request) {
+    return (await this.apiReady).archiveTask(request);
+  }
+  async restoreTask(request) {
+    return (await this.apiReady).restoreTask(request);
   }
   async completeTask(request) {
     return (await this.apiReady).completeTask(request);

@@ -1,0 +1,2 @@
+ALTER TABLE courses_current ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE study_tasks_current ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;

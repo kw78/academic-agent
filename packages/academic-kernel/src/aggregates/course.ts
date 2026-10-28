@@ -13,6 +13,7 @@ export const courseHandler: AggregateHandler<CourseState> = {
       code: '',
       title: '',
       archived: false,
+      deleted: false,
       createdAt: '',
       updatedAt: '',
       version: 0,
@@ -39,10 +40,35 @@ export const courseHandler: AggregateHandler<CourseState> = {
           updatedAt: event.occurredAt,
           version: event.streamVersion,
         }
+      case EVENT.CourseUpdated:
+        return {
+          ...state,
+          termId: event.payload.termId,
+          code: event.payload.code,
+          title: event.payload.title,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion,
+        }
       case EVENT.CourseArchived:
         return {
           ...state,
           archived: true,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion,
+        }
+      case EVENT.CourseRestored:
+        return {
+          ...state,
+          archived: false,
+          deleted: false,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion,
+        }
+      case EVENT.CourseDeleted:
+        return {
+          ...state,
+          archived: true,
+          deleted: true,
           updatedAt: event.occurredAt,
           version: event.streamVersion,
         }
@@ -73,7 +99,9 @@ export const courseHandler: AggregateHandler<CourseState> = {
 
       case COMMAND.CourseRename:
         if (state.version === 0) return rejected('NOT_FOUND', 'Course does not exist')
-        if (state.archived) return rejected('VALIDATION', 'Archived course cannot be renamed')
+        if (state.archived || state.deleted) {
+          return rejected('VALIDATION', 'Archived course cannot be renamed')
+        }
         if (state.title === command.payload.title) return accepted()
         return accepted({
           type: EVENT.CourseRenamed,
@@ -83,11 +111,52 @@ export const courseHandler: AggregateHandler<CourseState> = {
           },
         })
 
+      case COMMAND.CourseUpdate: {
+        if (state.version === 0) return rejected('NOT_FOUND', 'Course does not exist')
+        if (state.archived || state.deleted) {
+          return rejected('VALIDATION', 'Archived course cannot be updated')
+        }
+        const next = {
+          termId: command.payload.termId ?? state.termId,
+          code: command.payload.code ?? state.code,
+          title: command.payload.title ?? state.title,
+        }
+        const changedFields = (['termId', 'code', 'title'] as const).filter(
+          (field) => next[field] !== state[field],
+        )
+        if (changedFields.length === 0) return accepted()
+        return accepted({
+          type: EVENT.CourseUpdated,
+          payload: {
+            ...next,
+            previous: {
+              termId: state.termId,
+              code: state.code,
+              title: state.title,
+            },
+            changedFields: [...changedFields],
+          },
+        })
+      }
+
       case COMMAND.CourseArchive:
         if (state.version === 0) return rejected('NOT_FOUND', 'Course does not exist')
         if (state.archived) return accepted()
         return accepted({
           type: EVENT.CourseArchived,
+          payload: command.payload.reason ? { reason: command.payload.reason } : {},
+        })
+
+      case COMMAND.CourseRestore:
+        if (state.version === 0) return rejected('NOT_FOUND', 'Course does not exist')
+        if (!state.archived && !state.deleted) return accepted()
+        return accepted({ type: EVENT.CourseRestored, payload: {} })
+
+      case COMMAND.CourseDelete:
+        if (state.version === 0) return rejected('NOT_FOUND', 'Course does not exist')
+        if (state.deleted) return accepted()
+        return accepted({
+          type: EVENT.CourseDeleted,
           payload: command.payload.reason ? { reason: command.payload.reason } : {},
         })
 

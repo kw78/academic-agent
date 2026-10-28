@@ -19852,7 +19852,16 @@ var COMMAND_SCHEMAS = {
   "academic.course.rename.v1": external_exports.object({
     title: external_exports.string().min(1)
   }),
+  "academic.course.update.v1": external_exports.object({
+    termId: external_exports.string().min(1).optional(),
+    code: external_exports.string().min(1).optional(),
+    title: external_exports.string().min(1).optional()
+  }),
   "academic.course.archive.v1": external_exports.object({
+    reason: external_exports.string().max(500).optional()
+  }),
+  "academic.course.restore.v1": emptyPayloadSchema,
+  "academic.course.delete.v1": external_exports.object({
     reason: external_exports.string().max(500).optional()
   }),
   "academic.item.discover.v1": academicItemSnapshotSchema,
@@ -19863,6 +19872,7 @@ var COMMAND_SCHEMAS = {
   "academic.item.archive.v1": external_exports.object({
     reason: external_exports.string().max(500).optional()
   }),
+  "academic.item.restore.v1": emptyPayloadSchema,
   "academic.task.create.v1": external_exports.object({
     title: external_exports.string().min(1),
     itemId: external_exports.string().min(1).optional(),
@@ -19873,6 +19883,16 @@ var COMMAND_SCHEMAS = {
   "academic.task.change-estimate.v1": external_exports.object({
     estimateMinutes: external_exports.number().int().min(5).max(1440)
   }),
+  "academic.task.change-details.v1": external_exports.object({
+    title: external_exports.string().min(1).optional(),
+    dueAt: isoDateTimeSchema.nullable().optional(),
+    priority: external_exports.number().int().min(0).max(3).optional(),
+    estimateMinutes: external_exports.number().int().min(5).max(1440).optional()
+  }),
+  "academic.task.archive.v1": external_exports.object({
+    reason: external_exports.string().max(500).optional()
+  }),
+  "academic.task.restore.v1": emptyPayloadSchema,
   "academic.task.complete.v1": emptyPayloadSchema,
   "academic.task.reopen.v1": emptyPayloadSchema,
   "academic.plan.accept.v1": external_exports.object({
@@ -19915,7 +19935,22 @@ var EVENT_SCHEMAS = {
     title: external_exports.string().min(1),
     previousTitle: external_exports.string().min(1)
   }),
+  "academic.course.updated": external_exports.object({
+    termId: external_exports.string().min(1),
+    code: external_exports.string().min(1),
+    title: external_exports.string().min(1),
+    previous: external_exports.object({
+      termId: external_exports.string().min(1),
+      code: external_exports.string().min(1),
+      title: external_exports.string().min(1)
+    }),
+    changedFields: external_exports.array(external_exports.enum(["termId", "code", "title"])).min(1)
+  }),
   "academic.course.archived": external_exports.object({
+    reason: external_exports.string().max(500).optional()
+  }),
+  "academic.course.restored": external_exports.object({}),
+  "academic.course.deleted": external_exports.object({
     reason: external_exports.string().max(500).optional()
   }),
   "academic.item.discovered": academicItemSnapshotSchema,
@@ -19934,6 +19969,7 @@ var EVENT_SCHEMAS = {
   "academic.item.archived": external_exports.object({
     reason: external_exports.string().max(500).optional()
   }),
+  "academic.item.restored": external_exports.object({}),
   "academic.task.created": external_exports.object({
     title: external_exports.string().min(1),
     itemId: external_exports.string().min(1).optional(),
@@ -19945,6 +19981,23 @@ var EVENT_SCHEMAS = {
     estimateMinutes: external_exports.number().int().min(5).max(1440),
     previousEstimateMinutes: external_exports.number().int().min(5).max(1440)
   }),
+  "academic.task.details-changed": external_exports.object({
+    title: external_exports.string().min(1),
+    dueAt: isoDateTimeSchema.optional(),
+    priority: external_exports.number().int().min(0).max(3),
+    estimateMinutes: external_exports.number().int().min(5).max(1440),
+    previous: external_exports.object({
+      title: external_exports.string().min(1),
+      dueAt: isoDateTimeSchema.optional(),
+      priority: external_exports.number().int().min(0).max(3),
+      estimateMinutes: external_exports.number().int().min(5).max(1440)
+    }),
+    changedFields: external_exports.array(external_exports.enum(["title", "dueAt", "priority", "estimateMinutes"])).min(1)
+  }),
+  "academic.task.archived": external_exports.object({
+    reason: external_exports.string().max(500).optional()
+  }),
+  "academic.task.restored": external_exports.object({}),
   "academic.task.completed": external_exports.object({
     completedAt: isoDateTimeSchema
   }),
@@ -20285,7 +20338,7 @@ var TOOL_SPECS = [
   },
   {
     name: ACADEMIC_TOOL_NAMES.RegisterAdapterCandidate,
-    description: "Store a validated declarative adapter candidate. Write; requires trusted host approval; candidates stay inactive until activated. Use real samples or captured sampleIds.",
+    description: "Store a declarative adapter candidate for user review. Never activates the adapter and never creates a sync source; activation is a separate user-authorized step. Use real samples or captured sampleIds.",
     parameters: {
       manifest: {
         type: "object",
@@ -20312,11 +20365,11 @@ var TOOL_SPECS = [
         items: { type: "string" }
       }
     },
-    write: true
+    write: false
   },
   {
     name: ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate,
-    description: "Activate a validated declarative adapter version. Write; requires trusted host approval; previous versions remain for rollback.",
+    description: "Activate a validated declarative adapter version and create/update its sync source. Write; requires trusted host approval; previous versions remain for rollback.",
     parameters: {
       adapterId: { type: "string", required: true, description: "Adapter id" },
       version: { type: "string", required: true, description: "Validated version" }

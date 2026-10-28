@@ -3,6 +3,7 @@ import type { AcademicItemView } from '@academic/contracts'
 import { callApi } from '../api.js'
 import {
   Badge,
+  ConfirmAction,
   EmptyState,
   Field,
   LoadingLine,
@@ -77,6 +78,21 @@ function tutorPrompt(
   return lines.join('\n')
 }
 
+function toLocalDateTimeInput(iso: string | undefined): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16)
+}
+
+function fromLocalDateTimeInput(value: string): string | null {
+  if (!value.trim()) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
 function TaskRow({
   card,
   timeZone,
@@ -84,7 +100,9 @@ function TaskRow({
   pending,
   onComplete,
   onReopen,
-  onChangeEstimate,
+  onUpdate,
+  onArchive,
+  onRestore,
   onAsk,
 }: {
   card: TaskCard
@@ -93,13 +111,65 @@ function TaskRow({
   pending: boolean
   onComplete: () => void
   onReopen: () => void
-  onChangeEstimate: (minutes: number) => void
+  onUpdate: (input: {
+    title?: string
+    dueAt?: string | null
+    priority?: number
+    estimateMinutes?: number
+  }) => Promise<boolean>
+  onArchive: () => void
+  onRestore: () => void
   onAsk: () => void
 }) {
   const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState(card.task.title)
   const [estimate, setEstimate] = useState(String(card.task.estimateMinutes))
+  const [priority, setPriority] = useState(String(card.task.priority))
+  const [dueInput, setDueInput] = useState(toLocalDateTimeInput(card.task.dueAt))
   const due = formatDue(card.effectiveDue, timeZone, now)
   const completed = card.task.status === 'completed'
+  const archived = card.task.archived
+
+  const save = async () => {
+    const minutes = Number(estimate)
+    if (!title.trim() || !Number.isFinite(minutes) || minutes < 5) return
+    const ok = await onUpdate({
+      title: title.trim(),
+      estimateMinutes: Math.round(minutes),
+      priority: Number(priority) || 0,
+      dueAt: fromLocalDateTimeInput(dueInput),
+    })
+    if (ok) setEditing(false)
+  }
+
+  if (archived) {
+    return (
+      <li className="ac-task-row ac-task-completed">
+        <div className="ac-task-main">
+          <div className="ac-task-title">
+            <strong>{card.task.title}</strong>
+            <Badge tone="bad">已删除</Badge>
+          </div>
+          <div className="ac-task-meta">
+            <span>{card.course?.code ?? '本地任务'}</span>
+            <span>预计 {formatMinutes(card.task.estimateMinutes)}</span>
+            <span>删除后不再参与计划；恢复后继续参与</span>
+          </div>
+        </div>
+        <div className="ac-task-actions">
+          <button
+            type="button"
+            className="ac-button"
+            disabled={pending}
+            onClick={onRestore}
+          >
+            恢复任务
+          </button>
+        </div>
+      </li>
+    )
+  }
+
   return (
     <li className={`ac-task-row${completed ? ' ac-task-completed' : ''}`}>
       <button
@@ -118,26 +188,63 @@ function TaskRow({
           {completed && <Badge tone="ok">本地已完成</Badge>}
           {!completed && !card.planned && <Badge tone="warn">未被计划安排</Badge>}
         </div>
-        <div className="ac-task-meta">
-          <span>{card.course?.code ?? '本地任务'}</span>
-          {card.item && <span>{kindLabel(card.item.kind)}</span>}
-          <span>
-            {card.dueSource === 'item' ? '来源截止' : card.dueSource === 'task' ? '本地截止' : '无截止'}：
-            {due.label}
-          </span>
-          {due.note && <span className="ac-muted">{due.note}</span>}
-          <span>预计 {formatMinutes(card.task.estimateMinutes)}</span>
-          {card.item?.sourceUrl && (
-            <a
-              className="ac-link"
-              href={card.item.sourceUrl}
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              来源链接
-            </a>
-          )}
-        </div>
+        {editing ? (
+          <div className="ac-form-grid">
+            <Field label="标题">
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                maxLength={500}
+              />
+            </Field>
+            <Field label="预计时长（分钟）">
+              <input
+                type="number"
+                min={5}
+                max={1440}
+                value={estimate}
+                onChange={(event) => setEstimate(event.target.value)}
+              />
+            </Field>
+            <Field label="优先级（0–3）">
+              <input
+                type="number"
+                min={0}
+                max={3}
+                value={priority}
+                onChange={(event) => setPriority(event.target.value)}
+              />
+            </Field>
+            <Field label="本地截止（可留空）">
+              <input
+                type="datetime-local"
+                value={dueInput}
+                onChange={(event) => setDueInput(event.target.value)}
+              />
+            </Field>
+          </div>
+        ) : (
+          <div className="ac-task-meta">
+            <span>{card.course?.code ?? '本地任务'}</span>
+            {card.item && <span>{kindLabel(card.item.kind)}</span>}
+            <span>
+              {card.dueSource === 'item' ? '来源截止' : card.dueSource === 'task' ? '本地截止' : '无截止'}：
+              {due.label}
+            </span>
+            {due.note && <span className="ac-muted">{due.note}</span>}
+            <span>预计 {formatMinutes(card.task.estimateMinutes)}</span>
+            {card.item?.sourceUrl && (
+              <a
+                className="ac-link"
+                href={card.item.sourceUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                来源链接
+              </a>
+            )}
+          </div>
+        )}
         <p className="ac-muted ac-task-note">
           本地任务状态与学校提交状态分开保存；标记完成不会提交学校作业。
         </p>
@@ -145,39 +252,31 @@ function TaskRow({
       <div className="ac-task-actions">
         <Badge tone={toneForDue(due.tone)}>{due.label}</Badge>
         {editing ? (
-          <div className="ac-inline-form">
-            <label className="ac-sr-only" htmlFor={`estimate-${card.task.taskId}`}>
-              预计时长（分钟）
-            </label>
-            <input
-              id={`estimate-${card.task.taskId}`}
-              type="number"
-              min={5}
-              max={1440}
-              value={estimate}
-              onChange={(event) => setEstimate(event.target.value)}
-            />
+          <>
             <button
               type="button"
-              className="ac-button"
+              className="ac-button ac-button-primary"
               disabled={pending}
-              onClick={() => {
-                const minutes = Number(estimate)
-                if (!Number.isFinite(minutes) || minutes < 5) return
-                onChangeEstimate(Math.round(minutes))
-                setEditing(false)
-              }}
+              onClick={() => void save()}
             >
               保存
             </button>
             <button type="button" className="ac-button" onClick={() => setEditing(false)}>
               取消
             </button>
-          </div>
+          </>
         ) : (
-          <button type="button" className="ac-button" onClick={() => setEditing(true)}>
-            调整时长
-          </button>
+          <>
+            <button type="button" className="ac-button" onClick={() => setEditing(true)}>
+              编辑任务
+            </button>
+            <ConfirmAction
+              label="删除任务"
+              confirmLabel="确认删除任务"
+              disabled={pending}
+              onConfirm={onArchive}
+            />
+          </>
         )}
         <button type="button" className="ac-button" onClick={onAsk}>
           请教 Agent
@@ -191,11 +290,17 @@ function ItemRow({
   card,
   timeZone,
   now,
+  pending,
+  onArchive,
+  onRestore,
   onAsk,
 }: {
   card: ItemCard
   timeZone: string
   now: string
+  pending: boolean
+  onArchive: () => void
+  onRestore: () => void
   onAsk: () => void
 }) {
   const due = formatDue(card.item.due, timeZone, now)
@@ -205,6 +310,7 @@ function ItemRow({
         <div className="ac-task-title">
           <strong>{card.item.title}</strong>
           <Badge tone="info">{kindLabel(card.item.kind)}</Badge>
+          {card.item.archived && <Badge tone="bad">已归档</Badge>}
           {card.item.progress.status !== 'not-started' && (
             <Badge tone="neutral">进度 {card.item.progress.percent}%</Badge>
           )}
@@ -225,12 +331,31 @@ function ItemRow({
           )}
         </div>
         <p className="ac-muted ac-task-note">
-          来源事实；学校提交状态未接入，不能由本地进度推断。
+          {card.item.archived
+            ? '已归档：同步会跳过该事项；恢复后继续接收来源更新。'
+            : '来源事实；学校提交状态未接入，不能由本地进度推断。'}
         </p>
       </div>
       <div className="ac-item-due">
         <Badge tone={toneForDue(due.tone)}>{due.label}</Badge>
         {due.note && <span className="ac-muted">{due.note}</span>}
+        {card.item.archived ? (
+          <button
+            type="button"
+            className="ac-button"
+            disabled={pending}
+            onClick={onRestore}
+          >
+            恢复事项
+          </button>
+        ) : (
+          <ConfirmAction
+            label="归档事项"
+            confirmLabel="确认归档"
+            disabled={pending}
+            onConfirm={onArchive}
+          />
+        )}
         <button type="button" className="ac-button" onClick={onAsk}>
           请教 Agent
         </button>
@@ -242,12 +367,18 @@ function ItemRow({
 export function TasksPage({ ctx, active }: PageProps) {
   const load = useCallback(
     (signal: AbortSignal) =>
-      callApi<TasksView>(ctx, 'tasks', { status: 'all' }, signal),
+      callApi<TasksView>(
+        ctx,
+        'tasks',
+        { status: 'all', includeArchived: true },
+        signal,
+      ),
     [ctx],
   )
   const { state, refresh } = useLoad(load, active)
   const [filters, setFilters] = useState<TaskFilters>(DEFAULT_TASK_FILTERS)
   const [pane, setPane] = useState<'tasks' | 'items' | 'review'>('tasks')
+  const [showArchived, setShowArchived] = useState(false)
   const [creating, setCreating] = useState(false)
   const [title, setTitle] = useState('')
   const [estimate, setEstimate] = useState('60')
@@ -260,8 +391,18 @@ export function TasksPage({ ctx, active }: PageProps) {
   const now = new Date().toISOString()
 
   const visibleTasks = useMemo(
-    () => (data ? filterTaskCards(data.cards, filters, timeZone, now) : []),
-    [data, filters, timeZone, now],
+    () =>
+      data
+        ? filterTaskCards(
+            showArchived
+              ? data.cards
+              : data.cards.filter((card) => !card.task.archived),
+            filters,
+            timeZone,
+            now,
+          )
+        : [],
+    [data, filters, timeZone, now, showArchived],
   )
   const visibleItems = useMemo(() => {
     if (!data) return []
@@ -273,7 +414,7 @@ export function TasksPage({ ctx, active }: PageProps) {
       unknown: 4,
     }
     return data.items
-      .filter((card) => !card.item.archived)
+      .filter((card) => showArchived || !card.item.archived)
       .filter((card) => filters.courseId === 'all' || card.item.courseId === filters.courseId)
       .filter((card) => filters.kind === 'all' || card.item.kind === filters.kind)
       .filter((card) => {
@@ -291,13 +432,13 @@ export function TasksPage({ ctx, active }: PageProps) {
         if (rank[leftTone] !== rank[rightTone]) return rank[leftTone] - rank[rightTone]
         return left.item.title.localeCompare(right.item.title, 'zh-CN')
       })
-  }, [data, filters, timeZone, now])
+  }, [data, filters, timeZone, now, showArchived])
 
   const reviewGroups = useMemo(() => {
     if (!data) return []
     const tasksByItem = new Map<string, TaskCard[]>()
     for (const card of data.cards) {
-      if (!card.item) continue
+      if (!card.item || card.task.archived) continue
       const list = tasksByItem.get(card.item.itemId) ?? []
       list.push(card)
       tasksByItem.set(card.item.itemId, list)
@@ -439,6 +580,13 @@ export function TasksPage({ ctx, active }: PageProps) {
                 复习清单
               </button>
             </div>
+            <button
+              type="button"
+              className="ac-button"
+              onClick={() => setShowArchived((value) => !value)}
+            >
+              {showArchived ? '隐藏已归档/已删除' : '显示已归档/已删除'}
+            </button>
             <button
               type="button"
               className="ac-button"
@@ -607,15 +755,35 @@ export function TasksPage({ ctx, active }: PageProps) {
                       onReopen={() =>
                         void taskCommand('reopen', 'reopenTask', card.task.taskId)
                       }
-                      onChangeEstimate={(minutes) =>
-                        void action.run(
-                          'estimate',
+                      onUpdate={(input) =>
+                        action.run(
+                          'task-update',
                           () =>
-                            callApi<CommandReceipt>(ctx, 'changeTaskEstimate', {
+                            callApi<CommandReceipt>(ctx, 'updateTask', {
                               taskId: card.task.taskId,
-                              estimateMinutes: minutes,
+                              ...input,
                             }),
-                          '预计时长已更新',
+                          '任务已更新',
+                        )
+                      }
+                      onArchive={() =>
+                        void action.run(
+                          'task-archive',
+                          () =>
+                            callApi<CommandReceipt>(ctx, 'archiveTask', {
+                              id: card.task.taskId,
+                            }),
+                          '任务已删除；可在“显示已归档/已删除”中恢复',
+                        )
+                      }
+                      onRestore={() =>
+                        void action.run(
+                          'task-restore',
+                          () =>
+                            callApi<CommandReceipt>(ctx, 'restoreTask', {
+                              id: card.task.taskId,
+                            }),
+                          '任务已恢复',
                         )
                       }
                       onAsk={() => {
@@ -651,6 +819,27 @@ export function TasksPage({ ctx, active }: PageProps) {
                       card={card}
                       timeZone={timeZone}
                       now={now}
+                      pending={action.pending !== undefined}
+                      onArchive={() =>
+                        void action.run(
+                          'item-archive',
+                          () =>
+                            callApi<CommandReceipt>(ctx, 'archiveItem', {
+                              id: card.item.itemId,
+                            }),
+                          '来源事项已归档；同步会跳过它',
+                        )
+                      }
+                      onRestore={() =>
+                        void action.run(
+                          'item-restore',
+                          () =>
+                            callApi<CommandReceipt>(ctx, 'restoreItem', {
+                              id: card.item.itemId,
+                            }),
+                          '来源事项已恢复；后续同步会继续更新',
+                        )
+                      }
                       onAsk={() => {
                         const prompt = tutorPrompt(card, timeZone, now)
                         if (!askAgent(ctx, prompt)) {

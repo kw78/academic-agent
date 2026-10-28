@@ -391,6 +391,7 @@ export interface ItemsRequest {
 
 export interface TasksRequest {
   status?: 'active' | 'completed' | 'all'
+  includeArchived?: boolean
 }
 
 export interface PreviewPlanRequest {

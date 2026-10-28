@@ -28,7 +28,22 @@ export const EVENT_SCHEMAS = {
     title: z.string().min(1),
     previousTitle: z.string().min(1),
   }),
+  'academic.course.updated': z.object({
+    termId: z.string().min(1),
+    code: z.string().min(1),
+    title: z.string().min(1),
+    previous: z.object({
+      termId: z.string().min(1),
+      code: z.string().min(1),
+      title: z.string().min(1),
+    }),
+    changedFields: z.array(z.enum(['termId', 'code', 'title'])).min(1),
+  }),
   'academic.course.archived': z.object({
+    reason: z.string().max(500).optional(),
+  }),
+  'academic.course.restored': z.object({}),
+  'academic.course.deleted': z.object({
     reason: z.string().max(500).optional(),
   }),
   'academic.item.discovered': academicItemSnapshotSchema,
@@ -47,6 +62,7 @@ export const EVENT_SCHEMAS = {
   'academic.item.archived': z.object({
     reason: z.string().max(500).optional(),
   }),
+  'academic.item.restored': z.object({}),
   'academic.task.created': z.object({
     title: z.string().min(1),
     itemId: z.string().min(1).optional(),
@@ -58,6 +74,25 @@ export const EVENT_SCHEMAS = {
     estimateMinutes: z.number().int().min(5).max(1440),
     previousEstimateMinutes: z.number().int().min(5).max(1440),
   }),
+  'academic.task.details-changed': z.object({
+    title: z.string().min(1),
+    dueAt: isoDateTimeSchema.optional(),
+    priority: z.number().int().min(0).max(3),
+    estimateMinutes: z.number().int().min(5).max(1440),
+    previous: z.object({
+      title: z.string().min(1),
+      dueAt: isoDateTimeSchema.optional(),
+      priority: z.number().int().min(0).max(3),
+      estimateMinutes: z.number().int().min(5).max(1440),
+    }),
+    changedFields: z
+      .array(z.enum(['title', 'dueAt', 'priority', 'estimateMinutes']))
+      .min(1),
+  }),
+  'academic.task.archived': z.object({
+    reason: z.string().max(500).optional(),
+  }),
+  'academic.task.restored': z.object({}),
   'academic.task.completed': z.object({
     completedAt: isoDateTimeSchema,
   }),
@@ -84,14 +119,21 @@ export type EventPayload<T extends EventType> = z.infer<(typeof EVENT_SCHEMAS)[T
 export const EVENT = {
   CourseCreated: 'academic.course.created',
   CourseRenamed: 'academic.course.renamed',
+  CourseUpdated: 'academic.course.updated',
   CourseArchived: 'academic.course.archived',
+  CourseRestored: 'academic.course.restored',
+  CourseDeleted: 'academic.course.deleted',
   AcademicItemDiscovered: 'academic.item.discovered',
   AcademicItemDetailsChanged: 'academic.item.details-changed',
   AcademicItemDeadlineChanged: 'academic.item.deadline-changed',
   AcademicItemProgressChanged: 'academic.item.progress-changed',
   AcademicItemArchived: 'academic.item.archived',
+  AcademicItemRestored: 'academic.item.restored',
   StudyTaskCreated: 'academic.task.created',
   StudyTaskEstimateChanged: 'academic.task.estimate-changed',
+  StudyTaskDetailsChanged: 'academic.task.details-changed',
+  StudyTaskArchived: 'academic.task.archived',
+  StudyTaskRestored: 'academic.task.restored',
   StudyTaskCompleted: 'academic.task.completed',
   StudyTaskReopened: 'academic.task.reopened',
   StudyPlanAccepted: 'academic.plan.accepted',

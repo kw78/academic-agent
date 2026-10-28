@@ -3,14 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { COMMAND } from '@academic/contracts'
 import { createAcademicStore } from '@academic/storage-sqlite'
-import {
-  execute,
-  fixedClock,
-  makeCommand,
-  sequentialIds,
-} from '../helpers/store.js'
+import { fixedClock, sequentialIds } from '../helpers/store.js'
 
 const cleanup: Array<() => void> = []
 
@@ -29,7 +23,7 @@ describe('database upgrade', () => {
     const oldMigrations = join(root, 'old-migrations')
     mkdirSync(oldMigrations)
     for (const file of readdirSync(migrationsDir).sort()) {
-      if (Number(file.slice(0, 4)) >= 11) continue
+      if (Number(file.slice(0, 4)) >= 13) continue
       copyFileSync(join(migrationsDir, file), join(oldMigrations, file))
     }
 
@@ -41,15 +35,23 @@ describe('database upgrade', () => {
       clock,
       ids: sequentialIds('before'),
     })
-    const created = await execute(
-      before,
-      makeCommand(COMMAND.CourseCreate, 'course-before-upgrade', {
-        termId: '2026FA',
-        code: 'CS101',
-        title: 'Before upgrade',
-      }),
-    )
-    expect(created.ok).toBe(true)
+    // Simulate a course row written by the pre-0013 schema. The upgrade must
+    // keep it and add the new soft-delete column with a safe default.
+    before.database
+      .prepare(
+        `INSERT INTO courses_current (
+           course_id, term_id, code, title, archived, source_id,
+           external_course_id, source_json, created_at, updated_at, version
+         ) VALUES (?, ?, ?, ?, 0, NULL, NULL, NULL, ?, ?, 1)`,
+      )
+      .run(
+        'course-before-upgrade',
+        '2026FA',
+        'CS101',
+        'Before upgrade',
+        clock.now(),
+        clock.now(),
+      )
     before.close()
 
     const after = createAcademicStore({
@@ -60,14 +62,20 @@ describe('database upgrade', () => {
     })
     cleanup.push(() => after.close())
     const courses = await after.queries.listCourses()
-    expect(
-      courses.items.some((course) => course.courseId === 'course-before-upgrade'),
-    ).toBe(true)
+    const upgraded = courses.items.find(
+      (course) => course.courseId === 'course-before-upgrade',
+    )
+    expect(upgraded?.deleted).toBe(false)
 
     const applied = after.database
       .prepare('SELECT id FROM schema_migrations ORDER BY id')
       .all() as Array<{ id: string }>
     expect(applied.map((row) => row.id)).toContain('0011_user_preferences.sql')
+    expect(applied.map((row) => row.id)).toContain('0013_editable_records.sql')
+    const columns = after.database
+      .prepare('PRAGMA table_info(courses_current)')
+      .all() as Array<{ name: string }>
+    expect(columns.map((column) => column.name)).toContain('deleted')
     const table = after.database
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'user_preferences'",

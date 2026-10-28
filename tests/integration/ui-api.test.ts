@@ -755,6 +755,208 @@ describe('academic UI host API', () => {
   })
 })
 
+describe('editable personal data', () => {
+  it('edits tasks and soft-deletes/restores courses, items and tasks through events', async () => {
+    const { app, api } = await setup()
+    const courses = await api.courses({})
+    expect(courses.ok).toBe(true)
+    if (!courses.ok) return
+    const course = courses.value.courses[0]
+    expect(course).toBeDefined()
+    if (!course) return
+
+    const updatedCourse = await api.updateCourse({
+      id: course.courseId,
+      termId: '2027SP',
+      code: 'CS102',
+      title: 'Changed Course',
+    })
+    expect(updatedCourse.ok).toBe(true)
+
+    const tasks = await api.tasks({ status: 'all' })
+    expect(tasks.ok).toBe(true)
+    if (!tasks.ok) return
+    const target = tasks.value.cards[0]
+    expect(target).toBeDefined()
+    if (!target) return
+
+    const editedTask = await api.updateTask({
+      taskId: target.task.taskId,
+      title: 'Edited Task',
+      estimateMinutes: 90,
+      priority: 3,
+      dueAt: '2026-11-01T08:00:00.000Z',
+    })
+    expect(editedTask.ok).toBe(true)
+    const afterEdit = await api.tasks({ status: 'all' })
+    expect(afterEdit.ok).toBe(true)
+    if (!afterEdit.ok) return
+    const edited = afterEdit.value.cards.find(
+      (card) => card.task.taskId === target.task.taskId,
+    )
+    expect(edited?.task.title).toBe('Edited Task')
+    expect(edited?.task.estimateMinutes).toBe(90)
+    expect(edited?.task.priority).toBe(3)
+    expect(edited?.task.dueAt).toBe('2026-11-01T08:00:00.000Z')
+
+    const deleted = await api.deleteCourse({ id: course.courseId })
+    expect(deleted.ok).toBe(true)
+
+    const afterDelete = await api.courses({})
+    expect(afterDelete.ok).toBe(true)
+    if (!afterDelete.ok) return
+    const deletedCourse = afterDelete.value.courses.find(
+      (entry) => entry.courseId === course.courseId,
+    )
+    expect(deletedCourse?.code).toBe('CS102')
+    expect(deletedCourse?.deleted).toBe(true)
+    expect(deletedCourse?.archived).toBe(true)
+
+    const activeAfterDelete = await api.tasks({ status: 'all' })
+    expect(activeAfterDelete.ok).toBe(true)
+    if (!activeAfterDelete.ok) return
+    expect(activeAfterDelete.value.cards).toHaveLength(0)
+
+    const archivedAfterDelete = await api.tasks({
+      status: 'all',
+      includeArchived: true,
+    })
+    expect(archivedAfterDelete.ok).toBe(true)
+    if (!archivedAfterDelete.ok) return
+    expect(archivedAfterDelete.value.cards.length).toBeGreaterThan(0)
+    expect(
+      archivedAfterDelete.value.cards.every((card) => card.task.archived),
+    ).toBe(true)
+    expect(
+      archivedAfterDelete.value.items.every((card) => card.item.archived),
+    ).toBe(true)
+
+    // Rebuilding the projection from events must reproduce the soft-deleted state.
+    app.store.rebuildProjection()
+    const afterRebuild = await api.courses({})
+    expect(afterRebuild.ok).toBe(true)
+    if (!afterRebuild.ok) return
+    expect(
+      afterRebuild.value.courses.find((entry) => entry.courseId === course.courseId)
+        ?.deleted,
+    ).toBe(true)
+
+    expect((await api.restoreCourse({ id: course.courseId })).ok).toBe(true)
+    expect((await api.restoreItem({ id: target.item!.itemId })).ok).toBe(true)
+    expect((await api.restoreTask({ id: target.task.taskId })).ok).toBe(true)
+
+    const restored = await api.tasks({ status: 'all' })
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) return
+    expect(restored.value.cards).toHaveLength(1)
+    expect(restored.value.cards[0]?.task.archived).toBe(false)
+    expect(
+      restored.value.items.find((card) => card.item.itemId === target.item!.itemId)
+        ?.item.archived,
+    ).toBe(false)
+  })
+
+  it('updates, archives, restores and deletes a source without deleting academic events', async () => {
+    const { app, api } = await setup()
+    const coursesBefore = await api.courses({})
+    expect(coursesBefore.ok).toBe(true)
+    if (!coursesBefore.ok) return
+    expect(coursesBefore.value.courses.length).toBeGreaterThan(0)
+
+    const updated = await api.updateSource({
+      sourceId: 'fixture-lms',
+      displayName: 'Fixture Renamed',
+      capabilities: ['academic.sync'],
+      config: { note: 'edited' },
+    })
+    expect(updated.ok).toBe(true)
+    if (!updated.ok) return
+    expect(updated.value.displayName).toBe('Fixture Renamed')
+    expect(updated.value.config).toEqual({ note: 'edited' })
+
+    const archived = await api.archiveSource({ sourceId: 'fixture-lms' })
+    expect(archived.ok).toBe(true)
+    if (!archived.ok) return
+    expect(archived.value.configuration).toBe('archived')
+
+    const listed = await api.connections({})
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    expect(
+      listed.value.sources.some(
+        (source) =>
+          source.sourceId === 'fixture-lms' &&
+          source.configuration === 'archived',
+      ),
+    ).toBe(true)
+
+    const restored = await api.restoreSource({ sourceId: 'fixture-lms' })
+    expect(restored.ok).toBe(true)
+    if (!restored.ok) return
+    expect(restored.value.configuration).toBe('configured')
+
+    const deleted = await api.deleteSource({ sourceId: 'fixture-lms' })
+    expect(deleted.ok).toBe(true)
+    const afterDelete = await api.connections({})
+    expect(afterDelete.ok).toBe(true)
+    if (!afterDelete.ok) return
+    expect(
+      afterDelete.value.sources.some((source) => source.sourceId === 'fixture-lms'),
+    ).toBe(false)
+
+    // Source removal is operational only; synced academic facts survive.
+    const coursesAfter = await app.store.queries.listCourses()
+    expect(coursesAfter.items.length).toBeGreaterThan(0)
+  })
+
+  it('removes a source connection and its credential on permanent delete', async () => {
+    const clock = fixedClock()
+    const app = await createAcademicApp({
+      databasePath: ':memory:',
+      clock,
+      credentialVault: new InMemoryCredentialVault(),
+      sourceEngines: [
+        {
+          descriptor: {
+            id: 'fake-browser',
+            displayName: 'Fake Browser',
+            supportsSync: false,
+            supportsLogin: true,
+            supportsVerify: true,
+          },
+          async login() {
+            return { secret: JSON.stringify({ cookie: 'test-session-secret' }) }
+          },
+          async verify() {
+            return { ok: true }
+          },
+        },
+      ],
+    })
+    cleanup.push(() => app.close())
+    app.sources.create({
+      sourceId: 'fake-source',
+      engine: 'fake-browser',
+      displayName: 'Fake Source',
+      authKind: 'token',
+      loginMode: 'browser',
+    })
+    const api = createAcademicUiApi(app)
+    const login = await api.sourceLogin({ sourceId: 'fake-source' })
+    expect(login.ok).toBe(true)
+    expect(app.connections.list()).toHaveLength(1)
+
+    const deleted = await api.deleteSource({ sourceId: 'fake-source' })
+    expect(deleted.ok).toBe(true)
+    expect(app.connections.list()).toHaveLength(0)
+    expect(app.sources.get('fake-source')).toBeUndefined()
+    const connections = app.store.database
+      .prepare('SELECT COUNT(*) AS count FROM source_connections')
+      .get() as { count: number }
+    expect(Number(connections.count)).toBe(0)
+  })
+})
+
 describe('generic DB-backed source login', () => {
   it('uses a registered engine, stores only the session secret and reports connected', async () => {
     const clock = fixedClock()

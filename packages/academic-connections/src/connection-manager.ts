@@ -222,6 +222,25 @@ export class ConnectionManager implements ConnectionCredentialProvider {
     return this.#view(this.#getRecord(connectionId)!)
   }
 
+  async delete(connectionId: string): Promise<void> {
+    const record = this.#getRecord(connectionId)
+    if (!record) throw new ConnectionAccessError('Unknown connection')
+    if (record.credentialRef) await this.#vault.delete(record.credentialRef)
+    this.#db
+      .prepare('DELETE FROM source_connections WHERE connection_id = ?')
+      .run(connectionId)
+  }
+
+  async deleteBySource(sourceId: string): Promise<number> {
+    const rows = this.#db
+      .prepare('SELECT * FROM source_connections WHERE source_id = ?')
+      .all(sourceId) as SqlRow[]
+    for (const row of rows) {
+      await this.delete(String(row.connection_id))
+    }
+    return rows.length
+  }
+
   async markAuthRequired(connectionId: string, message: string): Promise<void> {
     this.#db
       .prepare(

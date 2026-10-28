@@ -5,6 +5,7 @@ import {
   dueSortKey,
   type AcademicItemView,
   type AdapterCandidateReport,
+  type AdapterCandidateSummary,
   type AdapterSample,
   type CommandResult,
   type ConnectionView,

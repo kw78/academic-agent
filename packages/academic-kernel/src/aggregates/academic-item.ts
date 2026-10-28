@@ -93,6 +93,13 @@ export const academicItemHandler: AggregateHandler<AcademicItemState> = {
           updatedAt: event.occurredAt,
           version: event.streamVersion,
         }
+      case EVENT.AcademicItemRestored:
+        return {
+          ...state,
+          archived: false,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion,
+        }
       default:
         throw new Error(`Unexpected academic item event: ${event.type}`)
     }
@@ -176,6 +183,11 @@ export const academicItemHandler: AggregateHandler<AcademicItemState> = {
           type: EVENT.AcademicItemArchived,
           payload: command.payload.reason ? { reason: command.payload.reason } : {},
         })
+
+      case COMMAND.AcademicItemRestore:
+        if (state.version === 0) return rejected('NOT_FOUND', 'Academic item does not exist')
+        if (!state.archived) return accepted()
+        return accepted({ type: EVENT.AcademicItemRestored, payload: {} })
 
       default:
         return rejected(

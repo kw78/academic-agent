@@ -59,6 +59,8 @@ export interface SourceConfigStoreApi {
     expectedVersion?: number,
   ): SourceConfig
   archive(sourceId: string): SourceConfig
+  restore(sourceId: string): SourceConfig
+  delete(sourceId: string): void
 }
 
 export class SourceNotFoundError extends Error {

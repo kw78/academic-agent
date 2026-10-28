@@ -25,6 +25,7 @@ export interface CourseState {
   code: string
   title: string
   archived: boolean
+  deleted: boolean
   source?: CourseSource
   createdAt: string
   updatedAt: string
@@ -66,6 +67,7 @@ export interface StudyTaskState {
   dueAt?: string
   priority: number
   status: StudyTaskStatus
+  archived: boolean
   completedAt?: string
   createdAt: string
   updatedAt: string

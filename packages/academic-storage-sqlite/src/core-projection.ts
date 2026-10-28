@@ -97,14 +97,15 @@ export class CoreProjection {
     this.#db
       .prepare(
         `INSERT INTO courses_current (
-           course_id, term_id, code, title, archived, source_id,
+           course_id, term_id, code, title, archived, deleted, source_id,
            external_course_id, source_json, created_at, updated_at, version
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(course_id) DO UPDATE SET
            term_id = excluded.term_id,
            code = excluded.code,
            title = excluded.title,
            archived = excluded.archived,
+           deleted = excluded.deleted,
            source_id = excluded.source_id,
            external_course_id = excluded.external_course_id,
            source_json = excluded.source_json,
@@ -117,6 +118,7 @@ export class CoreProjection {
         state.code,
         state.title,
         Number(state.archived),
+        Number(state.deleted),
         source?.sourceId ?? null,
         source?.externalCourseId ?? null,
         source ? JSON.stringify(source) : null,
@@ -182,8 +184,8 @@ export class CoreProjection {
       .prepare(
         `INSERT INTO study_tasks_current (
            task_id, title, item_id, estimate_minutes, due_at, priority,
-           status, completed_at, created_at, updated_at, version
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           status, archived, completed_at, created_at, updated_at, version
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(task_id) DO UPDATE SET
            title = excluded.title,
            item_id = excluded.item_id,
@@ -191,6 +193,7 @@ export class CoreProjection {
            due_at = excluded.due_at,
            priority = excluded.priority,
            status = excluded.status,
+           archived = excluded.archived,
            completed_at = excluded.completed_at,
            updated_at = excluded.updated_at,
            version = excluded.version`,
@@ -203,6 +206,7 @@ export class CoreProjection {
         state.dueAt ?? null,
         state.priority,
         state.status,
+        Number(state.archived),
         state.completedAt ?? null,
         state.createdAt,
         state.updatedAt,

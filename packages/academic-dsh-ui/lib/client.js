@@ -1614,6 +1614,17 @@ function tutorPrompt(card, timeZone, now) {
   ].filter((line) => Boolean(line));
   return lines.join("\n");
 }
+function toLocalDateTimeInput(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
+}
+function fromLocalDateTimeInput(value) {
+  if (!value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
 function TaskRow({
   card,
   timeZone,
@@ -1621,13 +1632,58 @@ function TaskRow({
   pending,
   onComplete,
   onReopen,
-  onChangeEstimate,
+  onUpdate,
+  onArchive,
+  onRestore,
   onAsk
 }) {
   const [editing, setEditing] = (0, import_react4.useState)(false);
+  const [title, setTitle] = (0, import_react4.useState)(card.task.title);
   const [estimate, setEstimate] = (0, import_react4.useState)(String(card.task.estimateMinutes));
+  const [priority, setPriority] = (0, import_react4.useState)(String(card.task.priority));
+  const [dueInput, setDueInput] = (0, import_react4.useState)(toLocalDateTimeInput(card.task.dueAt));
   const due = formatDue(card.effectiveDue, timeZone, now);
   const completed = card.task.status === "completed";
+  const archived = card.task.archived;
+  const save = async () => {
+    const minutes = Number(estimate);
+    if (!title.trim() || !Number.isFinite(minutes) || minutes < 5) return;
+    const ok = await onUpdate({
+      title: title.trim(),
+      estimateMinutes: Math.round(minutes),
+      priority: Number(priority) || 0,
+      dueAt: fromLocalDateTimeInput(dueInput)
+    });
+    if (ok) setEditing(false);
+  };
+  if (archived) {
+    return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("li", { className: "ac-task-row ac-task-completed", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "ac-task-main", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "ac-task-title", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { children: card.task.title }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Badge, { tone: "bad", children: "\u5DF2\u5220\u9664" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "ac-task-meta", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: card.course?.code ?? "\u672C\u5730\u4EFB\u52A1" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { children: [
+            "\u9884\u8BA1 ",
+            formatMinutes(card.task.estimateMinutes)
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: "\u5220\u9664\u540E\u4E0D\u518D\u53C2\u4E0E\u8BA1\u5212\uFF1B\u6062\u590D\u540E\u7EE7\u7EED\u53C2\u4E0E" })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "ac-task-actions", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "ac-button",
+          disabled: pending,
+          onClick: onRestore,
+          children: "\u6062\u590D\u4EFB\u52A1"
+        }
+      ) })
+    ] });
+  }
   return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("li", { className: `ac-task-row${completed ? " ac-task-completed" : ""}`, children: [
     /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
       "button",
@@ -1647,7 +1703,44 @@ function TaskRow({
         completed && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Badge, { tone: "ok", children: "\u672C\u5730\u5DF2\u5B8C\u6210" }),
         !completed && !card.planned && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Badge, { tone: "warn", children: "\u672A\u88AB\u8BA1\u5212\u5B89\u6392" })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "ac-task-meta", children: [
+      editing ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "ac-form-grid", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Field, { label: "\u6807\u9898", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          "input",
+          {
+            value: title,
+            onChange: (event) => setTitle(event.target.value),
+            maxLength: 500
+          }
+        ) }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Field, { label: "\u9884\u8BA1\u65F6\u957F\uFF08\u5206\u949F\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          "input",
+          {
+            type: "number",
+            min: 5,
+            max: 1440,
+            value: estimate,
+            onChange: (event) => setEstimate(event.target.value)
+          }
+        ) }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Field, { label: "\u4F18\u5148\u7EA7\uFF080\u20133\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          "input",
+          {
+            type: "number",
+            min: 0,
+            max: 3,
+            value: priority,
+            onChange: (event) => setPriority(event.target.value)
+          }
+        ) }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Field, { label: "\u672C\u5730\u622A\u6B62\uFF08\u53EF\u7559\u7A7A\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          "input",
+          {
+            type: "datetime-local",
+            value: dueInput,
+            onChange: (event) => setDueInput(event.target.value)
+          }
+        ) })
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "ac-task-meta", children: [
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: card.course?.code ?? "\u672C\u5730\u4EFB\u52A1" }),
         card.item && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: kindLabel(card.item.kind) }),
         /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { children: [
@@ -1675,36 +1768,30 @@ function TaskRow({
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "ac-task-actions", children: [
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Badge, { tone: toneForDue(due.tone), children: due.label }),
-      editing ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "ac-inline-form", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("label", { className: "ac-sr-only", htmlFor: `estimate-${card.task.taskId}`, children: "\u9884\u8BA1\u65F6\u957F\uFF08\u5206\u949F\uFF09" }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-          "input",
-          {
-            id: `estimate-${card.task.taskId}`,
-            type: "number",
-            min: 5,
-            max: 1440,
-            value: estimate,
-            onChange: (event) => setEstimate(event.target.value)
-          }
-        ),
+      editing ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
           "button",
           {
             type: "button",
-            className: "ac-button",
+            className: "ac-button ac-button-primary",
             disabled: pending,
-            onClick: () => {
-              const minutes = Number(estimate);
-              if (!Number.isFinite(minutes) || minutes < 5) return;
-              onChangeEstimate(Math.round(minutes));
-              setEditing(false);
-            },
+            onClick: () => void save(),
             children: "\u4FDD\u5B58"
           }
         ),
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "ac-button", onClick: () => setEditing(false), children: "\u53D6\u6D88" })
-      ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "ac-button", onClick: () => setEditing(true), children: "\u8C03\u6574\u65F6\u957F" }),
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "ac-button", onClick: () => setEditing(true), children: "\u7F16\u8F91\u4EFB\u52A1" }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          ConfirmAction,
+          {
+            label: "\u5220\u9664\u4EFB\u52A1",
+            confirmLabel: "\u786E\u8BA4\u5220\u9664\u4EFB\u52A1",
+            disabled: pending,
+            onConfirm: onArchive
+          }
+        )
+      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "ac-button", onClick: onAsk, children: "\u8BF7\u6559 Agent" })
     ] })
   ] });
@@ -1713,6 +1800,9 @@ function ItemRow({
   card,
   timeZone,
   now,
+  pending,
+  onArchive,
+  onRestore,
   onAsk
 }) {
   const due = formatDue(card.item.due, timeZone, now);
@@ -1721,6 +1811,7 @@ function ItemRow({
       /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "ac-task-title", children: [
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { children: card.item.title }),
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Badge, { tone: "info", children: kindLabel(card.item.kind) }),
+        card.item.archived && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Badge, { tone: "bad", children: "\u5DF2\u5F52\u6863" }),
         card.item.progress.status !== "not-started" && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(Badge, { tone: "neutral", children: [
           "\u8FDB\u5EA6 ",
           card.item.progress.percent,
@@ -1748,23 +1839,47 @@ function ItemRow({
           }
         )
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "ac-muted ac-task-note", children: "\u6765\u6E90\u4E8B\u5B9E\uFF1B\u5B66\u6821\u63D0\u4EA4\u72B6\u6001\u672A\u63A5\u5165\uFF0C\u4E0D\u80FD\u7531\u672C\u5730\u8FDB\u5EA6\u63A8\u65AD\u3002" })
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "ac-muted ac-task-note", children: card.item.archived ? "\u5DF2\u5F52\u6863\uFF1A\u540C\u6B65\u4F1A\u8DF3\u8FC7\u8BE5\u4E8B\u9879\uFF1B\u6062\u590D\u540E\u7EE7\u7EED\u63A5\u6536\u6765\u6E90\u66F4\u65B0\u3002" : "\u6765\u6E90\u4E8B\u5B9E\uFF1B\u5B66\u6821\u63D0\u4EA4\u72B6\u6001\u672A\u63A5\u5165\uFF0C\u4E0D\u80FD\u7531\u672C\u5730\u8FDB\u5EA6\u63A8\u65AD\u3002" })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "ac-item-due", children: [
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Badge, { tone: toneForDue(due.tone), children: due.label }),
       due.note && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "ac-muted", children: due.note }),
+      card.item.archived ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "ac-button",
+          disabled: pending,
+          onClick: onRestore,
+          children: "\u6062\u590D\u4E8B\u9879"
+        }
+      ) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        ConfirmAction,
+        {
+          label: "\u5F52\u6863\u4E8B\u9879",
+          confirmLabel: "\u786E\u8BA4\u5F52\u6863",
+          disabled: pending,
+          onConfirm: onArchive
+        }
+      ),
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "ac-button", onClick: onAsk, children: "\u8BF7\u6559 Agent" })
     ] })
   ] });
 }
 function TasksPage({ ctx, active }) {
   const load = (0, import_react4.useCallback)(
-    (signal) => callApi(ctx, "tasks", { status: "all" }, signal),
+    (signal) => callApi(
+      ctx,
+      "tasks",
+      { status: "all", includeArchived: true },
+      signal
+    ),
     [ctx]
   );
   const { state, refresh } = useLoad(load, active);
   const [filters, setFilters] = (0, import_react4.useState)(DEFAULT_TASK_FILTERS);
   const [pane, setPane] = (0, import_react4.useState)("tasks");
+  const [showArchived, setShowArchived] = (0, import_react4.useState)(false);
   const [creating, setCreating] = (0, import_react4.useState)(false);
   const [title, setTitle] = (0, import_react4.useState)("");
   const [estimate, setEstimate] = (0, import_react4.useState)("60");
@@ -1776,8 +1891,13 @@ function TasksPage({ ctx, active }) {
   const timeZone = data?.timeZone ?? "UTC";
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const visibleTasks = (0, import_react4.useMemo)(
-    () => data ? filterTaskCards(data.cards, filters, timeZone, now) : [],
-    [data, filters, timeZone, now]
+    () => data ? filterTaskCards(
+      showArchived ? data.cards : data.cards.filter((card) => !card.task.archived),
+      filters,
+      timeZone,
+      now
+    ) : [],
+    [data, filters, timeZone, now, showArchived]
   );
   const visibleItems = (0, import_react4.useMemo)(() => {
     if (!data) return [];
@@ -1788,7 +1908,7 @@ function TasksPage({ ctx, active }) {
       later: 3,
       unknown: 4
     };
-    return data.items.filter((card) => !card.item.archived).filter((card) => filters.courseId === "all" || card.item.courseId === filters.courseId).filter((card) => filters.kind === "all" || card.item.kind === filters.kind).filter((card) => {
+    return data.items.filter((card) => showArchived || !card.item.archived).filter((card) => filters.courseId === "all" || card.item.courseId === filters.courseId).filter((card) => filters.kind === "all" || card.item.kind === filters.kind).filter((card) => {
       if (filters.due === "all") return true;
       const tone = formatDue(card.item.due, timeZone, now).tone;
       if (filters.due === "unknown") return tone === "unknown";
@@ -1802,12 +1922,12 @@ function TasksPage({ ctx, active }) {
       if (rank[leftTone] !== rank[rightTone]) return rank[leftTone] - rank[rightTone];
       return left.item.title.localeCompare(right.item.title, "zh-CN");
     });
-  }, [data, filters, timeZone, now]);
+  }, [data, filters, timeZone, now, showArchived]);
   const reviewGroups = (0, import_react4.useMemo)(() => {
     if (!data) return [];
     const tasksByItem = /* @__PURE__ */ new Map();
     for (const card of data.cards) {
-      if (!card.item) continue;
+      if (!card.item || card.task.archived) continue;
       const list = tasksByItem.get(card.item.itemId) ?? [];
       list.push(card);
       tasksByItem.set(card.item.itemId, list);
@@ -1926,6 +2046,15 @@ function TasksPage({ ctx, active }) {
             }
           )
         ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          "button",
+          {
+            type: "button",
+            className: "ac-button",
+            onClick: () => setShowArchived((value) => !value),
+            children: showArchived ? "\u9690\u85CF\u5DF2\u5F52\u6863/\u5DF2\u5220\u9664" : "\u663E\u793A\u5DF2\u5F52\u6863/\u5DF2\u5220\u9664"
+          }
+        ),
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
           "button",
           {
@@ -2075,13 +2204,27 @@ function TasksPage({ ctx, active }) {
               pending: action.pending !== void 0,
               onComplete: () => void taskCommand("complete", "completeTask", card.task.taskId),
               onReopen: () => void taskCommand("reopen", "reopenTask", card.task.taskId),
-              onChangeEstimate: (minutes) => void action.run(
-                "estimate",
-                () => callApi(ctx, "changeTaskEstimate", {
+              onUpdate: (input) => action.run(
+                "task-update",
+                () => callApi(ctx, "updateTask", {
                   taskId: card.task.taskId,
-                  estimateMinutes: minutes
+                  ...input
                 }),
-                "\u9884\u8BA1\u65F6\u957F\u5DF2\u66F4\u65B0"
+                "\u4EFB\u52A1\u5DF2\u66F4\u65B0"
+              ),
+              onArchive: () => void action.run(
+                "task-archive",
+                () => callApi(ctx, "archiveTask", {
+                  id: card.task.taskId
+                }),
+                "\u4EFB\u52A1\u5DF2\u5220\u9664\uFF1B\u53EF\u5728\u201C\u663E\u793A\u5DF2\u5F52\u6863/\u5DF2\u5220\u9664\u201D\u4E2D\u6062\u590D"
+              ),
+              onRestore: () => void action.run(
+                "task-restore",
+                () => callApi(ctx, "restoreTask", {
+                  id: card.task.taskId
+                }),
+                "\u4EFB\u52A1\u5DF2\u6062\u590D"
               ),
               onAsk: () => {
                 const prompt = tutorPrompt(card, timeZone, now);
@@ -2108,6 +2251,21 @@ function TasksPage({ ctx, active }) {
               card,
               timeZone,
               now,
+              pending: action.pending !== void 0,
+              onArchive: () => void action.run(
+                "item-archive",
+                () => callApi(ctx, "archiveItem", {
+                  id: card.item.itemId
+                }),
+                "\u6765\u6E90\u4E8B\u9879\u5DF2\u5F52\u6863\uFF1B\u540C\u6B65\u4F1A\u8DF3\u8FC7\u5B83"
+              ),
+              onRestore: () => void action.run(
+                "item-restore",
+                () => callApi(ctx, "restoreItem", {
+                  id: card.item.itemId
+                }),
+                "\u6765\u6E90\u4E8B\u9879\u5DF2\u6062\u590D\uFF1B\u540E\u7EED\u540C\u6B65\u4F1A\u7EE7\u7EED\u66F4\u65B0"
+              ),
               onAsk: () => {
                 const prompt = tutorPrompt(card, timeZone, now);
                 if (!askAgent(ctx, prompt)) {
@@ -2645,9 +2803,134 @@ function SourceCredentialForm({
     message && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: message })
   ] });
 }
+function SourceEditForm({
+  ctx,
+  source,
+  engine,
+  onDone,
+  onCancel
+}) {
+  const [displayName, setDisplayName] = (0, import_react6.useState)(source.displayName);
+  const [authKind, setAuthKind] = (0, import_react6.useState)(
+    source.authKind === "unknown" ? "token" : source.authKind
+  );
+  const [loginMode, setLoginMode] = (0, import_react6.useState)(source.loginMode ?? "browser");
+  const [capabilities, setCapabilities] = (0, import_react6.useState)(source.capabilities.join(", "));
+  const [configJson, setConfigJson] = (0, import_react6.useState)(JSON.stringify(source.config, null, 2));
+  const [pending, setPending] = (0, import_react6.useState)(false);
+  const [message, setMessage] = (0, import_react6.useState)();
+  const authKinds = engine?.authKinds ?? ["none", "password", "token", "oauth"];
+  const loginModes = engine?.loginModes ?? ["browser", "manual"];
+  const submit = async () => {
+    let config;
+    try {
+      const parsed = JSON.parse(configJson || "{}");
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("\u914D\u7F6E\u5FC5\u987B\u662F JSON \u5BF9\u8C61");
+      }
+      config = parsed;
+    } catch (error) {
+      setMessage(`\u914D\u7F6E JSON \u65E0\u6548\uFF1A${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    setPending(true);
+    setMessage(void 0);
+    const result = await callApi(ctx, "updateSource", {
+      sourceId: source.sourceId,
+      displayName: displayName.trim(),
+      authKind,
+      ...authKind === "none" ? {} : { loginMode },
+      capabilities: capabilities.split(",").map((value) => value.trim()).filter(Boolean),
+      config,
+      expectedVersion: source.version
+    });
+    setPending(false);
+    if (!result.ok) {
+      setMessage(result.error.message);
+      return;
+    }
+    await onDone();
+    onCancel();
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-form-grid", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u663E\u793A\u540D\u79F0", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "input",
+        {
+          value: displayName,
+          onChange: (event) => setDisplayName(event.target.value),
+          required: true
+        }
+      ) }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u8BA4\u8BC1\u65B9\u5F0F", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "select",
+        {
+          value: authKind,
+          onChange: (event) => {
+            const next = event.target.value;
+            setAuthKind(next);
+            if (next === "none") setLoginMode("none");
+            else if (loginMode === "none") setLoginMode(loginModes[0] ?? "browser");
+          },
+          children: authKinds.map((kind) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: kind, children: kind }, kind))
+        }
+      ) }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u767B\u5F55\u65B9\u5F0F", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+        "select",
+        {
+          value: authKind === "none" ? "none" : loginMode,
+          onChange: (event) => setLoginMode(event.target.value),
+          disabled: authKind === "none" || engine?.supportsLogin === false,
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: "none", children: "\u4E0D\u767B\u5F55" }),
+            loginModes.map((mode) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("option", { value: mode, children: mode }, mode))
+          ]
+        }
+      ) }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u80FD\u529B\uFF08\u9017\u53F7\u5206\u9694\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "input",
+        {
+          value: capabilities,
+          onChange: (event) => setCapabilities(event.target.value)
+        }
+      ) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      Field,
+      {
+        label: "\u975E\u654F\u611F\u914D\u7F6E\uFF08JSON\uFF09",
+        hint: "URL\u3001\u9009\u62E9\u5668\u3001\u89C4\u5219\u7B49\uFF1B\u7981\u6B62 password/token/cookie \u5B57\u6BB5",
+        children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          "textarea",
+          {
+            rows: 8,
+            value: configJson,
+            onChange: (event) => setConfigJson(event.target.value),
+            spellCheck: false
+          }
+        )
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-form-actions", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "ac-button ac-button-primary",
+          disabled: pending,
+          onClick: () => void submit(),
+          children: pending ? "\u4FDD\u5B58\u4E2D\u2026" : "\u4FDD\u5B58\u914D\u7F6E"
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "ac-button", disabled: pending, onClick: onCancel, children: "\u53D6\u6D88" })
+    ] }),
+    message && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-bad", children: message })
+  ] });
+}
 function SourceCard({
   ctx,
   source,
+  engines,
   timeZone,
   refresh
 }) {
@@ -2657,7 +2940,10 @@ function SourceCard({
   const [preview, setPreview] = (0, import_react6.useState)();
   const [probe, setProbe] = (0, import_react6.useState)();
   const [agentNote, setAgentNote] = (0, import_react6.useState)();
+  const [editing, setEditing] = (0, import_react6.useState)(false);
   const connection = source.connection;
+  const archived = source.configuration === "archived";
+  const engine = engines.find((entry) => entry.id === source.engine);
   const browserLogin = source.canLogin && source.loginMode === "browser";
   const manualCredential = source.authKind !== "none" && !browserLogin;
   const syncAllowed = source.nextStep.action === "sync";
@@ -2941,7 +3227,59 @@ function SourceCard({
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("pre", { children: JSON.stringify(source.config, null, 2) })
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-source-actions", children: [
+    editing && !archived && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      SourceEditForm,
+      {
+        ctx,
+        source,
+        engine,
+        onDone: refresh,
+        onCancel: () => setEditing(false)
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ac-source-actions", children: archived ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "ac-button ac-button-primary",
+          disabled: action.pending !== void 0,
+          onClick: () => void action.run(
+            "restore-source",
+            () => callApi(ctx, "restoreSource", {
+              sourceId: source.sourceId
+            }),
+            "\u6570\u636E\u6E90\u5DF2\u6062\u590D\uFF1B\u8BF7\u91CD\u65B0\u767B\u5F55\u540E\u518D\u540C\u6B65"
+          ),
+          children: "\u6062\u590D\u6570\u636E\u6E90"
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        ConfirmAction,
+        {
+          label: "\u5F7B\u5E95\u5220\u9664",
+          confirmLabel: "\u786E\u8BA4\u5F7B\u5E95\u5220\u9664",
+          disabled: action.pending !== void 0,
+          onConfirm: () => void action.run(
+            "delete-source",
+            () => callApi(ctx, "deleteSource", {
+              sourceId: source.sourceId
+            }),
+            "\u6570\u636E\u6E90\u4E0E\u51ED\u636E\u5DF2\u5220\u9664\uFF1B\u5DF2\u540C\u6B65\u7684\u5B66\u4E1A\u6570\u636E\u4FDD\u7559"
+          )
+        }
+      )
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "ac-button",
+          disabled: action.pending !== void 0,
+          onClick: () => setEditing((value) => !value),
+          children: editing ? "\u6536\u8D77\u7F16\u8F91" : "\u7F16\u8F91\u914D\u7F6E"
+        }
+      ),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
         "button",
         {
@@ -3040,11 +3378,26 @@ function SourceCard({
             () => callApi(ctx, "archiveSource", {
               sourceId: source.sourceId
             }),
-            "\u6570\u636E\u6E90\u5DF2\u5F52\u6863\uFF1B\u5386\u53F2\u5B66\u4E1A\u6570\u636E\u4FDD\u7559"
+            "\u6570\u636E\u6E90\u5DF2\u5F52\u6863\uFF1B\u53EF\u5728\u4E0B\u65B9\u6062\u590D\u6216\u5F7B\u5E95\u5220\u9664"
+          )
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        ConfirmAction,
+        {
+          label: "\u5F7B\u5E95\u5220\u9664",
+          confirmLabel: "\u786E\u8BA4\u5F7B\u5E95\u5220\u9664",
+          disabled: action.pending !== void 0,
+          onConfirm: () => void action.run(
+            "delete-source",
+            () => callApi(ctx, "deleteSource", {
+              sourceId: source.sourceId
+            }),
+            "\u6570\u636E\u6E90\u4E0E\u51ED\u636E\u5DF2\u5220\u9664\uFF1B\u5DF2\u540C\u6B65\u7684\u5B66\u4E1A\u6570\u636E\u4FDD\u7559"
           )
         }
       )
-    ] })
+    ] }) })
   ] });
 }
 function escapeRegex(value) {
@@ -3363,6 +3716,23 @@ var CANDIDATE_STATUS_LABELS = {
   validated: "\u5DF2\u9A8C\u8BC1",
   revoked: "\u5DF2\u64A4\u9500"
 };
+function CandidateFileInput({
+  label,
+  onLoad
+}) {
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label, hint: "\u4EC5\u5728\u672C\u673A\u8BFB\u53D6\uFF0C\u4E0D\u4E0A\u4F20", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+    "input",
+    {
+      type: "file",
+      accept: ".json,application/json",
+      onChange: (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        void file.text().then(onLoad);
+      }
+    }
+  ) });
+}
 function CandidatePanel({
   ctx,
   active,
@@ -3520,6 +3890,9 @@ function CandidatePanel({
         }) }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u8FD8\u6CA1\u6709\u4FDD\u5B58\u7684\u5019\u9009\u3002" }),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("details", { className: "ac-advanced", children: [
           /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("summary", { children: "\u5BFC\u5165\u5019\u9009\uFF08Manifest + \u79BB\u7EBF\u6837\u672C\uFF09" }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: "\u79BB\u7EBF\u9A8C\u8BC1\u53EA\u56DE\u653E\u672C\u5730\u6837\u672C\uFF0C\u4E0D\u4EE3\u8868\u771F\u5B9E\u8FDE\u63A5\u3001\u542F\u7528\u6216\u540C\u6B65\u5DF2\u7ECF\u901A\u8FC7\u3002" }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(CandidateFileInput, { label: "\u4ECE\u6587\u4EF6\u8BFB\u53D6 Manifest", onLoad: setManifestJson }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(CandidateFileInput, { label: "\u4ECE\u6587\u4EF6\u8BFB\u53D6\u6837\u672C", onLoad: setSamplesJson }),
           /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "Manifest JSON", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
             "textarea",
             {
@@ -3571,12 +3944,12 @@ function CandidatePanel({
         ] }),
         report && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-secret-form", children: [
           /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: report.ok ? "ac-muted" : "ac-text-bad", children: [
-            "\u9A8C\u8BC1",
+            "\u6837\u672C\u56DE\u653E",
             report.ok ? "\u901A\u8FC7" : "\u5931\u8D25",
-            "\uFF1A\u8BFE\u7A0B ",
-            report.courses.length,
-            " \xB7 \u4E8B\u9879",
+            "\uFF08\u672A\u505A\u771F\u5B9E\u540C\u6B65\uFF09\uFF1A\u8BFE\u7A0B",
             " ",
+            report.courses.length,
+            " \xB7 \u4E8B\u9879 ",
             report.items.length
           ] }),
           report.checks?.map((check) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: check.ok ? "ac-muted" : "ac-text-bad", children: [
@@ -3647,11 +4020,14 @@ function ConnectionsPage({ ctx, active }) {
           title: "\u6570\u636E\u6E90",
           subtitle: "\u6570\u636E\u5E93\u4E2D\u7684 source \u914D\u7F6E + \u901A\u7528 engine\uFF1B\u51ED\u636E\u4E0E\u72B6\u6001\u5206\u5F00\u4FDD\u5B58",
           children: [
-            data.sources.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u6570\u636E\u6E90", children: "\u5728\u4E0A\u65B9\u586B\u5199\u5E73\u53F0\u7F51\u5740\u6DFB\u52A0\u6570\u636E\u6E90\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-source-grid", children: data.sources.map((source) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            data.sources.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u6570\u636E\u6E90", children: "\u5728\u4E0A\u65B9\u586B\u5199\u5E73\u53F0\u7F51\u5740\u6DFB\u52A0\u6570\u636E\u6E90\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-source-grid", children: [...data.sources].sort(
+              (left, right) => Number(left.configuration === "archived") - Number(right.configuration === "archived")
+            ).map((source) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
               SourceCard,
               {
                 ctx,
                 source,
+                engines: data.engines,
                 timeZone,
                 refresh
               },
@@ -3733,45 +4109,136 @@ function ConnectionsPage({ ctx, active }) {
     ] })
   ] });
 }
-function CourseTable({
+function CourseRow({
   ctx,
-  courses,
+  course,
   timeZone,
   onChanged
 }) {
   const action = useAction(async () => {
     await onChanged();
   });
-  if (courses.length === 0) return null;
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-list", children: courses.map((course) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: "ac-list-row", children: [
+  const [editing, setEditing] = (0, import_react6.useState)(false);
+  const [termId, setTermId] = (0, import_react6.useState)(course.termId);
+  const [code, setCode] = (0, import_react6.useState)(course.code);
+  const [title, setTitle] = (0, import_react6.useState)(course.title);
+  const save = async () => {
+    if (!termId.trim() || !code.trim() || !title.trim()) {
+      return {
+        ok: false,
+        error: { code: "VALIDATION", message: "\u5B66\u671F\u3001\u8BFE\u7A0B\u4EE3\u7801\u548C\u540D\u79F0\u4E0D\u80FD\u4E3A\u7A7A" }
+      };
+    }
+    return callApi(ctx, "updateCourse", {
+      id: course.courseId,
+      termId: termId.trim(),
+      code: code.trim(),
+      title: title.trim()
+    });
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { className: "ac-list-row", children: [
     /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("strong", { children: [
-        course.code,
-        " ",
-        course.title
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-task-title", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("strong", { children: [
+          course.code,
+          " ",
+          course.title
+        ] }),
+        course.deleted ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Badge, { tone: "bad", children: "\u5DF2\u5220\u9664" }) : course.archived ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Badge, { tone: "neutral", children: "\u5DF2\u5F52\u6863" }) : null
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "ac-muted", children: [
         course.termId,
         " \xB7 \u66F4\u65B0\u4E8E ",
         formatDateTimeOrDash(course.updatedAt, timeZone)
+      ] }),
+      editing && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "ac-form-grid", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u5B66\u671F", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("input", { value: termId, onChange: (event) => setTermId(event.target.value) }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u8BFE\u7A0B\u4EE3\u7801", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("input", { value: code, onChange: (event) => setCode(event.target.value) }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Field, { label: "\u8BFE\u7A0B\u540D\u79F0", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("input", { value: title, onChange: (event) => setTitle(event.target.value) }) })
       ] })
     ] }),
-    !course.archived && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-      ConfirmAction,
-      {
-        label: "\u5F52\u6863\u8BFE\u7A0B",
-        confirmLabel: "\u786E\u8BA4\u5F52\u6863",
-        disabled: action.pending !== void 0,
-        onConfirm: () => void action.run(
-          "course-archive",
-          () => callApi(ctx, "archiveCourse", {
-            id: course.courseId
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "ac-source-actions", children: editing ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "ac-button ac-button-primary",
+          disabled: action.pending !== void 0,
+          onClick: () => void action.run("course-update", save, "\u8BFE\u7A0B\u4FE1\u606F\u5DF2\u66F4\u65B0").then((ok) => {
+            if (ok) setEditing(false);
           }),
-          "\u8BFE\u7A0B\u5DF2\u5F52\u6863"
-        )
-      }
-    )
-  ] }, course.courseId)) });
+          children: "\u4FDD\u5B58"
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "ac-button", onClick: () => setEditing(false), children: "\u53D6\u6D88" })
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+      !course.deleted && !course.archived && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: "ac-button", onClick: () => setEditing(true), children: "\u7F16\u8F91" }),
+      !course.deleted && !course.archived && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        ConfirmAction,
+        {
+          label: "\u5F52\u6863\u8BFE\u7A0B",
+          confirmLabel: "\u786E\u8BA4\u5F52\u6863",
+          disabled: action.pending !== void 0,
+          onConfirm: () => void action.run(
+            "course-archive",
+            () => callApi(ctx, "archiveCourse", {
+              id: course.courseId
+            }),
+            "\u8BFE\u7A0B\u5DF2\u5F52\u6863\uFF1B\u53EF\u968F\u65F6\u6062\u590D"
+          )
+        }
+      ),
+      !course.deleted && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        ConfirmAction,
+        {
+          label: "\u5220\u9664\u8BFE\u7A0B",
+          confirmLabel: "\u786E\u8BA4\u5220\u9664\u8BFE\u7A0B",
+          disabled: action.pending !== void 0,
+          onConfirm: () => void action.run(
+            "course-delete",
+            () => callApi(ctx, "deleteCourse", {
+              id: course.courseId
+            }),
+            "\u8BFE\u7A0B\u5DF2\u5220\u9664\uFF1B\u5173\u8054\u4E8B\u9879\u4E0E\u4EFB\u52A1\u5DF2\u5F52\u6863\uFF0C\u53EF\u5206\u522B\u6062\u590D"
+          )
+        }
+      ),
+      (course.archived || course.deleted) && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        "button",
+        {
+          type: "button",
+          className: "ac-button",
+          disabled: action.pending !== void 0,
+          onClick: () => void action.run(
+            "course-restore",
+            () => callApi(ctx, "restoreCourse", {
+              id: course.courseId
+            }),
+            "\u8BFE\u7A0B\u5DF2\u6062\u590D\uFF1B\u5DF2\u5F52\u6863\u7684\u4E8B\u9879\u548C\u4EFB\u52A1\u9700\u8981\u5355\u72EC\u6062\u590D"
+          ),
+          children: "\u6062\u590D\u8BFE\u7A0B"
+        }
+      )
+    ] }) })
+  ] });
+}
+function CourseTable({
+  ctx,
+  courses,
+  timeZone,
+  onChanged
+}) {
+  if (courses.length === 0) return null;
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ul", { className: "ac-list", children: courses.map((course) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+    CourseRow,
+    {
+      ctx,
+      course,
+      timeZone,
+      onChanged
+    },
+    course.courseId
+  )) });
 }
 function SyncRunTable({ runs, timeZone }) {
   if (runs.length === 0) {

@@ -193,6 +193,9 @@ export class SqliteQueryService implements QueryApi {
   async listStudyTasks(params: ListStudyTasksParams = {}): Promise<Page<StudyTaskView>> {
     const clauses: string[] = []
     const values: SqlParam[] = []
+    if (!params.includeArchived) {
+      clauses.push('archived = 0')
+    }
     if (params.status && params.status !== 'all') {
       clauses.push('status = ?')
       values.push(params.status)
@@ -341,6 +344,7 @@ export class SqliteQueryService implements QueryApi {
       code: String(row.code),
       title: String(row.title),
       archived: Boolean(row.archived),
+      deleted: Boolean(row.deleted),
       source: row.source_json ? parseJson<CourseSource>(row.source_json) : undefined,
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
@@ -383,6 +387,7 @@ export class SqliteQueryService implements QueryApi {
       dueAt: row.due_at == null ? undefined : String(row.due_at),
       priority: Number(row.priority),
       status: String(row.status) as StudyTaskView['status'],
+      archived: Boolean(row.archived),
       completedAt: row.completed_at == null ? undefined : String(row.completed_at),
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),

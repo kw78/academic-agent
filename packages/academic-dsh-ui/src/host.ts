@@ -70,6 +70,8 @@ const REMOTE_METHODS = [
   'createSource',
   'updateSource',
   'archiveSource',
+  'restoreSource',
+  'deleteSource',
   'sourceLogin',
   'probeSource',
   'adapterCandidates',
@@ -96,8 +98,16 @@ const REMOTE_METHODS = [
   'settings',
   'updateReminderSettings',
   'addCourse',
+  'updateCourse',
   'archiveCourse',
+  'restoreCourse',
+  'deleteCourse',
+  'archiveItem',
+  'restoreItem',
   'createTask',
+  'updateTask',
+  'archiveTask',
+  'restoreTask',
   'completeTask',
   'reopenTask',
   'changeTaskEstimate',
@@ -217,6 +227,16 @@ export class AcademicUiService extends TypertRemoteService {
 
   async archiveSource(request: unknown): Promise<UiResult<SourceStatus>> {
     return (await this.apiReady).archiveSource(request as SourceIdRequest)
+  }
+
+  async restoreSource(request: unknown): Promise<UiResult<SourceStatus>> {
+    return (await this.apiReady).restoreSource(request as SourceIdRequest)
+  }
+
+  async deleteSource(
+    request: unknown,
+  ): Promise<UiResult<{ deleted: boolean }>> {
+    return (await this.apiReady).deleteSource(request as SourceIdRequest)
   }
 
   async sourceLogin(request: unknown): Promise<UiResult<ConnectionView>> {
@@ -363,12 +383,44 @@ export class AcademicUiService extends TypertRemoteService {
     return (await this.apiReady).addCourse(request as CreateCourseRequest)
   }
 
+  async updateCourse(request: unknown): Promise<UiResult<CommandReceipt>> {
+    return (await this.apiReady).updateCourse(request)
+  }
+
   async archiveCourse(request: unknown): Promise<UiResult<CommandReceipt>> {
     return (await this.apiReady).archiveCourse(request)
   }
 
+  async restoreCourse(request: unknown): Promise<UiResult<CommandReceipt>> {
+    return (await this.apiReady).restoreCourse(request)
+  }
+
+  async deleteCourse(request: unknown): Promise<UiResult<CommandReceipt>> {
+    return (await this.apiReady).deleteCourse(request)
+  }
+
+  async archiveItem(request: unknown): Promise<UiResult<CommandReceipt>> {
+    return (await this.apiReady).archiveItem(request)
+  }
+
+  async restoreItem(request: unknown): Promise<UiResult<CommandReceipt>> {
+    return (await this.apiReady).restoreItem(request)
+  }
+
   async createTask(request: unknown): Promise<UiResult<CommandReceipt>> {
     return (await this.apiReady).createTask(request as CreateTaskRequest)
+  }
+
+  async updateTask(request: unknown): Promise<UiResult<CommandReceipt>> {
+    return (await this.apiReady).updateTask(request)
+  }
+
+  async archiveTask(request: unknown): Promise<UiResult<CommandReceipt>> {
+    return (await this.apiReady).archiveTask(request)
+  }
+
+  async restoreTask(request: unknown): Promise<UiResult<CommandReceipt>> {
+    return (await this.apiReady).restoreTask(request)
   }
 
   async completeTask(request: unknown): Promise<UiResult<CommandReceipt>> {

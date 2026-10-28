@@ -25033,7 +25033,16 @@ var COMMAND_SCHEMAS = {
   "academic.course.rename.v1": external_exports.object({
     title: external_exports.string().min(1)
   }),
+  "academic.course.update.v1": external_exports.object({
+    termId: external_exports.string().min(1).optional(),
+    code: external_exports.string().min(1).optional(),
+    title: external_exports.string().min(1).optional()
+  }),
   "academic.course.archive.v1": external_exports.object({
+    reason: external_exports.string().max(500).optional()
+  }),
+  "academic.course.restore.v1": emptyPayloadSchema,
+  "academic.course.delete.v1": external_exports.object({
     reason: external_exports.string().max(500).optional()
   }),
   "academic.item.discover.v1": academicItemSnapshotSchema,
@@ -25044,6 +25053,7 @@ var COMMAND_SCHEMAS = {
   "academic.item.archive.v1": external_exports.object({
     reason: external_exports.string().max(500).optional()
   }),
+  "academic.item.restore.v1": emptyPayloadSchema,
   "academic.task.create.v1": external_exports.object({
     title: external_exports.string().min(1),
     itemId: external_exports.string().min(1).optional(),
@@ -25054,6 +25064,16 @@ var COMMAND_SCHEMAS = {
   "academic.task.change-estimate.v1": external_exports.object({
     estimateMinutes: external_exports.number().int().min(5).max(1440)
   }),
+  "academic.task.change-details.v1": external_exports.object({
+    title: external_exports.string().min(1).optional(),
+    dueAt: isoDateTimeSchema.nullable().optional(),
+    priority: external_exports.number().int().min(0).max(3).optional(),
+    estimateMinutes: external_exports.number().int().min(5).max(1440).optional()
+  }),
+  "academic.task.archive.v1": external_exports.object({
+    reason: external_exports.string().max(500).optional()
+  }),
+  "academic.task.restore.v1": emptyPayloadSchema,
   "academic.task.complete.v1": emptyPayloadSchema,
   "academic.task.reopen.v1": emptyPayloadSchema,
   "academic.plan.accept.v1": external_exports.object({
@@ -25074,13 +25094,20 @@ var COMMAND_SCHEMAS = {
 var COMMAND = {
   CourseCreate: "academic.course.create.v1",
   CourseRename: "academic.course.rename.v1",
+  CourseUpdate: "academic.course.update.v1",
   CourseArchive: "academic.course.archive.v1",
+  CourseRestore: "academic.course.restore.v1",
+  CourseDelete: "academic.course.delete.v1",
   AcademicItemDiscover: "academic.item.discover.v1",
   AcademicItemSync: "academic.item.sync.v1",
   AcademicItemSetProgress: "academic.item.set-progress.v1",
   AcademicItemArchive: "academic.item.archive.v1",
+  AcademicItemRestore: "academic.item.restore.v1",
   StudyTaskCreate: "academic.task.create.v1",
   StudyTaskChangeEstimate: "academic.task.change-estimate.v1",
+  StudyTaskChangeDetails: "academic.task.change-details.v1",
+  StudyTaskArchive: "academic.task.archive.v1",
+  StudyTaskRestore: "academic.task.restore.v1",
   StudyTaskComplete: "academic.task.complete.v1",
   StudyTaskReopen: "academic.task.reopen.v1",
   StudyPlanAccept: "academic.plan.accept.v1",
@@ -25145,7 +25172,22 @@ var EVENT_SCHEMAS = {
     title: external_exports.string().min(1),
     previousTitle: external_exports.string().min(1)
   }),
+  "academic.course.updated": external_exports.object({
+    termId: external_exports.string().min(1),
+    code: external_exports.string().min(1),
+    title: external_exports.string().min(1),
+    previous: external_exports.object({
+      termId: external_exports.string().min(1),
+      code: external_exports.string().min(1),
+      title: external_exports.string().min(1)
+    }),
+    changedFields: external_exports.array(external_exports.enum(["termId", "code", "title"])).min(1)
+  }),
   "academic.course.archived": external_exports.object({
+    reason: external_exports.string().max(500).optional()
+  }),
+  "academic.course.restored": external_exports.object({}),
+  "academic.course.deleted": external_exports.object({
     reason: external_exports.string().max(500).optional()
   }),
   "academic.item.discovered": academicItemSnapshotSchema,
@@ -25164,6 +25206,7 @@ var EVENT_SCHEMAS = {
   "academic.item.archived": external_exports.object({
     reason: external_exports.string().max(500).optional()
   }),
+  "academic.item.restored": external_exports.object({}),
   "academic.task.created": external_exports.object({
     title: external_exports.string().min(1),
     itemId: external_exports.string().min(1).optional(),
@@ -25175,6 +25218,23 @@ var EVENT_SCHEMAS = {
     estimateMinutes: external_exports.number().int().min(5).max(1440),
     previousEstimateMinutes: external_exports.number().int().min(5).max(1440)
   }),
+  "academic.task.details-changed": external_exports.object({
+    title: external_exports.string().min(1),
+    dueAt: isoDateTimeSchema.optional(),
+    priority: external_exports.number().int().min(0).max(3),
+    estimateMinutes: external_exports.number().int().min(5).max(1440),
+    previous: external_exports.object({
+      title: external_exports.string().min(1),
+      dueAt: isoDateTimeSchema.optional(),
+      priority: external_exports.number().int().min(0).max(3),
+      estimateMinutes: external_exports.number().int().min(5).max(1440)
+    }),
+    changedFields: external_exports.array(external_exports.enum(["title", "dueAt", "priority", "estimateMinutes"])).min(1)
+  }),
+  "academic.task.archived": external_exports.object({
+    reason: external_exports.string().max(500).optional()
+  }),
+  "academic.task.restored": external_exports.object({}),
   "academic.task.completed": external_exports.object({
     completedAt: isoDateTimeSchema
   }),
@@ -25197,14 +25257,21 @@ var EVENT_SCHEMAS = {
 var EVENT = {
   CourseCreated: "academic.course.created",
   CourseRenamed: "academic.course.renamed",
+  CourseUpdated: "academic.course.updated",
   CourseArchived: "academic.course.archived",
+  CourseRestored: "academic.course.restored",
+  CourseDeleted: "academic.course.deleted",
   AcademicItemDiscovered: "academic.item.discovered",
   AcademicItemDetailsChanged: "academic.item.details-changed",
   AcademicItemDeadlineChanged: "academic.item.deadline-changed",
   AcademicItemProgressChanged: "academic.item.progress-changed",
   AcademicItemArchived: "academic.item.archived",
+  AcademicItemRestored: "academic.item.restored",
   StudyTaskCreated: "academic.task.created",
   StudyTaskEstimateChanged: "academic.task.estimate-changed",
+  StudyTaskDetailsChanged: "academic.task.details-changed",
+  StudyTaskArchived: "academic.task.archived",
+  StudyTaskRestored: "academic.task.restored",
   StudyTaskCompleted: "academic.task.completed",
   StudyTaskReopened: "academic.task.reopened",
   StudyPlanAccepted: "academic.plan.accepted",
@@ -25662,6 +25729,19 @@ var ConnectionManager = class {
          WHERE connection_id = ?`
     ).run(now, connectionId);
     return this.#view(this.#getRecord(connectionId));
+  }
+  async delete(connectionId) {
+    const record2 = this.#getRecord(connectionId);
+    if (!record2) throw new ConnectionAccessError("Unknown connection");
+    if (record2.credentialRef) await this.#vault.delete(record2.credentialRef);
+    this.#db.prepare("DELETE FROM source_connections WHERE connection_id = ?").run(connectionId);
+  }
+  async deleteBySource(sourceId) {
+    const rows = this.#db.prepare("SELECT * FROM source_connections WHERE source_id = ?").all(sourceId);
+    for (const row of rows) {
+      await this.delete(String(row.connection_id));
+    }
+    return rows.length;
   }
   async markAuthRequired(connectionId, message) {
     this.#db.prepare(
@@ -27049,6 +27129,23 @@ var SourceConfigStore = class {
     ).run(now, sourceId);
     return this.get(sourceId);
   }
+  restore(sourceId) {
+    const current = this.get(sourceId);
+    if (!current) throw new SourceNotFoundError(sourceId);
+    if (!current.archived) return current;
+    const now = this.#clock.now();
+    this.#db.prepare(
+      `UPDATE academic_sources SET
+           archived = 0, enabled = 1, version = version + 1, updated_at = ?
+         WHERE source_id = ?`
+    ).run(now, sourceId);
+    return this.get(sourceId);
+  }
+  delete(sourceId) {
+    const current = this.get(sourceId);
+    if (!current) throw new SourceNotFoundError(sourceId);
+    this.#db.prepare("DELETE FROM academic_sources WHERE source_id = ?").run(sourceId);
+  }
   #toConfig(row) {
     return {
       sourceId: row.source_id,
@@ -28290,7 +28387,12 @@ var requestSchema = external_exports.object({
   pageStep: external_exports.number().int().min(1).max(100).optional(),
   offsetParam: external_exports.string().regex(/^[A-Za-z0-9_.-]{1,80}$/, "Expected a query parameter name").optional(),
   offsetStart: external_exports.number().int().min(0).max(1e6).optional(),
-  offsetStep: external_exports.number().int().min(1).max(1e4).optional()
+  offsetStep: external_exports.number().int().min(1).max(1e4).optional(),
+  /**
+   * Only assignments: 'course' runs the request once per course (default),
+   * 'source' runs it once and relies on row courseExternalId.
+   */
+  scope: external_exports.enum(["course", "source"]).optional()
 }).refine(
   (value) => [value.next, value.pageParam, value.offsetParam].filter(
     (entry) => entry !== void 0
@@ -28314,6 +28416,21 @@ var adapterManifestSchema = external_exports.object({
   courses: requestSchema,
   assignments: requestSchema,
   detail: requestSchema.optional()
+}).superRefine((value, ctx) => {
+  if (value.courses.scope !== void 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["courses", "scope"],
+      message: "scope is only supported on assignments"
+    });
+  }
+  if (value.detail?.scope !== void 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["detail", "scope"],
+      message: "scope is only supported on assignments"
+    });
+  }
 });
 function parseManifest(value) {
   if (value && typeof value === "object" && "schemaVersion" in value) {
@@ -39547,52 +39664,28 @@ var ManifestAdapter = class {
     const zone = this.#manifest.timeZone ?? "UTC";
     const offset = this.#manifest.utcOffsetMinutes ?? 0;
     let truncatedAssignments = false;
-    for (const course2 of loadedCourses.courses) {
-      if (truncatedAssignments) break;
-      await client.delay();
-      let assignments;
-      try {
-        assignments = await client.loadRows(this.#manifest.assignments, {
-          course: course2
-        });
-      } catch (error62) {
-        if (error62 instanceof AdapterAuthError) throw error62;
-        warnings.push(`\u8BFE\u7A0B\u300C${course2.title}\u300D\u4F5C\u4E1A\u8BFB\u53D6\u5931\u8D25\uFF1A${messageOf2(error62)}`);
-        partial2 = true;
-        continue;
-      }
-      if (!assignments.complete) {
-        warnings.push(`\u8BFE\u7A0B\u300C${course2.title}\u300D\u4F5C\u4E1A\u5206\u9875\u8FBE\u5230\u4E0A\u9650`);
-        partial2 = true;
-      }
-      warnings.push(
-        ...diagnosticWarnings(
-          `\u8BFE\u7A0B\u300C${course2.title}\u300D\u4F5C\u4E1A\u5217\u8868`,
-          this.#manifest.assignments,
-          assignments.diagnostics,
-          assignments.rows.length
-        )
-      );
-      for (const assignment of assignments.rows) {
+    const appendItems = async (rows, course2) => {
+      for (const assignment of rows) {
         if (items.length >= maxAssignments) {
           truncatedAssignments = true;
           partial2 = true;
-          break;
+          return;
         }
+        const label = course2 ? `\u8BFE\u7A0B\u300C${course2.title}\u300D` : "\u6765\u6E90";
         const externalItemId = requiredText(assignment, "externalItemId");
         const title = requiredText(assignment, "title");
         if (!externalItemId || !title) {
-          warnings.push(`\u8BFE\u7A0B\u300C${course2.title}\u300D\u8DF3\u8FC7\u7F3A\u5C11\u4F5C\u4E1A ID/\u540D\u79F0\u7684\u6761\u76EE`);
+          warnings.push(`${label}\u8DF3\u8FC7\u7F3A\u5C11\u4F5C\u4E1A ID/\u540D\u79F0\u7684\u6761\u76EE`);
           continue;
         }
         let detail = {};
         if (this.#manifest.detail) {
           await client.delay();
           try {
-            const loaded = await client.loadRows(this.#manifest.detail, {
-              course: course2,
-              assignment
-            });
+            const loaded = await client.loadRows(
+              this.#manifest.detail,
+              course2 ? { course: course2, assignment } : { assignment }
+            );
             detail = loaded.rows[0] ?? {};
             if (!loaded.rows[0]) {
               warnings.push(`\u4F5C\u4E1A\u300C${title}\u300D\u8BE6\u60C5\u4E3A\u7A7A`);
@@ -39620,10 +39713,11 @@ var ManifestAdapter = class {
         const sourceUrlValue = text(merged.sourceUrl);
         const sourceUrl = sourceUrlValue ? absoluteUrl2(sourceUrlValue, client.baseUrl) : void 0;
         const description = text(merged.description);
+        const courseExternalId = requiredText(merged, "courseExternalId") ?? course2?.externalCourseId;
         const normalized2 = {
           sourceId: this.sourceId,
           externalItemId,
-          courseExternalId: requiredText(merged, "courseExternalId") ?? course2.externalCourseId,
+          ...courseExternalId ? { courseExternalId } : {},
           kind,
           title: requiredText(merged, "title") ?? title,
           ...description ? { description } : {},
@@ -39634,11 +39728,63 @@ var ManifestAdapter = class {
               title: requiredText(merged, "title") ?? title,
               description,
               due,
-              courseExternalId: course2.externalCourseId
+              courseExternalId: courseExternalId ?? ""
             })
           ).digest("hex")
         };
         items.push(normalized2);
+      }
+    };
+    if (this.#manifest.assignments.scope === "source") {
+      await client.delay();
+      try {
+        const assignments = await client.loadRows(this.#manifest.assignments, {});
+        if (!assignments.complete) {
+          warnings.push("\u4F5C\u4E1A\u5206\u9875\u8FBE\u5230\u4E0A\u9650");
+          partial2 = true;
+        }
+        warnings.push(
+          ...diagnosticWarnings(
+            "\u4F5C\u4E1A\u5217\u8868",
+            this.#manifest.assignments,
+            assignments.diagnostics,
+            assignments.rows.length
+          )
+        );
+        await appendItems(assignments.rows, void 0);
+      } catch (error62) {
+        if (error62 instanceof AdapterAuthError) throw error62;
+        warnings.push(`\u4F5C\u4E1A\u8BFB\u53D6\u5931\u8D25\uFF1A${messageOf2(error62)}`);
+        partial2 = true;
+      }
+    } else {
+      for (const course2 of loadedCourses.courses) {
+        if (truncatedAssignments) break;
+        await client.delay();
+        let assignments;
+        try {
+          assignments = await client.loadRows(this.#manifest.assignments, {
+            course: course2
+          });
+        } catch (error62) {
+          if (error62 instanceof AdapterAuthError) throw error62;
+          warnings.push(`\u8BFE\u7A0B\u300C${course2.title}\u300D\u4F5C\u4E1A\u8BFB\u53D6\u5931\u8D25\uFF1A${messageOf2(error62)}`);
+          partial2 = true;
+          continue;
+        }
+        if (!assignments.complete) {
+          warnings.push(`\u8BFE\u7A0B\u300C${course2.title}\u300D\u4F5C\u4E1A\u5206\u9875\u8FBE\u5230\u4E0A\u9650`);
+          partial2 = true;
+        }
+        warnings.push(
+          ...diagnosticWarnings(
+            `\u8BFE\u7A0B\u300C${course2.title}\u300D\u4F5C\u4E1A\u5217\u8868`,
+            this.#manifest.assignments,
+            assignments.diagnostics,
+            assignments.rows.length
+          )
+        );
+        await appendItems(assignments.rows, course2);
       }
     }
     if (truncatedAssignments) {
@@ -39739,8 +39885,18 @@ function validateManifestStatic(manifest) {
   }
   const requests = [
     { name: "courses", request: manifest.courses, vars: [] },
-    { name: "assignments", request: manifest.assignments, vars: ["course"] },
-    ...manifest.detail ? [{ name: "detail", request: manifest.detail, vars: ["course", "assignment"] }] : []
+    {
+      name: "assignments",
+      request: manifest.assignments,
+      vars: manifest.assignments.scope === "source" ? [] : ["course"]
+    },
+    ...manifest.detail ? [
+      {
+        name: "detail",
+        request: manifest.detail,
+        vars: manifest.assignments.scope === "source" ? ["assignment"] : ["course", "assignment"]
+      }
+    ] : []
   ];
   for (const { name, request, vars } of requests) {
     for (const match of request.url.matchAll(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g)) {
@@ -40535,14 +40691,9 @@ function createAcademicTools(dependencies) {
       ),
       defineTool(
         ACADEMIC_TOOL_NAMES.RegisterAdapterCandidate,
-        "Store a validated declarative adapter candidate. Write; requires trusted host approval. Candidates are never active until explicitly activated. Use real samples or captured sampleIds.",
+        "Store a declarative adapter candidate for user review. This never activates the adapter and never creates a sync source; activation is a separate user-authorized step. Use real samples or captured sampleIds.",
         adapterCandidateSchema,
         async (input2) => {
-          const rejection = await requireWriteApproval(
-            ACADEMIC_TOOL_NAMES.RegisterAdapterCandidate,
-            { ...input2 }
-          );
-          if (rejection) return rejection;
           const resolved = resolveSamples(input2);
           if ("error" in resolved) return resolved.error;
           try {
@@ -40561,7 +40712,7 @@ function createAcademicTools(dependencies) {
       ),
       defineTool(
         ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate,
-        "Activate a validated declarative adapter version. Write; requires trusted host approval. Only validated versions can be activated; previous versions remain available for rollback.",
+        "Activate a validated declarative adapter version and create/update its sync source. Write; requires trusted host approval. Only validated versions can be activated; previous versions remain available for rollback.",
         adapterActivateSchema,
         async (input2) => {
           const rejection = await requireWriteApproval(
@@ -40570,6 +40721,14 @@ function createAcademicTools(dependencies) {
           );
           if (rejection) return rejection;
           try {
+            if (dependencies.activateAdapterCandidate) {
+              return success2(
+                await dependencies.activateAdapterCandidate({
+                  adapterId: input2.adapterId,
+                  version: input2.version
+                })
+              );
+            }
             return success2({
               candidate: dependencies.adapterCandidates.activate(
                 input2.adapterId,
@@ -42959,6 +43118,7 @@ var courseHandler = {
       code: "",
       title: "",
       archived: false,
+      deleted: false,
       createdAt: "",
       updatedAt: "",
       version: 0
@@ -42984,10 +43144,35 @@ var courseHandler = {
           updatedAt: event.occurredAt,
           version: event.streamVersion
         };
+      case EVENT.CourseUpdated:
+        return {
+          ...state,
+          termId: event.payload.termId,
+          code: event.payload.code,
+          title: event.payload.title,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion
+        };
       case EVENT.CourseArchived:
         return {
           ...state,
           archived: true,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion
+        };
+      case EVENT.CourseRestored:
+        return {
+          ...state,
+          archived: false,
+          deleted: false,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion
+        };
+      case EVENT.CourseDeleted:
+        return {
+          ...state,
+          archived: true,
+          deleted: true,
           updatedAt: event.occurredAt,
           version: event.streamVersion
         };
@@ -43015,7 +43200,9 @@ var courseHandler = {
         });
       case COMMAND.CourseRename:
         if (state.version === 0) return rejected("NOT_FOUND", "Course does not exist");
-        if (state.archived) return rejected("VALIDATION", "Archived course cannot be renamed");
+        if (state.archived || state.deleted) {
+          return rejected("VALIDATION", "Archived course cannot be renamed");
+        }
         if (state.title === command.payload.title) return accepted();
         return accepted({
           type: EVENT.CourseRenamed,
@@ -43024,11 +43211,49 @@ var courseHandler = {
             previousTitle: state.title
           }
         });
+      case COMMAND.CourseUpdate: {
+        if (state.version === 0) return rejected("NOT_FOUND", "Course does not exist");
+        if (state.archived || state.deleted) {
+          return rejected("VALIDATION", "Archived course cannot be updated");
+        }
+        const next = {
+          termId: command.payload.termId ?? state.termId,
+          code: command.payload.code ?? state.code,
+          title: command.payload.title ?? state.title
+        };
+        const changedFields = ["termId", "code", "title"].filter(
+          (field) => next[field] !== state[field]
+        );
+        if (changedFields.length === 0) return accepted();
+        return accepted({
+          type: EVENT.CourseUpdated,
+          payload: {
+            ...next,
+            previous: {
+              termId: state.termId,
+              code: state.code,
+              title: state.title
+            },
+            changedFields: [...changedFields]
+          }
+        });
+      }
       case COMMAND.CourseArchive:
         if (state.version === 0) return rejected("NOT_FOUND", "Course does not exist");
         if (state.archived) return accepted();
         return accepted({
           type: EVENT.CourseArchived,
+          payload: command.payload.reason ? { reason: command.payload.reason } : {}
+        });
+      case COMMAND.CourseRestore:
+        if (state.version === 0) return rejected("NOT_FOUND", "Course does not exist");
+        if (!state.archived && !state.deleted) return accepted();
+        return accepted({ type: EVENT.CourseRestored, payload: {} });
+      case COMMAND.CourseDelete:
+        if (state.version === 0) return rejected("NOT_FOUND", "Course does not exist");
+        if (state.deleted) return accepted();
+        return accepted({
+          type: EVENT.CourseDeleted,
           payload: command.payload.reason ? { reason: command.payload.reason } : {}
         });
       default:
@@ -43118,6 +43343,13 @@ var academicItemHandler = {
           updatedAt: event.occurredAt,
           version: event.streamVersion
         };
+      case EVENT.AcademicItemRestored:
+        return {
+          ...state,
+          archived: false,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion
+        };
       default:
         throw new Error(`Unexpected academic item event: ${event.type}`);
     }
@@ -43190,6 +43422,10 @@ var academicItemHandler = {
           type: EVENT.AcademicItemArchived,
           payload: command.payload.reason ? { reason: command.payload.reason } : {}
         });
+      case COMMAND.AcademicItemRestore:
+        if (state.version === 0) return rejected("NOT_FOUND", "Academic item does not exist");
+        if (!state.archived) return accepted();
+        return accepted({ type: EVENT.AcademicItemRestored, payload: {} });
       default:
         return rejected(
           "VALIDATION",
@@ -43209,6 +43445,7 @@ var studyTaskHandler = {
       estimateMinutes: 0,
       priority: 0,
       status: "active",
+      archived: false,
       createdAt: "",
       updatedAt: "",
       version: 0
@@ -43225,6 +43462,7 @@ var studyTaskHandler = {
           dueAt: event.payload.dueAt,
           priority: event.payload.priority,
           status: "active",
+          archived: false,
           completedAt: void 0,
           createdAt: event.occurredAt,
           updatedAt: event.occurredAt,
@@ -43234,6 +43472,30 @@ var studyTaskHandler = {
         return {
           ...state,
           estimateMinutes: event.payload.estimateMinutes,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion
+        };
+      case EVENT.StudyTaskDetailsChanged:
+        return {
+          ...state,
+          title: event.payload.title,
+          dueAt: event.payload.dueAt,
+          priority: event.payload.priority,
+          estimateMinutes: event.payload.estimateMinutes,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion
+        };
+      case EVENT.StudyTaskArchived:
+        return {
+          ...state,
+          archived: true,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion
+        };
+      case EVENT.StudyTaskRestored:
+        return {
+          ...state,
+          archived: false,
           updatedAt: event.occurredAt,
           version: event.streamVersion
         };
@@ -43276,6 +43538,7 @@ var studyTaskHandler = {
         });
       case COMMAND.StudyTaskChangeEstimate:
         if (state.version === 0) return rejected("NOT_FOUND", "Study task does not exist");
+        if (state.archived) return rejected("VALIDATION", "Archived study task cannot be updated");
         if (state.status === "completed") {
           return rejected("VALIDATION", "Completed study task cannot change its estimate");
         }
@@ -43287,8 +43550,48 @@ var studyTaskHandler = {
             previousEstimateMinutes: state.estimateMinutes
           }
         });
+      case COMMAND.StudyTaskChangeDetails: {
+        if (state.version === 0) return rejected("NOT_FOUND", "Study task does not exist");
+        if (state.archived) return rejected("VALIDATION", "Archived study task cannot be updated");
+        const next = {
+          title: command.payload.title ?? state.title,
+          dueAt: command.payload.dueAt === void 0 ? state.dueAt : command.payload.dueAt ?? void 0,
+          priority: command.payload.priority ?? state.priority,
+          estimateMinutes: command.payload.estimateMinutes ?? state.estimateMinutes
+        };
+        const changedFields = ["title", "dueAt", "priority", "estimateMinutes"].filter((field) => {
+          if (field === "dueAt") return (next.dueAt ?? null) !== (state.dueAt ?? null);
+          return next[field] !== state[field];
+        });
+        if (changedFields.length === 0) return accepted();
+        return accepted({
+          type: EVENT.StudyTaskDetailsChanged,
+          payload: {
+            ...next,
+            previous: {
+              title: state.title,
+              ...state.dueAt ? { dueAt: state.dueAt } : {},
+              priority: state.priority,
+              estimateMinutes: state.estimateMinutes
+            },
+            changedFields: [...changedFields]
+          }
+        });
+      }
+      case COMMAND.StudyTaskArchive:
+        if (state.version === 0) return rejected("NOT_FOUND", "Study task does not exist");
+        if (state.archived) return accepted();
+        return accepted({
+          type: EVENT.StudyTaskArchived,
+          payload: command.payload.reason ? { reason: command.payload.reason } : {}
+        });
+      case COMMAND.StudyTaskRestore:
+        if (state.version === 0) return rejected("NOT_FOUND", "Study task does not exist");
+        if (!state.archived) return accepted();
+        return accepted({ type: EVENT.StudyTaskRestored, payload: {} });
       case COMMAND.StudyTaskComplete:
         if (state.version === 0) return rejected("NOT_FOUND", "Study task does not exist");
+        if (state.archived) return rejected("VALIDATION", "Archived study task cannot be completed");
         if (state.status === "completed") return accepted();
         return accepted({
           type: EVENT.StudyTaskCompleted,
@@ -43296,6 +43599,7 @@ var studyTaskHandler = {
         });
       case COMMAND.StudyTaskReopen:
         if (state.version === 0) return rejected("NOT_FOUND", "Study task does not exist");
+        if (state.archived) return rejected("VALIDATION", "Archived study task cannot be reopened");
         if (state.status === "active") return accepted();
         return accepted({ type: EVENT.StudyTaskReopened, payload: {} });
       default:
@@ -43461,13 +43765,20 @@ var studyPlan = asRegistered(studyPlanHandler);
 var HANDLERS_BY_COMMAND = {
   [COMMAND.CourseCreate]: course,
   [COMMAND.CourseRename]: course,
+  [COMMAND.CourseUpdate]: course,
   [COMMAND.CourseArchive]: course,
+  [COMMAND.CourseRestore]: course,
+  [COMMAND.CourseDelete]: course,
   [COMMAND.AcademicItemDiscover]: academicItem,
   [COMMAND.AcademicItemSync]: academicItem,
   [COMMAND.AcademicItemSetProgress]: academicItem,
   [COMMAND.AcademicItemArchive]: academicItem,
+  [COMMAND.AcademicItemRestore]: academicItem,
   [COMMAND.StudyTaskCreate]: studyTask,
   [COMMAND.StudyTaskChangeEstimate]: studyTask,
+  [COMMAND.StudyTaskChangeDetails]: studyTask,
+  [COMMAND.StudyTaskArchive]: studyTask,
+  [COMMAND.StudyTaskRestore]: studyTask,
   [COMMAND.StudyTaskComplete]: studyTask,
   [COMMAND.StudyTaskReopen]: studyTask,
   [COMMAND.StudyPlanAccept]: studyPlan,
@@ -43899,14 +44210,15 @@ var CoreProjection = class {
     const source = state.source;
     this.#db.prepare(
       `INSERT INTO courses_current (
-           course_id, term_id, code, title, archived, source_id,
+           course_id, term_id, code, title, archived, deleted, source_id,
            external_course_id, source_json, created_at, updated_at, version
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(course_id) DO UPDATE SET
            term_id = excluded.term_id,
            code = excluded.code,
            title = excluded.title,
            archived = excluded.archived,
+           deleted = excluded.deleted,
            source_id = excluded.source_id,
            external_course_id = excluded.external_course_id,
            source_json = excluded.source_json,
@@ -43918,6 +44230,7 @@ var CoreProjection = class {
       state.code,
       state.title,
       Number(state.archived),
+      Number(state.deleted),
       source?.sourceId ?? null,
       source?.externalCourseId ?? null,
       source ? JSON.stringify(source) : null,
@@ -43978,8 +44291,8 @@ var CoreProjection = class {
     this.#db.prepare(
       `INSERT INTO study_tasks_current (
            task_id, title, item_id, estimate_minutes, due_at, priority,
-           status, completed_at, created_at, updated_at, version
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           status, archived, completed_at, created_at, updated_at, version
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(task_id) DO UPDATE SET
            title = excluded.title,
            item_id = excluded.item_id,
@@ -43987,6 +44300,7 @@ var CoreProjection = class {
            due_at = excluded.due_at,
            priority = excluded.priority,
            status = excluded.status,
+           archived = excluded.archived,
            completed_at = excluded.completed_at,
            updated_at = excluded.updated_at,
            version = excluded.version`
@@ -43998,6 +44312,7 @@ var CoreProjection = class {
       state.dueAt ?? null,
       state.priority,
       state.status,
+      Number(state.archived),
       state.completedAt ?? null,
       state.createdAt,
       state.updatedAt,
@@ -44143,6 +44458,9 @@ var SqliteQueryService = class {
   async listStudyTasks(params = {}) {
     const clauses = [];
     const values = [];
+    if (!params.includeArchived) {
+      clauses.push("archived = 0");
+    }
     if (params.status && params.status !== "all") {
       clauses.push("status = ?");
       values.push(params.status);
@@ -44260,6 +44578,7 @@ var SqliteQueryService = class {
       code: String(row.code),
       title: String(row.title),
       archived: Boolean(row.archived),
+      deleted: Boolean(row.deleted),
       source: row.source_json ? parseJson3(row.source_json) : void 0,
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
@@ -44299,6 +44618,7 @@ var SqliteQueryService = class {
       dueAt: row.due_at == null ? void 0 : String(row.due_at),
       priority: Number(row.priority),
       status: String(row.status),
+      archived: Boolean(row.archived),
       completedAt: row.completed_at == null ? void 0 : String(row.completed_at),
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
@@ -44445,6 +44765,23 @@ function addMilliseconds2(iso, milliseconds) {
 }
 function errorMessage3(error62) {
   return error62 instanceof Error ? error62.message : String(error62);
+}
+function escapePattern(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function candidateSourceId(adapterId) {
+  const slug = adapterId.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 80);
+  return `adapter-${slug}`;
+}
+function configAllowsHost(config2, host) {
+  const domains = Array.isArray(config2.cookieDomains) ? config2.cookieDomains.filter(
+    (entry) => typeof entry === "string"
+  ) : [];
+  const target = host.toLowerCase();
+  return domains.some((entry) => {
+    const domain2 = entry.toLowerCase().replace(/^\./, "");
+    return target === domain2 || target.endsWith(`.${domain2}`);
+  });
 }
 async function createAcademicApp(options) {
   if (options.databasePath !== ":memory:") {
@@ -44621,6 +44958,90 @@ async function createAcademicApp(options) {
       ...options.probeResolveHost ? { resolveHost: options.probeResolveHost } : {}
     });
   };
+  const ensureCandidateSource = async (candidate) => {
+    const manifest = manifestRegistry.get(candidate.adapterId, candidate.version);
+    if (!manifest) return { warning: "Manifest \u672A\u6CE8\u518C\uFF0C\u65E0\u6CD5\u521B\u5EFA\u540C\u6B65\u6570\u636E\u6E90" };
+    if (!sourceEngines.get("declarative")) {
+      return { warning: "declarative engine \u672A\u52A0\u8F7D\uFF0C\u65E0\u6CD5\u521B\u5EFA\u540C\u6B65\u6570\u636E\u6E90" };
+    }
+    const base = new URL(manifest.baseUrl);
+    const host2 = base.hostname;
+    const config2 = {
+      manifestId: candidate.adapterId,
+      manifestVersion: candidate.version,
+      baseUrl: base.toString(),
+      loginUrl: base.toString(),
+      authenticatedUrlPatterns: [`^${escapePattern(base.origin)}/`],
+      cookieDomains: [host2],
+      verifyUrl: base.toString(),
+      loggedOutPatterns: ["/login"]
+    };
+    let sourceId = candidateSourceId(candidate.adapterId);
+    let existing = sources.get(sourceId);
+    if (existing?.archived) {
+      sourceId = `${sourceId}-${candidate.version}`.slice(0, 200);
+      existing = sources.get(sourceId);
+    }
+    if (!existing) {
+      sources.create({
+        sourceId,
+        engine: "declarative",
+        displayName: manifest.displayName,
+        authKind: "token",
+        loginMode: "browser",
+        capabilities: ["academic.sync"],
+        config: config2
+      });
+    } else {
+      sources.update(sourceId, {
+        displayName: manifest.displayName,
+        authKind: "token",
+        loginMode: "browser",
+        capabilities: ["academic.sync"],
+        config: config2
+      });
+    }
+    let warning;
+    const loginSource = sources.list().find(
+      (source) => source.sourceId !== sourceId && source.engine !== "fixture" && source.engine !== "declarative" && source.authKind !== "none" && configAllowsHost(source.config, host2)
+    );
+    const loginConnection = loginSource ? connections.list().find(
+      (connection) => connection.sourceId === loginSource.sourceId && connection.hasCredential && connection.status === "connected"
+    ) : void 0;
+    if (loginSource && loginConnection) {
+      try {
+        const lease = await connections.openCredential(
+          loginConnection.connectionId,
+          loginSource.sourceId
+        );
+        const secret = await lease.getSecret();
+        const target = connections.list().find((connection) => connection.sourceId === sourceId) ?? connections.create({
+          sourceId,
+          displayName: manifest.displayName,
+          authKind: "token"
+        });
+        await connections.setSecret(target.connectionId, secret);
+        await connections.verify(target.connectionId, async () => ({ ok: true }));
+      } catch {
+        warning = "\u5DF2\u6709\u4F1A\u8BDD\u65E0\u6CD5\u590D\u5236\uFF1B\u8BF7\u5728\u8BE5\u6570\u636E\u6E90\u4E0A\u91CD\u65B0\u767B\u5F55";
+      }
+    } else if (loginSource && loginConnection === void 0) {
+      warning = "\u8BF7\u5148\u9A8C\u8BC1\u539F\u4F1A\u8BDD\uFF0C\u518D\u542F\u7528\u5019\u9009";
+    } else {
+      warning = "\u8BF7\u5728\u8BE5\u6570\u636E\u6E90\u4E0A\u5B8C\u6210\u767B\u5F55\u540E\u518D\u540C\u6B65";
+    }
+    return { sourceId, ...warning ? { warning } : {} };
+  };
+  const activateCandidate = async (adapterId, version2) => {
+    const candidate = adapterCandidates.activate(adapterId, version2);
+    const activation = await ensureCandidateSource(candidate);
+    return { candidate, ...activation };
+  };
+  const rollbackCandidate = async (adapterId, version2) => {
+    const candidate = adapterCandidates.rollback(adapterId, version2);
+    const activation = await ensureCandidateSource(candidate);
+    return { candidate, ...activation };
+  };
   const host = new InMemoryToolHost();
   const agentRegistration = registerAcademicTools(host, {
     queries: store.queries,
@@ -44632,6 +45053,7 @@ async function createAcademicApp(options) {
     sourceEngines,
     webSessions,
     adapterCandidates,
+    activateAdapterCandidate: (request) => activateCandidate(request.adapterId, request.version),
     probeSource: probeSourceById,
     getProbeSample: (sampleId) => probeSamples.get(sampleId),
     allowWrites: options.agentWrites ?? false,
@@ -44828,6 +45250,8 @@ async function createAcademicApp(options) {
     manifestRegistry,
     manifestStore,
     adapterCandidates,
+    activateAdapterCandidate: activateCandidate,
+    rollbackAdapterCandidate: rollbackCandidate,
     connections,
     webSessions,
     replans,
@@ -44980,6 +45404,21 @@ async function createAcademicApp(options) {
         })
       );
     },
+    async updateCourse(courseId, input2) {
+      const course2 = await store.queries.getCourse(courseId);
+      if (!course2) return failure3(`Course not found: ${courseId}`);
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.CourseUpdate,
+          aggregateId: courseId,
+          expectedVersion: course2.version,
+          actor: userActor,
+          correlationId: `course/${courseId}`,
+          payload: input2
+        })
+      );
+    },
     async archiveCourse(courseId) {
       const course2 = await store.queries.getCourse(courseId);
       if (!course2) return failure3(`Course not found: ${courseId}`);
@@ -44991,6 +45430,113 @@ async function createAcademicApp(options) {
           expectedVersion: course2.version,
           actor: userActor,
           correlationId: `course/${courseId}`,
+          payload: {}
+        })
+      );
+    },
+    async restoreCourse(courseId) {
+      const course2 = await store.queries.getCourse(courseId);
+      if (!course2) return failure3(`Course not found: ${courseId}`);
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.CourseRestore,
+          aggregateId: courseId,
+          expectedVersion: course2.version,
+          actor: userActor,
+          correlationId: `course/${courseId}`,
+          payload: {}
+        })
+      );
+    },
+    async deleteCourse(courseId) {
+      const course2 = await store.queries.getCourse(courseId);
+      if (!course2) return failure3(`Course not found: ${courseId}`);
+      const items = [];
+      let cursor;
+      do {
+        const page = await store.queries.listAcademicItems({
+          courseId,
+          status: "all",
+          limit: 200,
+          ...cursor ? { cursor } : {}
+        });
+        items.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor);
+      const itemIds = new Set(items.map((item) => item.itemId));
+      for (const item of items) {
+        if (item.archived) continue;
+        const result = await store.commands.execute(
+          parseCommand({
+            commandId: ids.next(),
+            type: COMMAND.AcademicItemArchive,
+            aggregateId: item.itemId,
+            expectedVersion: item.version,
+            actor: userActor,
+            correlationId: `course-delete/${courseId}`,
+            payload: { reason: "course deleted" }
+          })
+        );
+        if (!result.ok && result.code !== "CONFLICT") return result;
+      }
+      const tasks = (await store.queries.listStudyTasks({
+        status: "all",
+        includeArchived: true
+      })).items;
+      for (const task of tasks) {
+        if (task.archived || !task.itemId || !itemIds.has(task.itemId)) continue;
+        const result = await store.commands.execute(
+          parseCommand({
+            commandId: ids.next(),
+            type: COMMAND.StudyTaskArchive,
+            aggregateId: task.taskId,
+            expectedVersion: task.version,
+            actor: userActor,
+            correlationId: `course-delete/${courseId}`,
+            payload: { reason: "course deleted" }
+          })
+        );
+        if (!result.ok && result.code !== "CONFLICT") return result;
+      }
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.CourseDelete,
+          aggregateId: courseId,
+          expectedVersion: course2.version,
+          actor: userActor,
+          correlationId: `course/${courseId}`,
+          payload: {}
+        })
+      );
+    },
+    async archiveItem(itemId) {
+      const item = await store.queries.getAcademicItem(itemId);
+      if (!item) return failure3(`Academic item not found: ${itemId}`);
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.AcademicItemArchive,
+          aggregateId: itemId,
+          expectedVersion: item.version,
+          actor: userActor,
+          correlationId: `item/${itemId}`,
+          payload: {}
+        })
+      );
+    },
+    async restoreItem(itemId) {
+      const item = await store.queries.getAcademicItem(itemId);
+      if (!item) return failure3(`Academic item not found: ${itemId}`);
+      return store.commands.execute(
+        parseCommand({
+          commandId: ids.next(),
+          type: COMMAND.AcademicItemRestore,
+          aggregateId: itemId,
+          expectedVersion: item.version,
+          actor: userActor,
+          correlationId: `item/${itemId}`,
           payload: {}
         })
       );
@@ -45014,6 +45560,15 @@ async function createAcademicApp(options) {
           }
         })
       );
+    },
+    async updateTask(taskId, input2) {
+      return taskCommand(taskId, COMMAND.StudyTaskChangeDetails, input2);
+    },
+    async archiveTask(taskId) {
+      return taskCommand(taskId, COMMAND.StudyTaskArchive, {});
+    },
+    async restoreTask(taskId) {
+      return taskCommand(taskId, COMMAND.StudyTaskRestore, {});
     },
     async completeTask(taskId) {
       return taskCommand(taskId, COMMAND.StudyTaskComplete, {});
