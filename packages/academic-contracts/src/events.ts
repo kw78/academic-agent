@@ -63,6 +63,10 @@ export const EVENT_SCHEMAS = {
     reason: z.string().max(500).optional(),
   }),
   'academic.item.restored': z.object({}),
+  'academic.item.course-changed': z.object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+  }),
   'academic.task.created': z.object({
     title: z.string().min(1),
     itemId: z.string().min(1).optional(),
@@ -129,6 +133,7 @@ export const EVENT = {
   AcademicItemProgressChanged: 'academic.item.progress-changed',
   AcademicItemArchived: 'academic.item.archived',
   AcademicItemRestored: 'academic.item.restored',
+  AcademicItemCourseChanged: 'academic.item.course-changed',
   StudyTaskCreated: 'academic.task.created',
   StudyTaskEstimateChanged: 'academic.task.estimate-changed',
   StudyTaskDetailsChanged: 'academic.task.details-changed',

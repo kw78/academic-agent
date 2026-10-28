@@ -300,6 +300,51 @@ export const TOOL_SPECS: ToolSpec[] = [
     },
     write: true,
   },
+  {
+    name: ACADEMIC_TOOL_NAMES.ListMaterials,
+    description:
+      'List indexed course materials. Read-only; returns metadata only, never file bytes.',
+    parameters: {
+      courseId: { type: 'string', description: 'Optional internal course id' },
+      itemId: { type: 'string', description: 'Optional academic item id' },
+      limit: { type: 'integer', description: 'Optional page size, 1-200' },
+    },
+    write: false,
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.SearchMaterials,
+    description:
+      'Search indexed course material chunks. Returns short snippets with material title, course, page/slide and heading. Read-only; never returns a whole document.',
+    parameters: {
+      query: { type: 'string', required: true, description: 'Keywords, e.g. 组合逻辑 半加器' },
+      courseId: { type: 'string', description: 'Optional internal course id' },
+      itemId: { type: 'string', description: 'Optional academic item id' },
+      limit: { type: 'integer', description: 'Optional hit count, 1-30' },
+    },
+    write: false,
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.ImportMaterial,
+    description:
+      'Import user-provided text or one user-provided URL into a course material library. Write; requires trusted host approval. Never crawls other pages and never submits work.',
+    parameters: {
+      courseId: { type: 'string', required: true, description: 'Internal course id' },
+      itemId: { type: 'string', description: 'Optional academic item id' },
+      title: { type: 'string', description: 'Title; required with text' },
+      text: { type: 'string', description: 'Pasted text to index' },
+      url: { type: 'string', description: 'One user-provided http(s) URL' },
+    },
+    write: true,
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.DeleteMaterial,
+    description:
+      'Delete one material file and its search index. Never touches academic events or school platforms. Write; requires trusted host approval.',
+    parameters: {
+      materialId: { type: 'string', required: true, description: 'Internal material id' },
+    },
+    write: true,
+  },
 ]
 
 function toJsonValue(value: unknown): unknown {

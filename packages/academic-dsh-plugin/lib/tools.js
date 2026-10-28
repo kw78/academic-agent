@@ -19873,6 +19873,9 @@ var COMMAND_SCHEMAS = {
     reason: external_exports.string().max(500).optional()
   }),
   "academic.item.restore.v1": emptyPayloadSchema,
+  "academic.item.reassign-course.v1": external_exports.object({
+    courseId: external_exports.string().min(1)
+  }),
   "academic.task.create.v1": external_exports.object({
     title: external_exports.string().min(1),
     itemId: external_exports.string().min(1).optional(),
@@ -19970,6 +19973,10 @@ var EVENT_SCHEMAS = {
     reason: external_exports.string().max(500).optional()
   }),
   "academic.item.restored": external_exports.object({}),
+  "academic.item.course-changed": external_exports.object({
+    from: external_exports.string().min(1),
+    to: external_exports.string().min(1)
+  }),
   "academic.task.created": external_exports.object({
     title: external_exports.string().min(1),
     itemId: external_exports.string().min(1).optional(),
@@ -20052,7 +20059,11 @@ var ACADEMIC_TOOL_NAMES = {
   SyncSource: "academic_sync_source",
   UpdateSource: "academic_update_source",
   UpdateTask: "academic_update_task",
-  RequestReplan: "academic_request_replan"
+  RequestReplan: "academic_request_replan",
+  ListMaterials: "academic_list_materials",
+  SearchMaterials: "academic_search_materials",
+  ImportMaterial: "academic_import_material",
+  DeleteMaterial: "academic_delete_material"
 };
 var listCoursesSchema = external_exports.object({
   termId: external_exports.string().min(1).optional()
@@ -20132,6 +20143,30 @@ var updateSourceSchema = external_exports.object({
   capabilities: external_exports.array(external_exports.string().min(1).max(200)).max(50).optional(),
   enabled: external_exports.boolean().optional(),
   expectedVersion: external_exports.number().int().min(1).optional()
+});
+var materialListSchema = external_exports.object({
+  courseId: external_exports.string().min(1).max(200).optional(),
+  itemId: external_exports.string().min(1).max(200).optional(),
+  limit: external_exports.number().int().min(1).max(200).optional()
+});
+var materialSearchSchema = external_exports.object({
+  query: external_exports.string().min(1).max(200),
+  courseId: external_exports.string().min(1).max(200).optional(),
+  itemId: external_exports.string().min(1).max(200).optional(),
+  limit: external_exports.number().int().min(1).max(30).optional()
+});
+var materialImportSchema = external_exports.object({
+  courseId: external_exports.string().min(1).max(200),
+  itemId: external_exports.string().min(1).max(200).optional(),
+  title: external_exports.string().min(1).max(300).optional(),
+  text: external_exports.string().min(1).max(2e6).optional(),
+  url: external_exports.string().url().max(2e3).optional()
+}).refine(
+  (value) => (value.text ? 1 : 0) + (value.url ? 1 : 0) === 1,
+  { message: "Provide exactly one of text or url" }
+);
+var materialDeleteSchema = external_exports.object({
+  materialId: external_exports.string().min(1).max(200)
 });
 
 // packages/academic-dsh-plugin/src/tools.ts
@@ -20394,6 +20429,47 @@ var TOOL_SPECS = [
     description: "Sync one declarative source through Connector and Kernel. Deterministic write; requires the user-enabled adapter automation preference.",
     parameters: {
       sourceId: { type: "string", required: true, description: "Declarative source id" }
+    },
+    write: true
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.ListMaterials,
+    description: "List indexed course materials. Read-only; returns metadata only, never file bytes.",
+    parameters: {
+      courseId: { type: "string", description: "Optional internal course id" },
+      itemId: { type: "string", description: "Optional academic item id" },
+      limit: { type: "integer", description: "Optional page size, 1-200" }
+    },
+    write: false
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.SearchMaterials,
+    description: "Search indexed course material chunks. Returns short snippets with material title, course, page/slide and heading. Read-only; never returns a whole document.",
+    parameters: {
+      query: { type: "string", required: true, description: "Keywords, e.g. \u7EC4\u5408\u903B\u8F91 \u534A\u52A0\u5668" },
+      courseId: { type: "string", description: "Optional internal course id" },
+      itemId: { type: "string", description: "Optional academic item id" },
+      limit: { type: "integer", description: "Optional hit count, 1-30" }
+    },
+    write: false
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.ImportMaterial,
+    description: "Import user-provided text or one user-provided URL into a course material library. Write; requires trusted host approval. Never crawls other pages and never submits work.",
+    parameters: {
+      courseId: { type: "string", required: true, description: "Internal course id" },
+      itemId: { type: "string", description: "Optional academic item id" },
+      title: { type: "string", description: "Title; required with text" },
+      text: { type: "string", description: "Pasted text to index" },
+      url: { type: "string", description: "One user-provided http(s) URL" }
+    },
+    write: true
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.DeleteMaterial,
+    description: "Delete one material file and its search index. Never touches academic events or school platforms. Write; requires trusted host approval.",
+    parameters: {
+      materialId: { type: "string", required: true, description: "Internal material id" }
     },
     write: true
   }

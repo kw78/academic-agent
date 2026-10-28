@@ -3,7 +3,7 @@
 Academic Agent 的 DSH 客户端界面与 Host Remote API 适配层。
 
 - 一个客户端 UI 插件，同时用于 DSH Desktop 与 DSH Web；
-- 侧边栏注册“学业”入口，主面板提供总览、任务、计划、连接、自动化与设置；
+- 侧边栏注册“学业”入口，主面板提供总览、任务、计划、连接、资料、自动化与设置；
 - UI 只通过 Query API 读取事实、通过 Command API 提交业务变更；
 - 不访问 SQLite、Event Store、核心投影、Scheduler 表或 Credential Vault；
 - 不保存密码、Token、Cookie 或凭据引用到浏览器存储。
@@ -16,8 +16,9 @@ Academic Agent 的 DSH 客户端界面与 Host Remote API 适配层。
 | 任务 | 学习任务与来源事项分开显示；筛选、完成/重开、预计时长、来源链接、Agent 入口 |
 | 计划 | 候选/确认计划区分、日/周/列表分组、锁定/解锁、未安排原因、归档 |
 | 连接 | 课程管理、连接状态、Adapter 可用性、同步记录；仅对已实现 Adapter 展示认证表单 |
+| 资料 | 资料统计、导入（文件/文本/URL）、检索、删除、索引重建、授权附件导入与自动导入许可 |
 | 自动化 | 同步/重算/提醒作业启停、运行记录、同步记录、通知已读、提醒阈值 |
-| 设置 | 时区、每周可用时间、临时不可用、计划粒度、同步周期、界面偏好 |
+| 设置 | 时区、每周可用时间、临时不可用、计划粒度、同步周期、课程维护（合并同名课程）、界面偏好 |
 
 ## 状态与安全
 
@@ -35,7 +36,7 @@ Academic Agent 的 DSH 客户端界面与 Host Remote API 适配层。
 
 - 注入 `academicApp` 服务；
 - 注册 `AcademicUiService extends TypertRemoteService`，命名空间 `academic`；
-- 通过标准 `@Remote` 标记暴露 30+ 个方法，由 DSH 0.2.1-rc.3 的 SRC fallback 调用；
+- 通过标准 `@Remote` 标记暴露 40+ 个方法，由 DSH 0.2.1-rc.3 的 SRC fallback 调用；
 - 不创建第二份 Academic Runtime；卸载 UI 只移除界面和该 Remote 服务。
 
 构建：
@@ -53,14 +54,14 @@ npm run build:ui
 
 ```bash
 dsh plugin --profile academic-web add \
-  D:/project/classhelper/packages/academic-dsh-plugin \
-  D:/project/classhelper/packages/academic-dsh-ui
+  <path-to-repo>/packages/academic-dsh-plugin \
+  <path-to-repo>/packages/academic-dsh-ui
 ```
 
 profile 需要包含 `@deepseek-ai/dsh-web-app` bundle（与 DSH `web` profile 一致），然后：
 
 ```bash
-ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-ui-test.db \
+ACADEMIC_AGENT_DB=<path-to-repo>/.data/dsh-ui-test.db \
   dsh --profile academic-web --no-open --port 0
 ```
 
@@ -68,8 +69,8 @@ ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-ui-test.db \
 
 ```bash
 dsh plugin --profile desktop add \
-  D:/project/classhelper/packages/academic-dsh-plugin \
-  D:/project/classhelper/packages/academic-dsh-ui
+  <path-to-repo>/packages/academic-dsh-plugin \
+  <path-to-repo>/packages/academic-dsh-ui
 ```
 
 并在 `~/.dsh/profiles/desktop/package.json` 的 `dsh.profile.bundles` 中加入

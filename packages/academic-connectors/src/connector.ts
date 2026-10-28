@@ -3,6 +3,7 @@ import {
   AdapterAuthError,
   AdapterTransientError,
   COMMAND,
+  courseIdentityKey,
   parseCommand,
   type AcademicItemView,
   type AcademicSourceAdapter,
@@ -47,6 +48,32 @@ export interface SyncOptions {
   connection?: ConnectionSyncBinding
   /** Bounded retries for transient adapter failures. */
   maxAttempts?: number
+  /**
+   * External course ids the adapter actually covers in this run (for example
+   * after a `termFilter`). Items belonging to other courses are out of scope:
+   * a full snapshot legitimately omits them, so they are neither reported as
+   * missing nor archived.
+   */
+  scopeCourseExternalIds?: readonly string[]
+}
+
+/**
+ * Items that disappeared from a complete snapshot. Out-of-scope courses are
+ * excluded so a term- or course-scoped source does not look like data loss.
+ */
+export function selectMissingItems<
+  T extends { courseId: string; source: { externalItemId?: string } },
+>(
+  items: readonly T[],
+  seenExternalIds: ReadonlySet<string>,
+  scopeCourseIds?: ReadonlySet<string>,
+): T[] {
+  return items.filter((item) => {
+    const externalId = item.source.externalItemId
+    if (externalId && seenExternalIds.has(externalId)) return false
+    if (scopeCourseIds && !scopeCourseIds.has(item.courseId)) return false
+    return true
+  })
 }
 
 type ItemOutcome =
@@ -73,11 +100,33 @@ export class ConnectorService {
   }
 
   async registerCourse(input: RegisterCourseInput): Promise<CourseView> {
+    const aliased = this.#aliasedCourse(input.sourceId, input.externalCourseId)
+    if (aliased) {
+      const course = await this.#queries.getCourse(aliased)
+      if (course && !course.deleted) return course
+      this.#removeAlias(input.sourceId, input.externalCourseId)
+    }
+
     const existing = await this.#queries.getCourseBySource(
       input.sourceId,
       input.externalCourseId,
     )
-    if (existing) return existing
+    if (existing && !existing.deleted) {
+      this.#linkCourseSource(input.sourceId, input.externalCourseId, existing.courseId)
+      return existing
+    }
+
+    const sameTitle = (await this.#queries.listCourses(input.termId)).items.find(
+      (course) =>
+        !course.deleted &&
+        !course.archived &&
+        courseIdentityKey(course.termId, course.title) ===
+          courseIdentityKey(input.termId, input.title),
+    )
+    if (sameTitle) {
+      this.#linkCourseSource(input.sourceId, input.externalCourseId, sameTitle.courseId)
+      return sameTitle
+    }
 
     const courseId = this.#ids.next()
     const command = parseCommand({
@@ -102,12 +151,54 @@ export class ConnectorService {
       throw new Error(`Could not register course: ${result.message}`)
     }
 
-    const course = await this.#queries.getCourseBySource(
-      input.sourceId,
-      input.externalCourseId,
-    )
+    this.#linkCourseSource(input.sourceId, input.externalCourseId, courseId)
+    const course = await this.#queries.getCourse(courseId)
     if (!course) throw new Error('Course registration did not become visible')
     return course
+  }
+
+  /** Records that one external course identity maps to a local course. */
+  linkCourseSource(
+    sourceId: string,
+    externalCourseId: string,
+    courseId: string,
+  ): void {
+    this.#linkCourseSource(sourceId, externalCourseId, courseId)
+  }
+
+  #aliasedCourse(sourceId: string, externalCourseId: string): string | undefined {
+    const row = this.#db
+      .prepare(
+        'SELECT course_id FROM course_source_aliases WHERE source_id = ? AND external_course_id = ?',
+      )
+      .get(sourceId, externalCourseId) as { course_id: string } | undefined
+    return row?.course_id
+  }
+
+  #linkCourseSource(
+    sourceId: string,
+    externalCourseId: string,
+    courseId: string,
+  ): void {
+    const now = this.#clock.now()
+    this.#db
+      .prepare(
+        `INSERT INTO course_source_aliases (
+           source_id, external_course_id, course_id, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(source_id, external_course_id) DO UPDATE SET
+           course_id = excluded.course_id,
+           updated_at = excluded.updated_at`,
+      )
+      .run(sourceId, externalCourseId, courseId, now, now)
+  }
+
+  #removeAlias(sourceId: string, externalCourseId: string): void {
+    this.#db
+      .prepare(
+        'DELETE FROM course_source_aliases WHERE source_id = ? AND external_course_id = ?',
+      )
+      .run(sourceId, externalCourseId)
   }
 
   async preview(
@@ -272,6 +363,20 @@ export class ConnectorService {
     let updated = 0
 
     try {
+      // Resolve the adapter's declared scope once so out-of-scope items are
+      // never reported as missing and never archived.
+      const scopeCourseIds = options.scopeCourseExternalIds?.length
+        ? new Set(
+            (
+              await Promise.all(
+                options.scopeCourseExternalIds.map((externalId) =>
+                  this.#queries.getCourseBySource(adapter.sourceId, externalId),
+                ),
+              )
+            ).flatMap((course) => (course ? [course.courseId] : [])),
+          )
+        : undefined
+
       for (const item of adapterResult.items) {
         if (!item.externalItemId) {
           warnings.push(`Skipped "${item.title}": no stable external item id`)
@@ -320,10 +425,10 @@ export class ConnectorService {
       }
 
       if (adapterResult.completeness === 'full' && !options.archiveMissing) {
-        const missing = (await this.#listActiveItems(adapter.sourceId)).filter(
-          (item) =>
-            !item.source.externalItemId ||
-            !seenExternalIds.has(item.source.externalItemId),
+        const missing = selectMissingItems(
+          await this.#listActiveItems(adapter.sourceId),
+          seenExternalIds,
+          scopeCourseIds,
         )
         if (missing.length > 0) {
           warnings.push(
@@ -338,6 +443,7 @@ export class ConnectorService {
           seenExternalIds,
           runId,
           warnings,
+          scopeCourseIds,
         )
       }
 
@@ -467,6 +573,7 @@ export class ConnectorService {
     seenExternalIds: Set<string>,
     runId: string,
     warnings: string[],
+    scopeCourseIds?: ReadonlySet<string>,
   ): Promise<number> {
     let archived = 0
     let cursor: string | undefined
@@ -481,6 +588,9 @@ export class ConnectorService {
         if (item.source.externalItemId && seenExternalIds.has(item.source.externalItemId)) {
           continue
         }
+        // Out-of-scope courses are expected to be absent from a scoped snapshot.
+        if (scopeCourseIds && !scopeCourseIds.has(item.courseId)) continue
+        if (scopeCourseIds && !scopeCourseIds.has(item.courseId)) continue
         let result = await this.#commands.execute(
           this.#buildCommand(
             COMMAND.AcademicItemArchive,

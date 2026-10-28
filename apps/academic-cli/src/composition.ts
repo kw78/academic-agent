@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { mkdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import {
   AdapterAuthError,
   AdapterTransientError,
   COMMAND,
   CapabilityRegistry,
+  courseIdentityKey,
   CapabilityUnavailableError,
   EVENT,
   SourceConflictError,
@@ -13,6 +15,7 @@ import {
   parseCommand,
   systemClock,
   timeBlockSchema,
+  type AcademicItemView,
   type AcademicSourceAdapter,
   type AdapterCandidateSummary,
   type Clock,
@@ -23,6 +26,7 @@ import {
   type DisposableRegistration,
   type IdGenerator,
   type LockedBlock,
+  type NormalizedCourse,
   type PlanBlock,
   type Range,
   type ReplanReason,
@@ -40,7 +44,9 @@ import {
 import { SourceConfigStore, ProbeSampleStore, ProbeRateLimiter, probeSourcePage } from '@academic/sources'
 import {
   WebSessionStore,
+  safeFetchBytes,
   type ResolveHost,
+  type WebCookie,
 } from '@academic/web-sessions'
 import { createBrowserSessionEngine } from '@academic/source-browser'
 import {
@@ -55,6 +61,13 @@ import {
   ManifestStore,
   createDeclarativeEngine,
 } from '@academic/adapter-runtime'
+import {
+  MaterialError,
+  MaterialLibrary,
+  MATERIAL_LIMITS,
+  type MaterialFetchedResource,
+  type MaterialFetcher,
+} from '@academic/materials'
 import {
   InMemoryToolHost,
   registerAcademicTools,
@@ -148,6 +161,10 @@ export interface AcademicAppOptions {
   probeResolveHost?: ResolveHost
   /** Override the default 1.2s spacing between source probes (tests use 0). */
   probeMinIntervalMs?: number
+  /** Root directory for course material files; defaults beside the database. */
+  materialsDir?: string
+  /** Test seam for URL/attachment imports. */
+  materialFetch?: MaterialFetcher
 }
 
 export interface AutomationStatus {
@@ -184,6 +201,15 @@ export interface UpdateTaskDetailsInput {
   dueAt?: string | null
   priority?: number
   estimateMinutes?: number
+}
+
+export interface CourseMergeSummary {
+  groups: number
+  mergedCourses: number
+  movedItems: number
+  movedMaterials: number
+  removedMaterials: number
+  mergedInto: Array<{ fromCourseId: string; toCourseId: string }>
 }
 
 export interface LockPlanBlockInput {
@@ -230,6 +256,7 @@ export interface AcademicApp {
   }>
   connections: ConnectionManager
   webSessions: WebSessionStore
+  materials: MaterialLibrary
   replans: ReplanStore
   availability: AvailabilityStore
   preferences: PreferenceStore
@@ -264,6 +291,7 @@ export interface AcademicApp {
   requestReplan(range: Range, reason?: ReplanReason): { replanRequestId: string; status: string }
   processPendingReplans(limit?: number): Promise<number>
   addCourse(input: CreateCourseInput): Promise<CommandResult>
+  mergeDuplicateCourses(): Promise<CourseMergeSummary>
   updateCourse(courseId: string, input: UpdateCourseInput): Promise<CommandResult>
   archiveCourse(courseId: string): Promise<CommandResult>
   restoreCourse(courseId: string): Promise<CommandResult>
@@ -522,6 +550,131 @@ export async function createAcademicApp(
     }
   }
 
+  const ephemeralMaterials =
+    options.databasePath === ':memory:' && options.materialsDir === undefined
+  const materialRoot =
+    options.materialsDir ??
+    (options.databasePath === ':memory:'
+      ? join(tmpdir(), `academic-materials-${randomUUID()}`)
+      : join(dirname(options.databasePath), 'materials'))
+
+  const toMaterialResource = (
+    result: Awaited<ReturnType<typeof safeFetchBytes>>,
+  ): MaterialFetchedResource => ({
+    status: result.status,
+    finalUrl: result.finalUrl,
+    ...(result.contentType ? { contentType: result.contentType } : {}),
+    body: result.body,
+    truncated: result.truncated,
+  })
+
+  const fetchMaterialResource: MaterialFetcher = async (url, fetchOptions) => {
+    if (options.materialFetch) return options.materialFetch(url, fetchOptions)
+    const target = new URL(url)
+    const maxBytes = fetchOptions.maxBytes ?? MATERIAL_LIMITS.maxFileBytes
+    const timeoutMs = 20_000
+
+    if (fetchOptions.sourceId) {
+      const source = sources.get(fetchOptions.sourceId)
+      if (!source || source.archived || !source.enabled) {
+        throw new MaterialError(
+          'CAPABILITY_UNAVAILABLE',
+          `数据源不可用：${fetchOptions.sourceId}`,
+        )
+      }
+      const connection = connections
+        .list()
+        .find(
+          (entry) => entry.sourceId === source.sourceId && entry.hasCredential,
+        )
+      if (!connection) {
+        throw new MaterialError('AUTH_REQUIRED', '该来源没有已保存的登录会话')
+      }
+      const lease = await connections.openCredential(
+        connection.connectionId,
+        source.sourceId,
+      )
+      let cookies: WebCookie[] = []
+      try {
+        const parsed = JSON.parse(await lease.getSecret()) as {
+          cookies?: WebCookie[]
+        }
+        cookies = parsed.cookies ?? []
+      } catch {
+        cookies = []
+      }
+      if (cookies.length === 0) {
+        throw new MaterialError(
+          'AUTH_REQUIRED',
+          '该来源没有浏览器会话 Cookie，无法抓取资料',
+        )
+      }
+      const configured = Array.isArray(source.config.cookieDomains)
+        ? source.config.cookieDomains.filter(
+            (entry): entry is string => typeof entry === 'string',
+          )
+        : []
+      const result = await safeFetchBytes(url, {
+        cookies,
+        allowedHosts: configured.length > 0 ? configured : [target.hostname],
+        allowSubdomains: true,
+        allowedProtocols:
+          source.config.allowHttp === true ? ['http:', 'https:'] : ['https:'],
+        timeoutMs,
+        maxBytes,
+      })
+      return toMaterialResource(result)
+    }
+
+    const session = webSessions.list().find((entry) => {
+      const host = target.hostname.toLowerCase()
+      const domain = entry.domain.toLowerCase().replace(/^\./, '')
+      return host === domain || host.endsWith(`.${domain}`)
+    })
+    if (session || fetchOptions.sessionId) {
+      const result = await webSessions.fetchBytes(
+        fetchOptions.sessionId ?? session!.sessionId,
+        url,
+        { maxBytes, timeoutMs },
+      )
+      return {
+        status: result.status,
+        finalUrl: result.finalUrl,
+        ...(result.contentType ? { contentType: result.contentType } : {}),
+        body: result.body,
+        truncated: result.truncated,
+      }
+    }
+
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+      throw new MaterialError('VALIDATION', '只允许 http(s) 链接')
+    }
+    const result = await safeFetchBytes(url, {
+      allowedHosts: [target.hostname],
+      allowSubdomains: false,
+      allowedProtocols: target.protocol === 'http:' ? ['http:'] : ['https:'],
+      timeoutMs,
+      maxBytes,
+    })
+    return toMaterialResource(result)
+  }
+
+  const materials = new MaterialLibrary({
+    db: store.database,
+    clock,
+    ids,
+    rootDir: materialRoot,
+    fetchResource: fetchMaterialResource,
+    validateCourse: async (courseId) => {
+      const course = await store.queries.getCourse(courseId)
+      return Boolean(course && !course.deleted)
+    },
+    validateItem: async (itemId, courseId) => {
+      const item = await store.queries.getAcademicItem(itemId)
+      return Boolean(item && item.courseId === courseId && !item.archived)
+    },
+  })
+
   const probeSamples = new ProbeSampleStore()
   const probeLimiter = new ProbeRateLimiter({
     ...(options.probeMinIntervalMs !== undefined
@@ -735,6 +888,7 @@ export async function createAcademicApp(
     sources,
     sourceEngines,
     webSessions,
+    materials,
     adapterCandidates,
     activateAdapterCandidate: (request) =>
       activateCandidate(request.adapterId, request.version),
@@ -974,6 +1128,7 @@ export async function createAcademicApp(
     rollbackAdapterCandidate: rollbackCandidate,
     connections,
     webSessions,
+    materials,
     replans,
     availability,
     preferences,
@@ -1069,9 +1224,10 @@ export async function createAcademicApp(
       } else if (source.authKind !== 'none') {
         throw new CapabilityUnavailableError(`source.credentials.${sourceId}`)
       }
+      let courses: NormalizedCourse[] | undefined
       if (engine.listCourses) {
         try {
-          const courses = await retryTransient(() =>
+          courses = await retryTransient(() =>
             engine.listCourses!(context, credentials),
           )
           for (const course of courses) {
@@ -1086,7 +1242,18 @@ export async function createAcademicApp(
       }
       const summary = await connectors.sync(
         engine.createAdapter(context),
-        connection ? { connection } : {},
+        {
+          ...(connection ? { connection } : {}),
+          // The engine only covers these courses (for example after termFilter),
+          // so items of other courses must not look "missing".
+          ...(courses
+            ? {
+                scopeCourseExternalIds: courses.map(
+                  (course) => course.externalCourseId,
+                ),
+              }
+            : {}),
+        },
       )
       await dispatcher.processOnce()
       return summary
@@ -1122,6 +1289,21 @@ export async function createAcademicApp(
     },
 
     async addCourse(input) {
+      const existing = (await store.queries.listCourses(input.termId)).items.find(
+        (course) =>
+          !course.deleted &&
+          !course.archived &&
+          courseIdentityKey(course.termId, course.title) ===
+            courseIdentityKey(input.termId, input.title),
+      )
+      if (existing) {
+        return {
+          ok: true,
+          aggregateId: existing.courseId,
+          version: existing.version,
+          eventIds: [],
+        }
+      }
       const courseId = ids.next()
       return store.commands.execute(
         parseCommand({
@@ -1134,6 +1316,145 @@ export async function createAcademicApp(
           payload: input,
         }),
       )
+    },
+
+    async mergeDuplicateCourses() {
+      const actor = { kind: 'automation' as const, id: 'academic-course-merge' }
+      const courses = (await store.queries.listCourses()).items.filter(
+        (course) => !course.deleted && !course.archived,
+      )
+      const groups = new Map<string, CourseView[]>()
+      for (const course of courses) {
+        const key = courseIdentityKey(course.termId, course.title)
+        const group = groups.get(key)
+        if (group) group.push(course)
+        else groups.set(key, [course])
+      }
+
+      let groupsMerged = 0
+      let mergedCourses = 0
+      let movedItems = 0
+      let movedMaterials = 0
+      let removedMaterials = 0
+      const mergedInto: Array<{ fromCourseId: string; toCourseId: string }> = []
+
+      for (const group of groups.values()) {
+        if (group.length < 2) continue
+        groupsMerged += 1
+        group.sort(
+          (left, right) =>
+            left.createdAt.localeCompare(right.createdAt) ||
+            left.courseId.localeCompare(right.courseId),
+        )
+        const canonical = group[0]!
+        if (canonical.source) {
+          connectors.linkCourseSource(
+            canonical.source.sourceId,
+            canonical.source.externalCourseId,
+            canonical.courseId,
+          )
+        }
+
+        for (const duplicate of group.slice(1)) {
+          const items: AcademicItemView[] = []
+          let cursor: string | undefined
+          do {
+            const page = await store.queries.listAcademicItems({
+              courseId: duplicate.courseId,
+              status: 'all',
+              limit: 200,
+              ...(cursor ? { cursor } : {}),
+            })
+            items.push(...page.items)
+            cursor = page.nextCursor
+          } while (cursor)
+
+          for (const item of items) {
+            let current = item
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+              const result = await store.commands.execute(
+                parseCommand({
+                  commandId: ids.next(),
+                  type: COMMAND.AcademicItemReassignCourse,
+                  aggregateId: item.itemId,
+                  expectedVersion: current.version,
+                  actor,
+                  correlationId: `course-merge/${canonical.courseId}`,
+                  payload: { courseId: canonical.courseId },
+                }),
+              )
+              if (result.ok) {
+                if (result.eventIds.length > 0) movedItems += 1
+                break
+              }
+              if (result.code !== 'CONFLICT' || attempt === 2) {
+                throw new Error(`Could not move item ${item.itemId}: ${result.message}`)
+              }
+              const refreshed = await store.queries.getAcademicItem(item.itemId)
+              if (!refreshed) break
+              current = refreshed
+            }
+          }
+
+          const materialMerge = materials.mergeCourse(
+            duplicate.courseId,
+            canonical.courseId,
+          )
+          movedMaterials += materialMerge.movedMaterials
+          removedMaterials += materialMerge.removedMaterials
+
+          const preference = preferences.get()
+          const priority = preference.coursePriorities[duplicate.courseId]
+          if (priority !== undefined) {
+            const coursePriorities = { ...preference.coursePriorities }
+            delete coursePriorities[duplicate.courseId]
+            coursePriorities[canonical.courseId] = Math.max(
+              coursePriorities[canonical.courseId] ?? 0,
+              priority,
+            )
+            preferences.update({ coursePriorities })
+          }
+
+          if (duplicate.source) {
+            connectors.linkCourseSource(
+              duplicate.source.sourceId,
+              duplicate.source.externalCourseId,
+              canonical.courseId,
+            )
+          }
+
+          const deleted = await store.commands.execute(
+            parseCommand({
+              commandId: ids.next(),
+              type: COMMAND.CourseDelete,
+              aggregateId: duplicate.courseId,
+              expectedVersion: duplicate.version,
+              actor,
+              correlationId: `course-merge/${canonical.courseId}`,
+              payload: { reason: `merged into ${canonical.courseId}` },
+            }),
+          )
+          if (!deleted.ok) {
+            throw new Error(
+              `Could not close duplicate course ${duplicate.courseId}: ${deleted.message}`,
+            )
+          }
+          mergedCourses += 1
+          mergedInto.push({
+            fromCourseId: duplicate.courseId,
+            toCourseId: canonical.courseId,
+          })
+        }
+      }
+
+      return {
+        groups: groupsMerged,
+        mergedCourses,
+        movedItems,
+        movedMaterials,
+        removedMaterials,
+        mergedInto,
+      }
     },
 
     async updateCourse(courseId, input) {
@@ -1465,6 +1786,9 @@ export async function createAcademicApp(
       scheduler.close()
       dispatcher.close()
       store.close()
+      if (ephemeralMaterials) {
+        rmSync(materialRoot, { recursive: true, force: true })
+      }
     },
   }
   appRef = app

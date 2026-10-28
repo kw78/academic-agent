@@ -1,6 +1,6 @@
 # @academic/dsh-plugin
 
-DSH（DeepSeek Harness）bundle，把 Academic Agent 的 16 个模型工具暴露给模型。默认只读；写入必须由可信宿主对每次操作授权，模型参数（包括旧版的 `confirmed`）不能作为授权依据。当前 bundle 尚未接入 DSH 审批适配器，因此写入会被拒绝。
+DSH（DeepSeek Harness）bundle，把 Academic Agent 的 23 个模型工具暴露给模型。默认只读；写入必须由可信宿主对每次操作授权，模型参数（包括旧版的 `confirmed`）不能作为授权依据。当前 bundle 尚未接入 DSH 审批适配器，因此写入会被拒绝。
 
 ## 插件拆分
 
@@ -8,7 +8,7 @@ bundle 现在由三个独立 Cordis fiber 组成：
 
 - `@academic/dsh-plugin/host`：创建 Academic App（Event Store、Scheduler、Dispatcher、Notification），提供 `academicApp` 服务。
 - `@academic/dsh-plugin/planner`：注册 Planner 能力；卸载后已有计划仍可读取，新规划请求不可用。
-- `@academic/dsh-plugin/tools`：Agent Bridge，注册 16 个模型工具；卸载后后台同步、调度、提醒继续运行。
+- `@academic/dsh-plugin/tools`：Agent Bridge，注册 23 个模型工具；卸载后后台同步、调度、提醒继续运行。
 
 `cordis.patch.yml` 按 host → planner → tools 插入三行。禁用 `academic-tools` 行即可验证 Agent Bridge 独立卸载。
 
@@ -26,6 +26,7 @@ bundle 现在由三个独立 Cordis fiber 组成：
 | `academic_request_replan` | 运行控制 | 排队重规划请求；需可信宿主授权 + planner 能力 |
 | `academic_list_sources` | 只读 | 列出数据库中的数据源与 engine |
 | `academic_list_source_engines` | 只读 | 列出当前 Host 可用的通用 engine |
+| `academic_probe_source` | 只读 | 用已保存会话读取同主机页面，返回脱敏结构证据 |
 | `academic_create_source` | 写入 | 用已知 engine 与非敏感 config 创建数据源；需可信宿主授权 |
 | `academic_update_source` | 写入 | 修改数据源配置；需可信宿主授权 |
 | `academic_list_web_sessions` | 只读 | 列出已保存的网站会话元数据，不返回 Cookie |
@@ -34,6 +35,12 @@ bundle 现在由三个独立 Cordis fiber 组成：
 | `academic_list_adapter_candidates` | 只读 | 列出候选 Adapter 与版本状态 |
 | `academic_register_adapter_candidate` | 写入 | 保存已校验的候选 Manifest；需可信宿主授权 |
 | `academic_activate_adapter_candidate` | 写入 | 启用 validated 版本；需可信宿主授权，可回滚 |
+| `academic_preview_source_sync` | 只读 | 预览 declarative 源同步；需用户开启自动接入 |
+| `academic_sync_source` | 写入 | 同步 declarative 源；需用户开启自动接入 |
+| `academic_list_materials` | 只读 | 列出课程资料元数据 |
+| `academic_search_materials` | 只读 | 检索本地资料片段，返回标题/页码，不返回全文 |
+| `academic_import_material` | 写入 | 导入用户提供的文本或单个 URL；需可信宿主授权 |
+| `academic_delete_material` | 写入 | 删除资料与索引，不影响学业事件；需可信宿主授权 |
 
 工具只调用 `@academic/agent-tools` 的宿主无关工具层，最终仍走 Kernel Command API；不拼 SQL、不直接追加事件。
 
@@ -43,20 +50,20 @@ bundle 现在由三个独立 Cordis fiber 组成：
 npm run build:dsh
 ```
 
-产物：`lib/index.js`（esbuild 打包，`@deepseek-ai/*` 保持 external）和 `migrations/`。DSH 运行时提供 `@deepseek-ai/cordis`、`@deepseek-ai/dsh-tools`。
+产物：`lib/host.js`、`lib/planner.js`、`lib/tools.js`（esbuild 打包，`@deepseek-ai/*` 与 `playwright-core` 保持 external）和 `migrations/`。DSH 运行时提供 `@deepseek-ai/cordis`、`@deepseek-ai/dsh-tools`。
 
 ## 安装到独立 profile
 
 ```bash
 dsh academic --from-default-profile headless --dump-config
-dsh plugin --profile academic add D:/project/classhelper/packages/academic-dsh-plugin
+dsh plugin --profile academic add <path-to-repo>/packages/academic-dsh-plugin
 dsh academic --dump-config   # 应出现 # == @academic/dsh-plugin
 ```
 
 默认数据库：`$DSH_HOME/academic-agent/academic.db`（默认 `~/.dsh/academic-agent/academic.db`）。可用环境变量 `ACADEMIC_AGENT_DB` 覆盖：
 
 ```bash
-ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db dsh academic "列出我的课程"
+ACADEMIC_AGENT_DB=<path-to-repo>/.data/dsh-academic.db dsh academic "列出我的课程"
 ```
 
 ## DSH 内部自测
@@ -65,17 +72,17 @@ ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db dsh academic "列
 
 ```bash
 ACADEMIC_AGENT_SELFTEST=1 \
-ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db \
+ACADEMIC_AGENT_DB=<path-to-repo>/.data/dsh-academic.db \
 dsh academic --json "hello"
 ```
 
 预期（模型调用之前）：
 
 ```text
-[academic-host] loaded db=D:/project/classhelper/.data/dsh-academic.db
+[academic-host] loaded db=<path-to-repo>/.data/dsh-academic.db
 [academic-planner] capability registered
-[academic-tools] tools=17 registered=true
-[academic-tools] selftest readIsError=false readCourses=1 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
+[academic-tools] tools=23 registered=true
+[academic-tools] selftest readIsError=false readCourses=0 writeIsError=true writeError=FORBIDDEN: Agent write access is not enabled
 ```
 
 模型自然语言调用需要 `DEEPSEEK_API_KEY` 或在 DSH Models 页面配置账号；本机 headless 未配置时会报 `MISSING_CREDENTIAL`，不影响上述工具自测。

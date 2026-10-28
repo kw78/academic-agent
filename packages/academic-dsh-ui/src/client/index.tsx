@@ -8,6 +8,7 @@ import { DashboardPage } from './pages/DashboardPage.js'
 import { TasksPage } from './pages/TasksPage.js'
 import { PlanPage } from './pages/PlanPage.js'
 import { ConnectionsPage } from './pages/ConnectionsPage.js'
+import { MaterialsPage } from './pages/MaterialsPage.js'
 import { AutomationPage } from './pages/AutomationPage.js'
 import { SettingsPage } from './pages/SettingsPage.js'
 import type { HostStatus } from '../protocol.js'
@@ -23,6 +24,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'tasks', label: '任务' },
   { id: 'plan', label: '计划' },
   { id: 'connections', label: '连接' },
+  { id: 'materials', label: '资料' },
   { id: 'automation', label: '自动化' },
   { id: 'settings', label: '设置' },
 ]
@@ -156,6 +158,7 @@ function AcademicPanel({ ctx }: { ctx: Context }) {
         {tab === 'tasks' && <TasksPage {...pageProps} />}
         {tab === 'plan' && <PlanPage {...pageProps} />}
         {tab === 'connections' && <ConnectionsPage {...pageProps} />}
+        {tab === 'materials' && <MaterialsPage {...pageProps} />}
         {tab === 'automation' && <AutomationPage {...pageProps} />}
         {tab === 'settings' && <SettingsPage {...pageProps} />}
       </main>

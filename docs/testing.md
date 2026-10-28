@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**183 项测试通过**（35 个测试文件）。
+当前基线：**217 项测试通过**（40 个测试文件）。
 
 ## 分层
 
@@ -78,13 +78,24 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 - 锁定后旧建议失效并重新计算，新建议不占用锁定时间；
 - 解锁与计划归档。
 
+## 课程资料库
+
+- `tests/unit/materials-extract.test.ts`：PDF（普通/Flate/ToUnicode）、HTML、Markdown、DOCX、PPTX 抽取。
+- `tests/integration/materials.test.ts`：中文 FTS 与短词回退、去重、跨课程共享文件、删除、索引重建、URL 导入、订阅门槛、跨主机跳过、429 停止。
+- `tests/integration/materials-app.test.ts`：资料导入/删除不改变事件行数、Agent 工具只读/授权写入、登录页拒绝、授权附件导入、UI API 不泄露文件路径。
+- 真实 PDF 检索与 DSH Web 资料页点验记录见 [mvp-verification.md](mvp-verification.md) 与 [frontend-verification.md](frontend-verification.md)。
+
+## 课程身份合并
+
+- `tests/integration/course-merge.test.ts`：同学期同名课程在手工添加与来源注册时复用；历史重复合并时迁移事项/资料/订阅/优先级；事项改课程事件保留进度；重复来源后续同步仍落到保留课程。
+
 ## R3 Cordis 独立生命周期
 
 `tests/integration/cordis-lifecycle.test.ts` 使用真实 `@deepseek-ai/cordis`：
 
 - host 创建 Academic App 并提供 `academicApp` 服务；
 - planner fiber 注册/卸载 Planner 能力；卸载后已有计划仍可查询；
-- tools fiber 注册 19 个工具；卸载后工具清零，host/store/planner 保持；
+- tools fiber 注册 23 个工具；卸载后工具清零，host/store/planner 保持；
 - 重新加载 tools/planner 后能力恢复；
 - host 卸载关闭 app。
 

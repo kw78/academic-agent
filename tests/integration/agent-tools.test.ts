@@ -234,7 +234,7 @@ describe('academic agent tools', () => {
   it('unregisters tools on dispose', async () => {
     const { store, host, registration } = setup({ allowWrites: false })
     await seed(store)
-    expect(host.list()).toHaveLength(6)
+    expect(host.list()).toHaveLength(10)
     registration.dispose()
     expect(host.list()).toHaveLength(0)
     expect(await host.call(ACADEMIC_TOOL_NAMES.ListCourses, {})).toMatchObject({

@@ -16,16 +16,30 @@ import type {
   ConnectionIdRequest,
   ConnectionSecretRequest,
   ConnectionsView,
+  CourseMergeView,
   CoursesView,
   CreateConnectionRequest,
   CreateCourseRequest,
   CreateSourceRequest,
   CreateTaskRequest,
   DashboardView,
+  DeleteMaterialRequest,
   HostStatus,
+  ImportMaterialAttachmentsRequest,
+  ImportMaterialFileRequest,
+  ImportMaterialTextRequest,
+  ImportMaterialUrlRequest,
   ItemCard,
   JobEnabledRequest,
   LockBlockRequest,
+  MaterialAttachmentsView,
+  MaterialImportView,
+  MaterialRebuildView,
+  MaterialSearchRequest,
+  MaterialSearchView,
+  MaterialsView,
+  MaterialSubscriptionRequest,
+  MaterialSubscriptionView,
   NotificationReadRequest,
   PlanCandidate,
   PlanMutationResult,
@@ -111,6 +125,16 @@ const REMOTE_METHODS = [
   'completeTask',
   'reopenTask',
   'changeTaskEstimate',
+  'mergeDuplicateCourses',
+  'materials',
+  'materialSearch',
+  'importMaterialText',
+  'importMaterialFile',
+  'importMaterialUrl',
+  'deleteMaterial',
+  'rebuildMaterials',
+  'importMaterialAttachments',
+  'setMaterialSubscription',
 ] as const
 
 /**
@@ -435,6 +459,60 @@ export class AcademicUiService extends TypertRemoteService {
     request: unknown,
   ): Promise<UiResult<CommandReceipt>> {
     return (await this.apiReady).changeTaskEstimate(request)
+  }
+
+  async mergeDuplicateCourses(
+    request: unknown,
+  ): Promise<UiResult<CourseMergeView>> {
+    return (await this.apiReady).mergeDuplicateCourses(request)
+  }
+
+  async materials(request: unknown): Promise<UiResult<MaterialsView>> {
+    return (await this.apiReady).materials(request)
+  }
+
+  async materialSearch(request: unknown): Promise<UiResult<MaterialSearchView>> {
+    return (await this.apiReady).materialSearch(request as MaterialSearchRequest)
+  }
+
+  async importMaterialText(request: unknown): Promise<UiResult<MaterialImportView>> {
+    return (await this.apiReady).importMaterialText(
+      request as ImportMaterialTextRequest,
+    )
+  }
+
+  async importMaterialFile(request: unknown): Promise<UiResult<MaterialImportView>> {
+    return (await this.apiReady).importMaterialFile(
+      request as ImportMaterialFileRequest,
+    )
+  }
+
+  async importMaterialUrl(request: unknown): Promise<UiResult<MaterialImportView>> {
+    return (await this.apiReady).importMaterialUrl(request as ImportMaterialUrlRequest)
+  }
+
+  async deleteMaterial(request: unknown): Promise<UiResult<{ deleted: boolean }>> {
+    return (await this.apiReady).deleteMaterial(request as DeleteMaterialRequest)
+  }
+
+  async rebuildMaterials(request: unknown): Promise<UiResult<MaterialRebuildView>> {
+    return (await this.apiReady).rebuildMaterials(request)
+  }
+
+  async importMaterialAttachments(
+    request: unknown,
+  ): Promise<UiResult<MaterialAttachmentsView>> {
+    return (await this.apiReady).importMaterialAttachments(
+      request as ImportMaterialAttachmentsRequest,
+    )
+  }
+
+  async setMaterialSubscription(
+    request: unknown,
+  ): Promise<UiResult<MaterialSubscriptionView>> {
+    return (await this.apiReady).setMaterialSubscription(
+      request as MaterialSubscriptionRequest,
+    )
   }
 }
 

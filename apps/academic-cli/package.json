@@ -17,6 +17,7 @@
     "@academic/connections": "0.1.0",
     "@academic/contracts": "0.1.0",
     "@academic/event-dispatcher": "0.1.0",
+    "@academic/materials": "0.1.0",
     "@academic/notifications": "0.1.0",
     "@academic/planner-basic": "0.1.0",
     "@academic/scheduler": "0.1.0",

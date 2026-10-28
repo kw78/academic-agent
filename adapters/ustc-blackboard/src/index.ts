@@ -232,3 +232,4 @@ export {
   type BlackboardConfig,
   type BlackboardEngineOptions,
 } from './engine.js'
+export { normalizeTermId } from './parse.js'

@@ -7,6 +7,12 @@ import type {
   CourseView,
   Due,
   LockedBlock,
+  MaterialAttachmentImportResult,
+  MaterialImportResult,
+  MaterialRebuildResult,
+  MaterialSearchResult,
+  MaterialSubscriptionView,
+  MaterialView,
   PlanBlock,
   Range,
   StudyPlanView,
@@ -19,6 +25,16 @@ export type {
   AdapterCandidateSummary,
   SourceProbeEvidence,
   SourceProbeLink,
+} from '@academic/contracts'
+
+export type {
+  MaterialAttachmentImportResult,
+  MaterialChunkHit,
+  MaterialImportResult,
+  MaterialRebuildResult,
+  MaterialSearchResult,
+  MaterialSubscriptionView,
+  MaterialView,
 } from '@academic/contracts'
 
 export type UiErrorCode =
@@ -544,4 +560,99 @@ export interface WebFetchRequest {
 
 export interface WebSessionIdRequest {
   sessionId: string
+}
+
+export interface MaterialCard {
+  material: MaterialView
+  course?: CourseView
+}
+
+export interface MaterialSourceOption {
+  sourceId: string
+  displayName: string
+  engine: string
+  archived: boolean
+  hasSession: boolean
+}
+
+export interface MaterialsView {
+  courses: CourseView[]
+  materials: MaterialCard[]
+  subscriptions: MaterialSubscriptionView[]
+  sources: MaterialSourceOption[]
+  webSessions: WebSessionView[]
+}
+
+export interface MaterialSearchRequest {
+  query: string
+  courseId?: string
+  itemId?: string
+  limit?: number
+}
+
+export interface MaterialSearchView {
+  result: MaterialSearchResult
+}
+
+export interface ImportMaterialTextRequest {
+  courseId: string
+  itemId?: string
+  title: string
+  text: string
+}
+
+export interface ImportMaterialFileRequest {
+  courseId: string
+  itemId?: string
+  title?: string
+  fileName: string
+  contentBase64: string
+}
+
+export interface ImportMaterialUrlRequest {
+  courseId: string
+  itemId?: string
+  title?: string
+  url: string
+  sourceId?: string
+  sessionId?: string
+}
+
+export interface DeleteMaterialRequest {
+  materialId: string
+}
+
+export interface ImportMaterialAttachmentsRequest {
+  courseId: string
+  sourceId: string
+  pageUrl: string
+  pathPrefix?: string
+  maxFiles?: number
+}
+
+export interface MaterialSubscriptionRequest {
+  sourceId: string
+  courseId: string
+  enabled: boolean
+}
+
+export interface MaterialImportView {
+  result: MaterialImportResult
+}
+
+export interface MaterialAttachmentsView {
+  result: MaterialAttachmentImportResult
+}
+
+export interface MaterialRebuildView {
+  result: MaterialRebuildResult
+}
+
+export interface CourseMergeView {
+  groups: number
+  mergedCourses: number
+  movedItems: number
+  movedMaterials: number
+  removedMaterials: number
+  mergedInto: Array<{ fromCourseId: string; toCourseId: string }>
 }

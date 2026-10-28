@@ -171,6 +171,34 @@ export function parseCourseTitle(value: string): {
 
 const TERM_RANK: Record<string, number> = { WI: 0, SP: 1, SU: 2, FA: 3 }
 
+const TERM_SEASONS: Record<string, string> = {
+  WI: 'winter',
+  SP: 'spring',
+  SU: 'summer',
+  FA: 'fall',
+}
+
+/**
+ * Blackboard 用 `2026FA` 这样的站点学期代码，领域里用 `2026-fall` 这样的学期标识。
+ * 这里只做规范化，不影响 `termFilter` 对原始代码的匹配。
+ */
+export function normalizeTermId(value: string): string {
+  const text = value.trim()
+  const code = /^(\d{4})\s*(WI|SP|SU|FA)$/i.exec(text)
+  if (code?.[1] && code[2]) {
+    return `${code[1]}-${TERM_SEASONS[code[2].toUpperCase()]}`
+  }
+  const named = /^(\d{4})-(fall|spring|summer|winter)$/i.exec(text)
+  if (named?.[1] && named[2]) {
+    return `${named[1]}-${named[2].toLowerCase()}`
+  }
+  return text
+}
+
+function termKey(value: string): string {
+  return normalizeTermId(value).toUpperCase()
+}
+
 export function compareTerms(left: string, right: string): number {
   const parse = (value: string) => {
     const match = /^(\d{4})(WI|SP|SU|FA)$/i.exec(value)
@@ -185,7 +213,7 @@ export function compareTerms(left: string, right: string): number {
 
 export function parseCourseLinks(html: string, options: CourseFilter): ParsedCourseList {
   const filters = {
-    terms: options.termFilter?.map((value) => value.toUpperCase()),
+    terms: options.termFilter?.map((value) => termKey(value)),
     courses: options.courseFilter?.map((value) => value.toLowerCase()),
   }
   const byId = new Map<string, ParsedCourseRef>()
@@ -223,7 +251,7 @@ export function parseCourseLinks(html: string, options: CourseFilter): ParsedCou
     if (
       filters.terms &&
       filters.terms.length > 0 &&
-      !filters.terms.includes(course.termId.toUpperCase())
+      !filters.terms.includes(termKey(course.termId))
     ) {
       return false
     }
@@ -396,6 +424,27 @@ function two(value: number): string {
   return String(value).padStart(2, '0')
 }
 
+function dueFromParts(
+  year: number,
+  month: number,
+  day: number,
+  hour: number | undefined,
+  minute: number | undefined,
+  zone: string,
+  utcOffsetMinutes: number,
+): Due {
+  if (!validDate(year, month, day)) return { kind: 'unknown' }
+  const date = `${year}-${two(month)}-${two(day)}`
+  if (hour === undefined || minute === undefined) {
+    return { kind: 'local-date', date, zone }
+  }
+  if (hour > 23 || minute > 59) return { kind: 'local-date', date, zone }
+  const utc = new Date(
+    Date.UTC(year, month - 1, day, hour, minute) - utcOffsetMinutes * 60_000,
+  ).toISOString()
+  return { kind: 'instant', utc, zone }
+}
+
 export function parseDue(
   value: string,
   zone: string,
@@ -408,26 +457,28 @@ export function parseDue(
       `(?:\\s*(上午|下午|晚上)?\\s*(\\d{1,2})\\s*[:：]\\s*(\\d{2}))?`,
   ).exec(text)
   if (chinese?.[1] && chinese[2] && chinese[3]) {
-    const year = Number(chinese[1])
-    const month = Number(chinese[2])
-    const day = Number(chinese[3])
-    if (!validDate(year, month, day)) return { kind: 'unknown' }
-    const date = `${year}-${two(month)}-${two(day)}`
     const hourText = chinese[4]
-    const hourRaw = chinese[5]
-    const minuteRaw = chinese[6]
-    if (hourRaw && minuteRaw) {
-      let hour = Number(hourRaw)
-      const minute = Number(minuteRaw)
-      if (hourText && /上午/.test(hourText) && hour === 12) hour = 0
-      if (hourText && /下午|晚上/.test(hourText) && hour < 12) hour += 12
-      if (hour > 23 || minute > 59) return { kind: 'local-date', date, zone }
-      const utc = new Date(
-        Date.UTC(year, month - 1, day, hour, minute) - utcOffsetMinutes * 60_000,
-      ).toISOString()
-      return { kind: 'instant', utc, zone }
+    let hour: number | undefined = chinese[5] ? Number(chinese[5]) : undefined
+    if (hour !== undefined && hourText && /上午/.test(hourText) && hour === 12) {
+      hour = 0
     }
-    return { kind: 'local-date', date, zone }
+    if (
+      hour !== undefined &&
+      hourText &&
+      /下午|晚上/.test(hourText) &&
+      hour < 12
+    ) {
+      hour += 12
+    }
+    return dueFromParts(
+      Number(chinese[1]),
+      Number(chinese[2]),
+      Number(chinese[3]),
+      hour,
+      chinese[6] ? Number(chinese[6]) : undefined,
+      zone,
+      utcOffsetMinutes,
+    )
   }
 
   const english = new RegExp(
@@ -436,45 +487,62 @@ export function parseDue(
     'i',
   ).exec(text)
   if (english?.[1] && english[2] && english[3]) {
-    const month = MONTHS.indexOf(
-      MONTHS.find((name) => name.toLowerCase() === english[1]!.toLowerCase()) ??
-        english[1]!,
-    ) + 1
-    const day = Number(english[2])
-    const year = Number(english[3])
-    if (!validDate(year, month, day)) return { kind: 'unknown' }
-    const date = `${year}-${two(month)}-${two(day)}`
-    if (english[4] && english[5]) {
-      let hour = Number(english[4])
-      const minute = Number(english[5])
-      if (english[6]?.toUpperCase() === 'PM' && hour < 12) hour += 12
-      if (english[6]?.toUpperCase() === 'AM' && hour === 12) hour = 0
-      if (hour > 23 || minute > 59) return { kind: 'local-date', date, zone }
-      const utc = new Date(
-        Date.UTC(year, month - 1, day, hour, minute) - utcOffsetMinutes * 60_000,
-      ).toISOString()
-      return { kind: 'instant', utc, zone }
-    }
-    return { kind: 'local-date', date, zone }
+    const month =
+      MONTHS.indexOf(
+        MONTHS.find((name) => name.toLowerCase() === english[1]!.toLowerCase()) ??
+          english[1]!,
+      ) + 1
+    let hour: number | undefined = english[4] ? Number(english[4]) : undefined
+    const meridiem = english[6]?.toUpperCase()
+    if (hour !== undefined && meridiem === 'PM' && hour < 12) hour += 12
+    if (hour !== undefined && meridiem === 'AM' && hour === 12) hour = 0
+    return dueFromParts(
+      Number(english[3]),
+      month,
+      Number(english[2]),
+      hour,
+      english[5] ? Number(english[5]) : undefined,
+      zone,
+      utcOffsetMinutes,
+    )
   }
 
-  const iso = /(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(text)
-  if (iso?.[1] && iso[2] && iso[3]) {
-    const year = Number(iso[1])
-    const month = Number(iso[2])
-    const day = Number(iso[3])
-    if (!validDate(year, month, day)) return { kind: 'unknown' }
-    const date = `${year}-${month.toString().padStart(2, '0')}-${day
-      .toString()
-      .padStart(2, '0')}`
-    if (iso[4] && iso[5]) {
-      const utc = new Date(
-        Date.UTC(year, month - 1, day, Number(iso[4]), Number(iso[5])) -
-          utcOffsetMinutes * 60_000,
-      ).toISOString()
-      return { kind: 'instant', utc, zone }
-    }
-    return { kind: 'local-date', date, zone }
+  // 2026-9-27 / 2026/9/27：Blackboard 可能不补零月份或日期。
+  const yearFirst =
+    /(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s](\d{1,2}):(\d{2}))?/.exec(text)
+  if (yearFirst?.[1] && yearFirst[2] && yearFirst[3]) {
+    return dueFromParts(
+      Number(yearFirst[1]),
+      Number(yearFirst[2]),
+      Number(yearFirst[3]),
+      yearFirst[4] ? Number(yearFirst[4]) : undefined,
+      yearFirst[5] ? Number(yearFirst[5]) : undefined,
+      zone,
+      utcOffsetMinutes,
+    )
+  }
+
+  // 9/27/2026 7:50 AM：美式数字日期。
+  const monthFirst =
+    /(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})\s*(AM|PM)?)?/i.exec(
+      text,
+    )
+  if (monthFirst?.[1] && monthFirst[2] && monthFirst[3]) {
+    let hour: number | undefined = monthFirst[4]
+      ? Number(monthFirst[4])
+      : undefined
+    const meridiem = monthFirst[6]?.toUpperCase()
+    if (hour !== undefined && meridiem === 'PM' && hour < 12) hour += 12
+    if (hour !== undefined && meridiem === 'AM' && hour === 12) hour = 0
+    return dueFromParts(
+      Number(monthFirst[3]),
+      Number(monthFirst[1]),
+      Number(monthFirst[2]),
+      hour,
+      monthFirst[5] ? Number(monthFirst[5]) : undefined,
+      zone,
+      utcOffsetMinutes,
+    )
   }
 
   return { kind: 'unknown' }

@@ -108,7 +108,19 @@ export class SqliteQueryService implements QueryApi {
         'SELECT * FROM courses_current WHERE source_id = ? AND external_course_id = ?',
       )
       .get(sourceId, externalCourseId) as SqlRow | undefined
-    return row ? { ...this.#toCourse(row), meta: this.#meta() } : undefined
+    if (row) {
+      const course = this.#toCourse(row)
+      if (!course.deleted) return { ...course, meta: this.#meta() }
+    }
+    // A merged course keeps its old source identity in the alias table.
+    const alias = this.#db
+      .prepare(
+        'SELECT course_id FROM course_source_aliases WHERE source_id = ? AND external_course_id = ?',
+      )
+      .get(sourceId, externalCourseId) as { course_id: string } | undefined
+    if (!alias) return undefined
+    const course = await this.getCourse(alias.course_id)
+    return course && !course.deleted ? course : undefined
   }
 
   async listAcademicItems(

@@ -15,6 +15,7 @@ import { viewState } from '../state.js'
 import { formatDateTimeOrDash, fromLocalInputValue } from '../view.js'
 import type {
   AvailabilityView,
+  CourseMergeView,
   PreferencesView,
   SettingsView,
   UiResult,
@@ -72,6 +73,7 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
   >({})
   const [agentAdapterAutomation, setAgentAdapterAutomation] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [mergingCourses, setMergingCourses] = useState(false)
 
   useEffect(() => {
     if (!data || initialized.current) return
@@ -111,6 +113,25 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
     return callApi(ctx, 'updateSyncSchedule', {
       intervalMinutes: Math.round(minutes),
     })
+  }
+
+  const mergeCourses = async () => {
+    setMergingCourses(true)
+    const result = await callApi<CourseMergeView>(ctx, 'mergeDuplicateCourses', {})
+    setMergingCourses(false)
+    if (!result.ok) {
+      action.setNotice({ tone: 'error', text: result.error.message })
+      return
+    }
+    const summary = result.value
+    action.setNotice({
+      tone: 'ok',
+      text:
+        summary.mergedCourses === 0
+          ? '没有需要合并的同学期同名课程'
+          : `已合并 ${summary.mergedCourses} 门重复课程；迁移 ${summary.movedItems} 个事项、${summary.movedMaterials} 份资料`,
+    })
+    await refresh()
   }
 
   const savePreferences = async (): Promise<UiResult<PreferencesView>> =>
@@ -371,6 +392,27 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
                 </span>
               </div>
             </form>
+          </Section>
+
+          <Section
+            title="课程维护"
+            subtitle="同一学期内标题相同的课程会视为同一门课"
+          >
+            <div className="ac-form-card">
+              <p className="ac-muted">
+                同步和手动添加会复用同学期同名课程。若历史数据已有重复，可在这里合并一次：事项、资料和课程优先级会迁到保留课程，重复课程随后关闭。
+              </p>
+              <div className="ac-form-actions">
+                <button
+                  type="button"
+                  className="ac-button"
+                  disabled={mergingCourses || action.pending !== undefined}
+                  onClick={() => void mergeCourses()}
+                >
+                  {mergingCourses ? '合并中…' : '合并同学期同名课程'}
+                </button>
+              </div>
+            </div>
           </Section>
 
           <Section

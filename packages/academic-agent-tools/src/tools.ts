@@ -17,6 +17,7 @@ import {
   type SourceProbeEvidence,
   type AdapterCandidatePort,
   type AdapterSample,
+  type MaterialToolPort,
 } from '@academic/contracts'
 
 export type ToolFailureCode =
@@ -66,6 +67,7 @@ export interface AcademicToolDependencies {
   sources?: SourceConfigStoreApi
   sourceEngines?: SourceEngineRegistryApi
   webSessions?: WebSessionStore
+  materials?: MaterialToolPort
   adapterCandidates?: AdapterCandidatePort
   /**
    * Host-side activation that also creates/updates the sync source. Approval
@@ -111,6 +113,10 @@ export const ACADEMIC_TOOL_NAMES = {
   UpdateSource: 'academic_update_source',
   UpdateTask: 'academic_update_task',
   RequestReplan: 'academic_request_replan',
+  ListMaterials: 'academic_list_materials',
+  SearchMaterials: 'academic_search_materials',
+  ImportMaterial: 'academic_import_material',
+  DeleteMaterial: 'academic_delete_material',
 } as const
 
 function failure(code: ToolFailureCode, message: string): ToolResult {
@@ -260,6 +266,48 @@ const updateSourceSchema = z.object({
   enabled: z.boolean().optional(),
   expectedVersion: z.number().int().min(1).optional(),
 })
+
+const materialListSchema = z.object({
+  courseId: z.string().min(1).max(200).optional(),
+  itemId: z.string().min(1).max(200).optional(),
+  limit: z.number().int().min(1).max(200).optional(),
+})
+
+const materialSearchSchema = z.object({
+  query: z.string().min(1).max(200),
+  courseId: z.string().min(1).max(200).optional(),
+  itemId: z.string().min(1).max(200).optional(),
+  limit: z.number().int().min(1).max(30).optional(),
+})
+
+const materialImportSchema = z
+  .object({
+    courseId: z.string().min(1).max(200),
+    itemId: z.string().min(1).max(200).optional(),
+    title: z.string().min(1).max(300).optional(),
+    text: z.string().min(1).max(2_000_000).optional(),
+    url: z.string().url().max(2_000).optional(),
+  })
+  .refine(
+    (value) => (value.text ? 1 : 0) + (value.url ? 1 : 0) === 1,
+    { message: 'Provide exactly one of text or url' },
+  )
+
+const materialDeleteSchema = z.object({
+  materialId: z.string().min(1).max(200),
+})
+
+function materialFailure(error: unknown): ToolResult {
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code)
+      : undefined
+  const message = error instanceof Error ? error.message : String(error)
+  if (code === 'VALIDATION') return failure('VALIDATION', message)
+  if (code === 'NOT_FOUND') return failure('NOT_FOUND', message)
+  if (code === 'AUTH_REQUIRED') return failure('AUTH_REQUIRED', message)
+  return failure('UNAVAILABLE', message)
+}
 
 export function createAcademicTools(
   dependencies: AcademicToolDependencies,
@@ -709,5 +757,110 @@ export function createAcademicTools(
           ),
         ]
       : []),
+
+    defineTool(
+      ACADEMIC_TOOL_NAMES.ListMaterials,
+      'List indexed course materials (title, course, kind, page/slide count, extraction status). Read-only; never returns file bytes.',
+      materialListSchema,
+      async (input) => {
+        if (!dependencies.materials) {
+          return failure('CAPABILITY_UNAVAILABLE', 'Material library is not available in this host')
+        }
+        return success({
+          materials: dependencies.materials.list({
+            ...(input.courseId ? { courseId: input.courseId } : {}),
+            ...(input.itemId ? { itemId: input.itemId } : {}),
+            ...(input.limit ? { limit: input.limit } : {}),
+          }),
+        })
+      },
+    ),
+
+    defineTool(
+      ACADEMIC_TOOL_NAMES.SearchMaterials,
+      'Search indexed course material chunks. Returns the smallest relevant snippets with material title, course, page/slide and heading. Read-only; the full document is never sent to the model.',
+      materialSearchSchema,
+      async (input) => {
+        if (!dependencies.materials) {
+          return failure('CAPABILITY_UNAVAILABLE', 'Material library is not available in this host')
+        }
+        try {
+          return success(
+            dependencies.materials.search({
+              query: input.query,
+              ...(input.courseId ? { courseId: input.courseId } : {}),
+              ...(input.itemId ? { itemId: input.itemId } : {}),
+              ...(input.limit ? { limit: input.limit } : {}),
+            }),
+          )
+        } catch (error) {
+          return materialFailure(error)
+        }
+      },
+    ),
+
+    defineTool(
+      ACADEMIC_TOOL_NAMES.ImportMaterial,
+      'Import user-provided text or a single user-provided URL into the course material library. This is a write; the host must obtain trusted user approval for each call. It never crawls other pages or submits work.',
+      materialImportSchema,
+      async (input) => {
+        if (!dependencies.materials) {
+          return failure('CAPABILITY_UNAVAILABLE', 'Material library is not available in this host')
+        }
+        const approval = await requireWriteApproval(
+          ACADEMIC_TOOL_NAMES.ImportMaterial,
+          input,
+        )
+        if (approval) return approval
+        try {
+          if (input.text) {
+            if (!input.title) {
+              return failure('VALIDATION', 'title is required when importing text')
+            }
+            return success(
+              await dependencies.materials.importText({
+                courseId: input.courseId,
+                ...(input.itemId ? { itemId: input.itemId } : {}),
+                title: input.title,
+                text: input.text,
+                originLabel: 'agent',
+              }),
+            )
+          }
+          return success(
+            await dependencies.materials.importUrl({
+              courseId: input.courseId,
+              ...(input.itemId ? { itemId: input.itemId } : {}),
+              ...(input.title ? { title: input.title } : {}),
+              url: input.url!,
+            }),
+          )
+        } catch (error) {
+          return materialFailure(error)
+        }
+      },
+    ),
+
+    defineTool(
+      ACADEMIC_TOOL_NAMES.DeleteMaterial,
+      'Delete one material file, its metadata and search index. Never touches academic events, tasks, plans or school platforms. This is a write; the host must obtain trusted user approval for each call.',
+      materialDeleteSchema,
+      async (input) => {
+        if (!dependencies.materials) {
+          return failure('CAPABILITY_UNAVAILABLE', 'Material library is not available in this host')
+        }
+        const approval = await requireWriteApproval(
+          ACADEMIC_TOOL_NAMES.DeleteMaterial,
+          input,
+        )
+        if (approval) return approval
+        try {
+          dependencies.materials.delete(input.materialId)
+          return success({ deleted: true, materialId: input.materialId })
+        } catch (error) {
+          return materialFailure(error)
+        }
+      },
+    ),
   ]
 }

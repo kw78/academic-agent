@@ -130,7 +130,7 @@ describe('Blackboard read-only engine', () => {
     expect(courses[0]).toMatchObject({
       sourceId: 'bb',
       externalCourseId: '_1001_1',
-      termId: '2026FA',
+      termId: '2026-fall',
       code: 'CS101.01',
       title: 'Data Structures',
     })

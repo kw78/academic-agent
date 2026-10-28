@@ -19850,6 +19850,9 @@ var COMMAND_SCHEMAS = {
     reason: external_exports.string().max(500).optional()
   }),
   "academic.item.restore.v1": emptyPayloadSchema,
+  "academic.item.reassign-course.v1": external_exports.object({
+    courseId: external_exports.string().min(1)
+  }),
   "academic.task.create.v1": external_exports.object({
     title: external_exports.string().min(1),
     itemId: external_exports.string().min(1).optional(),
@@ -19947,6 +19950,10 @@ var EVENT_SCHEMAS = {
     reason: external_exports.string().max(500).optional()
   }),
   "academic.item.restored": external_exports.object({}),
+  "academic.item.course-changed": external_exports.object({
+    from: external_exports.string().min(1),
+    to: external_exports.string().min(1)
+  }),
   "academic.task.created": external_exports.object({
     title: external_exports.string().min(1),
     itemId: external_exports.string().min(1).optional(),
@@ -20459,6 +20466,48 @@ var estimateSchema = external_exports.object({
   estimateMinutes: external_exports.number().int().min(5).max(24 * 60)
 });
 var idSchema = external_exports.object({ id: external_exports.string().min(1) });
+var materialSearchSchema = external_exports.object({
+  query: external_exports.string().min(1).max(200),
+  courseId: external_exports.string().min(1).max(200).optional(),
+  itemId: external_exports.string().min(1).max(200).optional(),
+  limit: external_exports.number().int().min(1).max(50).optional()
+});
+var importMaterialTextSchema = external_exports.object({
+  courseId: external_exports.string().min(1).max(200),
+  itemId: external_exports.string().min(1).max(200).optional(),
+  title: external_exports.string().min(1).max(300),
+  text: external_exports.string().min(1).max(2e6)
+});
+var importMaterialFileSchema = external_exports.object({
+  courseId: external_exports.string().min(1).max(200),
+  itemId: external_exports.string().min(1).max(200).optional(),
+  title: external_exports.string().min(1).max(300).optional(),
+  fileName: external_exports.string().min(1).max(300),
+  contentBase64: external_exports.string().min(1).max(112 * 1024 * 1024)
+});
+var importMaterialUrlSchema = external_exports.object({
+  courseId: external_exports.string().min(1).max(200),
+  itemId: external_exports.string().min(1).max(200).optional(),
+  title: external_exports.string().min(1).max(300).optional(),
+  url: external_exports.string().url().max(2e3),
+  sourceId: external_exports.string().min(1).max(200).optional(),
+  sessionId: external_exports.string().min(1).max(200).optional()
+});
+var deleteMaterialSchema = external_exports.object({
+  materialId: external_exports.string().min(1).max(200)
+});
+var importMaterialAttachmentsSchema = external_exports.object({
+  courseId: external_exports.string().min(1).max(200),
+  sourceId: external_exports.string().min(1).max(200),
+  pageUrl: external_exports.string().url().max(2e3),
+  pathPrefix: external_exports.string().max(500).optional(),
+  maxFiles: external_exports.number().int().min(1).max(30).optional()
+});
+var materialSubscriptionSchema = external_exports.object({
+  sourceId: external_exports.string().min(1).max(200),
+  courseId: external_exports.string().min(1).max(200),
+  enabled: external_exports.boolean()
+});
 function failure2(code, message) {
   return { ok: false, error: { code, message } };
 }
@@ -20489,6 +20538,9 @@ function fromError(error62) {
   const code = error62?.code;
   if (code === "VALIDATION" || code === "CONFLICT" || code === "FORBIDDEN" || code === "NOT_FOUND" || code === "AUTH_REQUIRED" || code === "UNAVAILABLE") {
     return { ok: false, error: { code, message: safeMessage(error62) } };
+  }
+  if (code === "RATE_LIMITED" || code === "SUBSCRIPTION_REQUIRED" || code === "UNSUPPORTED" || code === "NETWORK") {
+    return { ok: false, error: { code: "UNAVAILABLE", message: safeMessage(error62) } };
   }
   return { ok: false, error: { code: "ERROR", message: safeMessage(error62) } };
 }
@@ -21946,6 +21998,168 @@ function createAcademicUiApi(app) {
       );
       if (result.ok) previews.clear();
       return result;
+    },
+    async mergeDuplicateCourses() {
+      try {
+        return ok(await app.mergeDuplicateCourses());
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async materials() {
+      const courses = await app.store.queries.listCourses();
+      const visibleCourses = courses.items.filter(
+        (course) => !course.deleted && !course.archived
+      );
+      const byId = new Map(visibleCourses.map((course) => [course.courseId, course]));
+      const materials = app.materials.list({ limit: 500 }).map((material) => ({
+        material,
+        ...byId.get(material.courseId) ? { course: byId.get(material.courseId) } : {}
+      }));
+      const connections = app.connections.list();
+      const sources = app.sources.list({ includeArchived: true }).map((source) => ({
+        sourceId: source.sourceId,
+        displayName: source.displayName,
+        engine: source.engine,
+        archived: source.archived,
+        hasSession: connections.some(
+          (connection) => connection.sourceId === source.sourceId && connection.hasCredential
+        )
+      }));
+      const view = {
+        courses: visibleCourses,
+        materials,
+        subscriptions: app.materials.subscriptions(),
+        sources,
+        webSessions: app.webSessions.list()
+      };
+      return ok(view);
+    },
+    async materialSearch(request) {
+      const parsed = parse3(materialSearchSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        return ok({ result: app.materials.search(body) });
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async importMaterialText(request) {
+      const parsed = parse3(importMaterialTextSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        return ok({
+          result: await app.materials.importText({
+            courseId: body.courseId,
+            ...body.itemId ? { itemId: body.itemId } : {},
+            title: body.title,
+            text: body.text,
+            originLabel: "ui"
+          })
+        });
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async importMaterialFile(request) {
+      const parsed = parse3(importMaterialFileSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(body.contentBase64)) {
+        return failure2("VALIDATION", "\u6587\u4EF6\u5185\u5BB9\u7F16\u7801\u65E0\u6548");
+      }
+      let bytes;
+      try {
+        bytes = Buffer.from(body.contentBase64, "base64");
+      } catch {
+        return failure2("VALIDATION", "\u6587\u4EF6\u5185\u5BB9\u7F16\u7801\u65E0\u6548");
+      }
+      if (bytes.byteLength === 0) return failure2("VALIDATION", "\u6587\u4EF6\u5185\u5BB9\u4E3A\u7A7A");
+      if (bytes.byteLength > 80 * 1024 * 1024) {
+        return failure2("VALIDATION", "\u6587\u4EF6\u8D85\u8FC7 80 MB \u4E0A\u9650\uFF1B\u8BF7\u538B\u7F29\u540E\u91CD\u8BD5");
+      }
+      try {
+        return ok({
+          result: await app.materials.importBytes({
+            courseId: body.courseId,
+            ...body.itemId ? { itemId: body.itemId } : {},
+            ...body.title ? { title: body.title } : {},
+            fileName: body.fileName,
+            bytes,
+            sourceKind: "file",
+            originLabel: "ui"
+          })
+        });
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async importMaterialUrl(request) {
+      const parsed = parse3(importMaterialUrlSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        return ok({
+          result: await app.materials.importUrl({
+            courseId: body.courseId,
+            ...body.itemId ? { itemId: body.itemId } : {},
+            ...body.title ? { title: body.title } : {},
+            url: body.url,
+            ...body.sourceId ? { sourceId: body.sourceId } : {},
+            ...body.sessionId ? { sessionId: body.sessionId } : {}
+          })
+        });
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async deleteMaterial(request) {
+      const parsed = parse3(deleteMaterialSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        app.materials.delete(body.materialId);
+        return ok({ deleted: true });
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async rebuildMaterials() {
+      try {
+        return ok({ result: app.materials.rebuildIndex() });
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async importMaterialAttachments(request) {
+      const parsed = parse3(importMaterialAttachmentsSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        return ok({
+          result: await app.materials.importAttachments({
+            courseId: body.courseId,
+            sourceId: body.sourceId,
+            pageUrl: body.pageUrl,
+            ...body.pathPrefix ? { pathPrefix: body.pathPrefix } : {},
+            ...body.maxFiles ? { maxFiles: body.maxFiles } : {}
+          })
+        });
+      } catch (error62) {
+        return fromError(error62);
+      }
+    },
+    async setMaterialSubscription(request) {
+      const parsed = parse3(materialSubscriptionSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      try {
+        return ok(app.materials.setSubscription(body.sourceId, body.courseId, body.enabled));
+      } catch (error62) {
+        return fromError(error62);
+      }
     }
   };
 }
@@ -22010,7 +22224,17 @@ var REMOTE_METHODS = [
   "restoreTask",
   "completeTask",
   "reopenTask",
-  "changeTaskEstimate"
+  "changeTaskEstimate",
+  "mergeDuplicateCourses",
+  "materials",
+  "materialSearch",
+  "importMaterialText",
+  "importMaterialFile",
+  "importMaterialUrl",
+  "deleteMaterial",
+  "rebuildMaterials",
+  "importMaterialAttachments",
+  "setMaterialSubscription"
 ];
 function markRemote(prototype, name) {
   const method = prototype[name];
@@ -22218,6 +22442,44 @@ var AcademicUiService = class extends TypertRemoteService {
   }
   async changeTaskEstimate(request) {
     return (await this.apiReady).changeTaskEstimate(request);
+  }
+  async mergeDuplicateCourses(request) {
+    return (await this.apiReady).mergeDuplicateCourses(request);
+  }
+  async materials(request) {
+    return (await this.apiReady).materials(request);
+  }
+  async materialSearch(request) {
+    return (await this.apiReady).materialSearch(request);
+  }
+  async importMaterialText(request) {
+    return (await this.apiReady).importMaterialText(
+      request
+    );
+  }
+  async importMaterialFile(request) {
+    return (await this.apiReady).importMaterialFile(
+      request
+    );
+  }
+  async importMaterialUrl(request) {
+    return (await this.apiReady).importMaterialUrl(request);
+  }
+  async deleteMaterial(request) {
+    return (await this.apiReady).deleteMaterial(request);
+  }
+  async rebuildMaterials(request) {
+    return (await this.apiReady).rebuildMaterials(request);
+  }
+  async importMaterialAttachments(request) {
+    return (await this.apiReady).importMaterialAttachments(
+      request
+    );
+  }
+  async setMaterialSubscription(request) {
+    return (await this.apiReady).setMaterialSubscription(
+      request
+    );
   }
 };
 for (const method of REMOTE_METHODS) {

@@ -103,3 +103,16 @@ export interface StudyPlanState {
   updatedAt: string
   version: number
 }
+
+/** Same-term courses with the same display name are one course identity. */
+export function normalizeCourseTitle(title: string): string {
+  return title
+    .normalize('NFKC')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+export function courseIdentityKey(termId: string, title: string): string {
+  return `${termId.normalize('NFKC').trim()}\u0000${normalizeCourseTitle(title)}`
+}

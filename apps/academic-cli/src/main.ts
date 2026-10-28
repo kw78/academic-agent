@@ -236,6 +236,16 @@ async function runCourseList(app: AcademicApp): Promise<void> {
   }
 }
 
+async function runCourseMergeDuplicates(app: AcademicApp): Promise<void> {
+  const result = await app.mergeDuplicateCourses()
+  console.log(
+    `同名课程合并完成：分组 ${result.groups} · 合并课程 ${result.mergedCourses} · 移动事项 ${result.movedItems} · 移动资料 ${result.movedMaterials} · 去重资料 ${result.removedMaterials}`,
+  )
+  for (const entry of result.mergedInto) {
+    console.log(`  ${entry.fromCourseId} → ${entry.toCourseId}`)
+  }
+}
+
 async function runCourseAdd(app: AcademicApp, args: string[]): Promise<void> {
   const { positional } = parseArgs(args)
   const [termId, code, ...titleParts] = positional
@@ -248,7 +258,11 @@ async function runCourseAdd(app: AcademicApp, args: string[]): Promise<void> {
     title: titleParts.join(' '),
   })
   if (!result.ok) throw new Error(result.message)
-  console.log(`课程已创建：${result.aggregateId}（版本 ${result.version}）`)
+  if (result.eventIds.length === 0) {
+    console.log(`已存在同学期同名课程，复用：${result.aggregateId}（版本 ${result.version}）`)
+  } else {
+    console.log(`课程已创建：${result.aggregateId}（版本 ${result.version}）`)
+  }
 }
 
 async function runCourseArchive(app: AcademicApp, courseId: string | undefined): Promise<void> {
@@ -942,6 +956,181 @@ async function runNotifications(app: AcademicApp, args: string[]): Promise<void>
   }
 }
 
+function printMaterial(app: AcademicApp, material: ReturnType<AcademicApp['materials']['get']>): void {
+  if (!material) return
+  const pages = material.pageCount ? ` · ${material.pageCount} 页` : ''
+  console.log(
+    `  [${material.materialId}] ${material.title} · 课程 ${material.courseId} · ${material.kind}${pages} · ${material.chunkCount} 块 · ${material.extractionStatus}`,
+  )
+  console.log(
+    `      ${material.sourceKind}${material.sourceUrl ? ` · ${material.sourceUrl}` : ''} · ${material.bytes} bytes${
+      material.extractionNote ? ` · ${material.extractionNote}` : ''
+    }`,
+  )
+}
+
+async function runMaterialList(app: AcademicApp, args: string[]): Promise<void> {
+  const { flags } = parseArgs(args)
+  const courseId = stringFlag(flags, 'course')
+  const itemId = stringFlag(flags, 'item')
+  const materials = app.materials.list({
+    ...(courseId ? { courseId } : {}),
+    ...(itemId ? { itemId } : {}),
+  })
+  console.log(`课程资料（${materials.length}）：`)
+  for (const material of materials) printMaterial(app, material)
+}
+
+async function runMaterialAdd(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  const [filePath] = positional
+  const courseId = stringFlag(flags, 'course')
+  if (!filePath || !courseId) {
+    throw new Error('用法：material add <file> --course <courseId> [--title 标题] [--item itemId]')
+  }
+  const result = await app.materials.importFile({
+    courseId,
+    filePath,
+    ...(stringFlag(flags, 'title') ? { title: stringFlag(flags, 'title')! } : {}),
+    ...(stringFlag(flags, 'item') ? { itemId: stringFlag(flags, 'item')! } : {}),
+  })
+  console.log(
+    `${result.duplicate ? '已存在相同资料' : '资料已导入'}：${result.material.materialId} · ${result.material.title} · ${result.chunks} 块 · ${result.material.extractionStatus}`,
+  )
+  if (result.material.extractionNote) console.log(`  ${result.material.extractionNote}`)
+}
+
+async function runMaterialText(app: AcademicApp, args: string[]): Promise<void> {
+  const { flags } = parseArgs(args)
+  const courseId = stringFlag(flags, 'course')
+  const title = stringFlag(flags, 'title')
+  const filePath = stringFlag(flags, 'file')
+  const inline = stringFlag(flags, 'text')
+  if (!courseId || !title || (!filePath && !inline)) {
+    throw new Error(
+      '用法：material text --course <courseId> --title 标题 (--file notes.txt | --text "正文") [--item itemId]',
+    )
+  }
+  const text = filePath ? readFileSync(filePath, 'utf8') : inline!
+  const result = await app.materials.importText({
+    courseId,
+    title,
+    text,
+    ...(stringFlag(flags, 'item') ? { itemId: stringFlag(flags, 'item')! } : {}),
+    originLabel: 'cli',
+  })
+  console.log(
+    `${result.duplicate ? '已存在相同资料' : '文本已导入'}：${result.material.materialId} · ${result.chunks} 块`,
+  )
+}
+
+async function runMaterialUrl(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  const [url] = positional
+  const courseId = stringFlag(flags, 'course')
+  if (!url || !courseId) {
+    throw new Error(
+      '用法：material url <url> --course <courseId> [--title 标题] [--source sourceId] [--item itemId]',
+    )
+  }
+  const result = await app.materials.importUrl({
+    courseId,
+    url,
+    ...(stringFlag(flags, 'title') ? { title: stringFlag(flags, 'title')! } : {}),
+    ...(stringFlag(flags, 'source') ? { sourceId: stringFlag(flags, 'source')! } : {}),
+    ...(stringFlag(flags, 'item') ? { itemId: stringFlag(flags, 'item')! } : {}),
+  })
+  console.log(
+    `${result.duplicate ? '已存在相同资料' : '网页已导入'}：${result.material.materialId} · ${result.material.title} · ${result.chunks} 块`,
+  )
+  if (result.material.extractionNote) console.log(`  ${result.material.extractionNote}`)
+}
+
+async function runMaterialSearch(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  const query = positional.join(' ').trim()
+  if (!query) throw new Error('用法：material search <关键词> [--course courseId] [--limit 8]')
+  const result = app.materials.search({
+    query,
+    ...(stringFlag(flags, 'course') ? { courseId: stringFlag(flags, 'course')! } : {}),
+    ...(stringFlag(flags, 'item') ? { itemId: stringFlag(flags, 'item')! } : {}),
+    ...(stringFlag(flags, 'limit') ? { limit: numberFlag(flags, 'limit') } : {}),
+  })
+  console.log(`命中 ${result.total} 段，显示 ${result.hits.length} 段：`)
+  for (const hit of result.hits) {
+    const place = hit.page ? `第 ${hit.page} 页` : hit.heading ?? ''
+    console.log(`  · ${hit.title}（课程 ${hit.courseId}）${place ? ` · ${place}` : ''}`)
+    console.log(`    ${hit.snippet}`)
+  }
+}
+
+async function runMaterialDelete(app: AcademicApp, materialId: string | undefined): Promise<void> {
+  if (!materialId) throw new Error('用法：material delete <materialId>')
+  app.materials.delete(materialId)
+  console.log(`资料已删除：${materialId}（不影响学业事件）`)
+}
+
+async function runMaterialRebuild(app: AcademicApp): Promise<void> {
+  const result = app.materials.rebuildIndex()
+  console.log(
+    `索引重建完成：资料 ${result.materials} · 分块 ${result.chunks} · 缺失文件 ${result.missingFiles}`,
+  )
+}
+
+async function runMaterialAttachments(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  const [sourceId, pageUrl] = positional
+  const courseId = stringFlag(flags, 'course')
+  if (!sourceId || !pageUrl || !courseId) {
+    throw new Error(
+      '用法：material attachments <sourceId> <pageUrl> --course <courseId> [--prefix /path] [--max 12]',
+    )
+  }
+  const result = await app.materials.importAttachments({
+    courseId,
+    sourceId,
+    pageUrl,
+    ...(stringFlag(flags, 'prefix') ? { pathPrefix: stringFlag(flags, 'prefix')! } : {}),
+    ...(stringFlag(flags, 'max') ? { maxFiles: numberFlag(flags, 'max') } : {}),
+  })
+  console.log(
+    `附件导入：发现 ${result.discovered} · 新增 ${result.imported} · 重复 ${result.duplicates} · 跳过 ${result.skipped} · 失败 ${result.failed}${
+      result.stopReason ? ` · 停止原因 ${result.stopReason}` : ''
+    }`,
+  )
+  for (const item of result.items) {
+    console.log(`  + ${item.material.title} · ${item.chunks} 块 · ${item.material.extractionStatus}`)
+  }
+  for (const failure of result.failures) {
+    console.log(`  ! ${failure.url} · ${failure.message}`)
+  }
+}
+
+async function runMaterialSubscription(app: AcademicApp, args: string[]): Promise<void> {
+  const { positional, flags } = parseArgs(args)
+  if (positional.length === 0) {
+    const subscriptions = app.materials.subscriptions()
+    console.log(`自动导入订阅（${subscriptions.length}）：`)
+    for (const subscription of subscriptions) {
+      console.log(
+        `  ${subscription.enabled ? '开启' : '关闭'} · source=${subscription.sourceId} · course=${subscription.courseId} · ${subscription.updatedAt}`,
+      )
+    }
+    return
+  }
+  const [sourceId, courseId] = positional
+  if (!sourceId || !courseId) {
+    throw new Error(
+      '用法：material subscribe [sourceId courseId] [--disable]  （不带参数时列出订阅）',
+    )
+  }
+  const enabled = flags.get('disable') !== true
+  const subscription = app.materials.setSubscription(sourceId, courseId, enabled)
+  console.log(
+    `自动导入已${subscription.enabled ? '开启' : '关闭'}：source=${sourceId} · course=${courseId}`,
+  )
+}
+
 function printHelp(): void {
   console.log(`Academic Agent CLI
 
@@ -956,6 +1145,7 @@ function printHelp(): void {
   course list               列出课程
   course add <term> <code> <title>   添加课程
   course archive <courseId>          归档课程
+  course merge-duplicates            合并同学期同名课程（迁移事项/资料后关闭重复课程）
   task list                 列出全部学习任务
   task add <title> [--minutes 60] [--due ISO] [--priority 1] [--item ID]
   task complete|reopen <taskId>
@@ -992,6 +1182,15 @@ function printHelp(): void {
   web list                         列出已保存的网站会话
   web fetch <id> <url> [--out file]  带会话请求，不打印 Cookie
   web delete <id>
+  material list [--course ID] [--item ID]     列出课程资料
+  material add <file> --course ID [--title 标题] [--item ID]
+  material text --course ID --title 标题 (--file notes.txt | --text "正文")
+  material url <url> --course ID [--title 标题] [--source ID]
+  material search <关键词> [--course ID] [--limit 8]
+  material delete <materialId>               只删资料/索引，不影响学业事件
+  material rebuild                           从原文件重建分块与 FTS 索引
+  material subscribe [sourceId courseId] [--disable]   开启/关闭该来源+课程的附件自动导入
+  material attachments <sourceId> <pageUrl> --course ID [--prefix /path] [--max 12]
   notifications [--read ID | --read-all]
   backup [target.db]        生成一致性数据库备份
   restore <backup.db> <target.db>  恢复到新数据库并校验完整性、投影
@@ -1035,7 +1234,8 @@ async function main(): Promise<void> {
         if (subcommand === 'list') await runCourseList(app)
         else if (subcommand === 'add') await runCourseAdd(app, args)
         else if (subcommand === 'archive') await runCourseArchive(app, args[0])
-        else throw new Error('用法：course list|add|archive')
+        else if (subcommand === 'merge-duplicates') await runCourseMergeDuplicates(app)
+        else throw new Error('用法：course list|add|archive|merge-duplicates')
         break
       }
 
@@ -1119,6 +1319,21 @@ async function main(): Promise<void> {
         else if (subcommand === 'fetch') await runWebFetch(app, args)
         else if (subcommand === 'delete') await runWebDelete(app, args[0])
         else throw new Error('用法：web login|list|fetch|delete')
+        break
+      }
+
+      case 'material': {
+        const [subcommand, ...args] = rest
+        if (subcommand === 'list') await runMaterialList(app, args)
+        else if (subcommand === 'add') await runMaterialAdd(app, args)
+        else if (subcommand === 'text') await runMaterialText(app, args)
+        else if (subcommand === 'url') await runMaterialUrl(app, args)
+        else if (subcommand === 'search') await runMaterialSearch(app, args)
+        else if (subcommand === 'delete') await runMaterialDelete(app, args[0])
+        else if (subcommand === 'rebuild') await runMaterialRebuild(app)
+        else if (subcommand === 'attachments') await runMaterialAttachments(app, args)
+        else if (subcommand === 'subscribe') await runMaterialSubscription(app, args)
+        else throw new Error('用法：material list|add|text|url|search|delete|rebuild|attachments|subscribe')
         break
       }
 

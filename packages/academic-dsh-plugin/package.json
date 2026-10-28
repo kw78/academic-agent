@@ -1,7 +1,6 @@
 {
   "name": "@academic/dsh-plugin",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "DSH bundle exposing Academic Agent query and task tools to the model.",
   "main": "lib/host.js",
@@ -17,7 +16,9 @@
     "migrations",
     "cordis.patch.yml",
     "dsh.plugin.json",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "dsh": {
     "bundle": {
@@ -40,17 +41,24 @@
     }
   },
   "devDependencies": {
-    "@academic/agent-tools": "0.1.0",
-    "@academic/cli": "0.1.0",
     "@deepseek-ai/cordis": "4.0.5"
   },
   "scripts": {
     "build": "node build.mjs"
   },
   "dependencies": {
-    "@academic/sources": "0.1.0",
-    "@academic/source-browser": "0.1.0",
-    "playwright-core": "1.64.1",
-    "@academic/web-sessions": "0.1.0"
-  }
+    "playwright-core": "1.64.1"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kw78/academic-agent.git",
+    "directory": "packages/academic-dsh-plugin"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "Apache-2.0"
 }

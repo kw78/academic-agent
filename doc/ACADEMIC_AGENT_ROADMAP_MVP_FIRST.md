@@ -82,7 +82,7 @@ Agent。
 
   Scheduler、Planner、任务、提醒           已实现并有 UI                                   重点验收真实使用和生命周期
 
-  DSH Host / Planner / Tools               已接入，当前 19 个工具（含自动接入）              保持可信授权与默认只读
+  DSH Host / Planner / Tools               已接入，当前 23 个工具（含自动接入与资料工具）              保持可信授权与默认只读
 
   DSH Web UI                               总览、任务、计划、连接、自动化、设置已实现      有真实数据展示记录
 
@@ -679,7 +679,7 @@ HTTP/JSON、已登录浏览器会话、受限页面解析，最后才考虑额�
 
 **验收：** 智能建议可追溯、可纠正，不伪装成客观测量。
 
-### H-05 --- 资料与知识引用（按需） `[TODO]`
+### H-05 --- 资料与知识引用（按需） `[DONE]`
 
 真实需求已经出现：只靠题目和数据库事实，Tutor 无法讲课程-specific 内容（课件、讲义、往年题）。因此先做课程资料库，再让教学 skill 引用它。
 
@@ -699,6 +699,20 @@ HTTP/JSON、已登录浏览器会话、受限页面解析，最后才考虑额�
 4. `MATERIAL-004` 索引重建、课程资料 UI、真实问答质量评估。
 
 **验收：** 用户导入一份真实课程 PDF 后提问，Tutor 能找到相关片段并标注资料/页码；没有资料时明确说明；重复导入不重复存储；删除资料不影响学业事件；自动抓取只发生在用户授权的来源与范围内。
+
+**实现状态（2026-10-28）：** 已落地 `packages/academic-materials` 与迁移 `0015_materials.sql`：
+原文件按 sha256 内容寻址存放在数据库同目录 `materials/`，SQLite 只存元数据与分块；支持
+PDF（Flate、ToUnicode/bfchar/bfrange、页码）、HTML、Markdown、TXT、PPTX、DOCX 文本抽取，
+中文分块后写入 FTS5 trigram，短关键词回退 LIKE。UI/CLI/Agent 均支持文件、粘贴文本、单页 URL；
+同一课程 sha256 去重，跨课程共享内容文件。授权附件导入需在
+`material_source_subscriptions` 显式开启 source+course，只扫描用户给出的课程页同主机链接，
+限 12 个/80 MB/2 分钟，401/403/登录页/429 立即停止。删除只删文件、元数据与索引；索引重建
+从原文件重新抽取。Agent 只读 `academic_list_materials` / `academic_search_materials`，
+导入/删除工具需可信宿主逐次授权；Tutor skill 的 explain/review 要求先查资料并引用标题/页码。
+已用真实 PDF（`2025春数分B2期中试题及解答.pdf`）验证导入后可检索“中国科学技术大学”“隐函数”
+等片段；DSH 自测显示 23 个工具注册、只读成功、写入 `FORBIDDEN`；DSH Web 临时库完成资料页浏览器点验
+（文本与真实 PDF 导入、检索返回页码、删除）。**未验证：** 真实模型会话中的引用行为（本机当前缺少
+DeepSeek key）、OCR、自动多页发现。
 
 ## 12. I 组：可靠性、恢复与工程成熟度
 
@@ -815,7 +829,7 @@ disposer、普通 Worker 或 Node `vm` 不得未经威胁模型验证就称为�
 -   更多 LMS/教务平台 Manifest。
 -   官方 API 与 OAuth。
 -   XML/XPath 等解析，仅在真实平台需要时增加。
--   附件/课程资料读取与本地索引。
+-   附件/课程资料读取与本地索引（已由 H-05 MATERIAL-001~004 落地；OCR/自动多页发现仍为长期项）。
 -   成绩、提交历史与更细粒度状态同步。
 -   页面改版检测、Adapter 健康评估和修复建议。
 -   多数据源冲突与课程身份合并策略。
@@ -945,7 +959,7 @@ SaaS、分布式微服务、插件市场，以及没有数据依据的学习能�
 
 - **F-01/F-02/F-03 DONE**：Manifest 明确拒绝未知 `schemaVersion`；候选验证按 schema、字段契约、访问范围、样本回放分阶段报告；字段支持类型转换、默认值、必需字段与结构退化诊断；分页支持 `next`、页码与 offset，并受页数、行数、总字节、时长与请求数限制，截断不误报完整。
 - **G-01/G-02/G-04/G-05/G-06 DONE**：Host 返回统一接入阶段与唯一下一步；探测证据含 SHA-256 摘要；候选列表展示允许主机、路径、数据类型与字段；同步失败分类为认证/网络/权限/结构/质量并给出不扩大权限的修复建议。
-- **H-01/H-02 DONE**：课程优先级持久化在 `user_preferences`，仅作为任务优先级之后的排序依据；设置页可查看/修改。计划候选显示可安排/已安排/未安排时长，容量不足与截止已过分开解释，并用真实 Blackboard 任务快照评估。H-03/H-04 为 PARTIAL：UI 已带入课程上下文与按课程复习清单，但尚无持久化反馈与真实模型讲解验收；H-05 已从 PARKED 转为 TODO，先做手动资料导入 + FTS 检索，再做授权自动抓取。
+- **H-01/H-02 DONE**：课程优先级持久化在 `user_preferences`，仅作为任务优先级之后的排序依据；设置页可查看/修改。计划候选显示可安排/已安排/未安排时长，容量不足与截止已过分开解释，并用真实 Blackboard 任务快照评估。H-03/H-04 为 PARTIAL：UI 已带入课程上下文与按课程复习清单，但尚无持久化反馈与真实模型讲解验收；H-05 已 DONE：手动/URL/授权附件导入、PDF/HTML/MD/TXT/PPTX/DOCX 抽取、FTS5 检索、删除与索引重建、Agent 工具与 Tutor 引用规则均已落地，真实 PDF 检索已验证；真实模型引用、OCR 与自动多页发现未验证。
 - **G-03 PARTIAL**：已支持同主机 URL 探测、脚本 URL、候选接口路径和 Host 侧临时样本捕获（sampleId，60 分钟 TTL、按 URL 复用）；自动多页发现、全局采样上限与跨进程样本持久化仍未实现。
 - **I-03/I-04/I-05 DONE**：`restore <backup> <target>` 在独立目录执行完整性与投影校验；1k/10k 事项性能基线由 `npm run benchmark` 记录；`sync_runs` 记录 Adapter ID/版本；0010→当前迁移升级测试验证数据保留。I-01/I-02/I-06 仍为 PARTIAL：事件本身未写 Adapter 版本、文件级 HMR/真实 DSH Session 生命周期与 profile 升级演练未完成。
 - **K-01/K-02 PARTIAL，K-03 DONE**：当前能力注册、停用与设置页只读能力/权限展示已有实现；未建设插件市场或额外抽象。J 组保持独立决策，未启动。
@@ -959,7 +973,7 @@ SaaS、分布式微服务、插件市场，以及没有数据依据的学习能�
 - **source 级作业请求**：Manifest 支持 `assignments.scope=source`，静态列表只请求一次并按行内 `courseExternalId` 归属；`scope` 只能用于 assignments，source 级 URL 不允许 `{{course.*}}`。
 - **导入与证据**：UI 候选导入支持选择 JSON 文件；验证结果标注“样本回放通过，未做真实同步”。
 - **Agent 自动接入**：设置页提供默认关闭的偏好；开启后 Agent 可启用 validated 候选，并预览/同步 declarative 源，不再逐次审核；仍未开放未验证候选、凭据读取、任务修改与学校平台操作。
-- **验证**：`npm run typecheck`、`npm test`（35 文件/183 项）、`npm run build:dsh`、`npm run build:ui` 通过。真实同步验收仍需用户在启用后执行预览/同步/重复 no-op。
+- **验证**：`npm run typecheck`、`npm test`（40 文件/217 项）、`npm run build:dsh`、`npm run build:ui` 通过。真实同步验收仍需用户在启用后执行预览/同步/重复 no-op。
 
 ## 18.3 个人数据可编辑与恢复（2026-10-28）
 
@@ -968,7 +982,7 @@ SaaS、分布式微服务、插件市场，以及没有数据依据的学习能�
 - **学习任务**：可编辑标题、本地截止、优先级、预计时长；可删除/恢复；Planner 与默认查询排除归档任务。
 - **数据源**：可编辑非敏感配置；归档后可恢复；彻底删除会清理 source、连接元数据与凭据，但保留学业事件。
 - **UI**：连接页、课程列表、任务页补齐编辑/删除/恢复入口，并提供“显示已归档/已删除”开关。
-- **验证**：`npm run typecheck`、`npm test`（35 文件/183 项）、`npm run build:dsh`、`npm run build:ui` 通过。新入口尚未做真实浏览器/Desktop 点验。
+- **验证**：`npm run typecheck`、`npm test`（40 文件/217 项）、`npm run build:dsh`、`npm run build:ui` 通过。新入口尚未做真实浏览器/Desktop 点验。
 
 ## 19. 当前唯一正确的推进策略
 

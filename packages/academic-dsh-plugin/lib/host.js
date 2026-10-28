@@ -2082,12 +2082,12 @@ var require_CSSValueExpression = __commonJS({
         return false;
       }
     };
-    CSSOM2.CSSValueExpression.prototype._parseJSString = function(token, idx, sep) {
-      var endIdx = this._findMatchedIdx(token, idx, sep), text2;
+    CSSOM2.CSSValueExpression.prototype._parseJSString = function(token, idx, sep2) {
+      var endIdx = this._findMatchedIdx(token, idx, sep2), text2;
       if (endIdx === -1) {
         return false;
       } else {
-        text2 = token.substring(idx, endIdx + sep.length);
+        text2 = token.substring(idx, endIdx + sep2.length);
         return {
           idx: endIdx,
           text: text2
@@ -2127,15 +2127,15 @@ var require_CSSValueExpression = __commonJS({
       if (!isLegal) {
         return false;
       } else {
-        var sep = "/";
-        return this._parseJSString(token, idx, sep);
+        var sep2 = "/";
+        return this._parseJSString(token, idx, sep2);
       }
     };
-    CSSOM2.CSSValueExpression.prototype._findMatchedIdx = function(token, idx, sep) {
+    CSSOM2.CSSValueExpression.prototype._findMatchedIdx = function(token, idx, sep2) {
       var startIdx = idx, endIdx;
       var NOT_FOUND = -1;
       while (true) {
-        endIdx = token.indexOf(sep, startIdx + 1);
+        endIdx = token.indexOf(sep2, startIdx + 1);
         if (endIdx === -1) {
           endIdx = NOT_FOUND;
           break;
@@ -5190,14 +5190,15 @@ var require_canvas = __commonJS({
 
 // packages/academic-dsh-plugin/src/host.ts
 import { homedir as homedir2 } from "node:os";
-import { join as join3 } from "node:path";
+import { join as join5 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { Service } from "@deepseek-ai/cordis";
 
 // apps/academic-cli/src/composition.ts
-import { createHash as createHash10, randomUUID as randomUUID4 } from "node:crypto";
-import { mkdirSync as mkdirSync3 } from "node:fs";
-import { dirname as dirname2 } from "node:path";
+import { createHash as createHash11, randomUUID as randomUUID4 } from "node:crypto";
+import { mkdirSync as mkdirSync4, rmSync as rmSync4 } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname as dirname2, join as join4 } from "node:path";
 
 // node_modules/zod/v4/classic/external.js
 var external_exports = {};
@@ -24980,6 +24981,12 @@ var STREAM_PREFIX = {
 function streamIdFor(kind, aggregateId) {
   return `${STREAM_PREFIX[kind]}/${aggregateId}`;
 }
+function normalizeCourseTitle(title) {
+  return title.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+}
+function courseIdentityKey(termId, title) {
+  return `${termId.normalize("NFKC").trim()}\0${normalizeCourseTitle(title)}`;
+}
 
 // packages/academic-contracts/src/commands.ts
 import { createHash } from "node:crypto";
@@ -25054,6 +25061,9 @@ var COMMAND_SCHEMAS = {
     reason: external_exports.string().max(500).optional()
   }),
   "academic.item.restore.v1": emptyPayloadSchema,
+  "academic.item.reassign-course.v1": external_exports.object({
+    courseId: external_exports.string().min(1)
+  }),
   "academic.task.create.v1": external_exports.object({
     title: external_exports.string().min(1),
     itemId: external_exports.string().min(1).optional(),
@@ -25103,6 +25113,7 @@ var COMMAND = {
   AcademicItemSetProgress: "academic.item.set-progress.v1",
   AcademicItemArchive: "academic.item.archive.v1",
   AcademicItemRestore: "academic.item.restore.v1",
+  AcademicItemReassignCourse: "academic.item.reassign-course.v1",
   StudyTaskCreate: "academic.task.create.v1",
   StudyTaskChangeEstimate: "academic.task.change-estimate.v1",
   StudyTaskChangeDetails: "academic.task.change-details.v1",
@@ -25207,6 +25218,10 @@ var EVENT_SCHEMAS = {
     reason: external_exports.string().max(500).optional()
   }),
   "academic.item.restored": external_exports.object({}),
+  "academic.item.course-changed": external_exports.object({
+    from: external_exports.string().min(1),
+    to: external_exports.string().min(1)
+  }),
   "academic.task.created": external_exports.object({
     title: external_exports.string().min(1),
     itemId: external_exports.string().min(1).optional(),
@@ -25267,6 +25282,7 @@ var EVENT = {
   AcademicItemProgressChanged: "academic.item.progress-changed",
   AcademicItemArchived: "academic.item.archived",
   AcademicItemRestored: "academic.item.restored",
+  AcademicItemCourseChanged: "academic.item.course-changed",
   StudyTaskCreated: "academic.task.created",
   StudyTaskEstimateChanged: "academic.task.estimate-changed",
   StudyTaskDetailsChanged: "academic.task.details-changed",
@@ -26132,13 +26148,13 @@ function cookieHeaderFor(cookies, url2, nowMs) {
 function isRedirect(status) {
   return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
 }
-async function readBody(response, finalUrl, maxBytes, signal) {
+async function readBodyBytes(response, finalUrl, maxBytes, signal) {
   if (!response.body) {
     return {
       status: response.status,
       finalUrl,
       ...response.headers.get("content-type") ? { contentType: response.headers.get("content-type") } : {},
-      body: "",
+      body: new Uint8Array(0),
       truncated: false,
       redirects: []
     };
@@ -26160,8 +26176,7 @@ async function readBody(response, finalUrl, maxBytes, signal) {
     );
   }
   const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let text2 = "";
+  const chunks = [];
   let bytes = 0;
   let truncated = false;
   try {
@@ -26172,17 +26187,16 @@ async function readBody(response, finalUrl, maxBytes, signal) {
       const remaining = maxBytes - bytes;
       if (value.byteLength > remaining) {
         if (remaining > 0) {
-          text2 += decoder.decode(value.subarray(0, remaining), { stream: true });
+          chunks.push(value.slice(0, remaining));
           bytes += remaining;
         }
         truncated = true;
         await reader.cancel().catch(() => void 0);
         break;
       }
+      chunks.push(value);
       bytes += value.byteLength;
-      text2 += decoder.decode(value, { stream: true });
     }
-    text2 += decoder.decode();
   } catch (error62) {
     if (signal.aborted) throw new SafeFetchError("TIMEOUT", "\u8BF7\u6C42\u8D85\u65F6");
     throw new SafeFetchError(
@@ -26192,16 +26206,22 @@ async function readBody(response, finalUrl, maxBytes, signal) {
       )}`
     );
   }
+  const body = new Uint8Array(bytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   return {
     status: response.status,
     finalUrl,
     ...response.headers.get("content-type") ? { contentType: response.headers.get("content-type") } : {},
-    body: text2,
+    body,
     truncated,
     redirects: []
   };
 }
-async function safeFetch(input2, options) {
+async function fetchBytesInternal(input2, options) {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
   const maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_MAX_BYTES);
@@ -26267,7 +26287,7 @@ async function safeFetch(input2, options) {
           throw new SafeFetchError("REDIRECT_LIMIT", "\u91CD\u5B9A\u5411\u6B21\u6570\u8D85\u8FC7\u4E0A\u9650");
         }
         const location = response.headers.get("location");
-        if (!location) return await readBody(response, current.toString(), maxBytes, controller.signal);
+        if (!location) return await readBodyBytes(response, current.toString(), maxBytes, controller.signal);
         let next;
         try {
           next = prepareUrl(new URL(location, current).toString());
@@ -26282,12 +26302,19 @@ async function safeFetch(input2, options) {
         current = next;
         continue;
       }
-      const result = await readBody(response, current.toString(), maxBytes, controller.signal);
+      const result = await readBodyBytes(response, current.toString(), maxBytes, controller.signal);
       return { ...result, redirects };
     }
   } finally {
     clearTimeout(timer);
   }
+}
+async function safeFetchBytes(input2, options) {
+  return fetchBytesInternal(input2, options);
+}
+async function safeFetch(input2, options) {
+  const result = await fetchBytesInternal(input2, options);
+  return { ...result, body: new TextDecoder().decode(result.body) };
 }
 
 // packages/academic-web-sessions/src/index.ts
@@ -26413,16 +26440,10 @@ var WebSessionStore = class {
     this.#db.prepare("DELETE FROM web_sessions WHERE session_id = ?").run(sessionId);
   }
   async fetch(sessionId, targetUrl) {
-    const row = this.#db.prepare("SELECT * FROM web_sessions WHERE session_id = ?").get(sessionId);
-    if (!row) throw new Error("Web session not found");
-    const raw = await this.#vault.get(row.vault_ref);
-    if (!raw) throw new Error("Web session credential is unavailable");
-    const parsed = JSON.parse(raw);
-    const cookies = parsed.cookies ?? [];
-    if (cookies.length === 0) throw new Error("Web session has no cookies");
+    const cookies = await this.#loadCookies(sessionId);
     const result = await safeFetch(targetUrl, {
       cookies,
-      allowedHosts: [row.domain],
+      allowedHosts: [this.get(sessionId).domain],
       allowSubdomains: false,
       allowedProtocols: this.#allowedProtocols,
       ...this.#allowedPorts ? { allowedPorts: this.#allowedPorts } : {},
@@ -26433,8 +26454,7 @@ var WebSessionStore = class {
       ...this.#fetch ? { fetchImpl: this.#fetch } : {},
       ...this.#request ? { requestImpl: this.#request } : {}
     });
-    const now = this.#clock.now();
-    this.#db.prepare("UPDATE web_sessions SET last_used_at = ?, updated_at = ? WHERE session_id = ?").run(now, now, sessionId);
+    this.#touch(sessionId);
     return {
       sessionId,
       url: safeUrlForDisplay(targetUrl),
@@ -26444,6 +26464,48 @@ var WebSessionStore = class {
       body: result.body,
       truncated: result.truncated
     };
+  }
+  async fetchBytes(sessionId, targetUrl, options = {}) {
+    const session = this.get(sessionId);
+    if (!session) throw new Error("Web session not found");
+    const cookies = await this.#loadCookies(sessionId);
+    const result = await safeFetchBytes(targetUrl, {
+      cookies,
+      allowedHosts: [session.domain],
+      allowSubdomains: false,
+      allowedProtocols: this.#allowedProtocols,
+      ...this.#allowedPorts ? { allowedPorts: this.#allowedPorts } : {},
+      ...this.#allowedPathPrefixes ? { allowedPathPrefixes: this.#allowedPathPrefixes } : {},
+      ...this.#resolveHost ? { resolveHost: this.#resolveHost } : {},
+      ...options.timeoutMs ?? this.#timeoutMs ? { timeoutMs: options.timeoutMs ?? this.#timeoutMs } : {},
+      ...options.maxBytes ?? this.#maxBytes ? { maxBytes: options.maxBytes ?? this.#maxBytes } : {},
+      ...this.#fetch ? { fetchImpl: this.#fetch } : {},
+      ...this.#request ? { requestImpl: this.#request } : {}
+    });
+    this.#touch(sessionId);
+    return {
+      sessionId,
+      url: safeUrlForDisplay(targetUrl),
+      finalUrl: safeUrlForDisplay(result.finalUrl),
+      status: result.status,
+      ...result.contentType ? { contentType: result.contentType } : {},
+      body: result.body,
+      truncated: result.truncated
+    };
+  }
+  async #loadCookies(sessionId) {
+    const row = this.#db.prepare("SELECT * FROM web_sessions WHERE session_id = ?").get(sessionId);
+    if (!row) throw new Error("Web session not found");
+    const raw = await this.#vault.get(row.vault_ref);
+    if (!raw) throw new Error("Web session credential is unavailable");
+    const parsed = JSON.parse(raw);
+    const cookies = parsed.cookies ?? [];
+    if (cookies.length === 0) throw new Error("Web session has no cookies");
+    return cookies;
+  }
+  #touch(sessionId) {
+    const now = this.#clock.now();
+    this.#db.prepare("UPDATE web_sessions SET last_used_at = ?, updated_at = ? WHERE session_id = ?").run(now, now, sessionId);
   }
 };
 
@@ -27653,9 +27715,30 @@ function parseCourseTitle(value) {
   }
   return { code: left, termId: "unknown", title };
 }
+var TERM_SEASONS = {
+  WI: "winter",
+  SP: "spring",
+  SU: "summer",
+  FA: "fall"
+};
+function normalizeTermId(value) {
+  const text2 = value.trim();
+  const code = /^(\d{4})\s*(WI|SP|SU|FA)$/i.exec(text2);
+  if (code?.[1] && code[2]) {
+    return `${code[1]}-${TERM_SEASONS[code[2].toUpperCase()]}`;
+  }
+  const named = /^(\d{4})-(fall|spring|summer|winter)$/i.exec(text2);
+  if (named?.[1] && named[2]) {
+    return `${named[1]}-${named[2].toLowerCase()}`;
+  }
+  return text2;
+}
+function termKey(value) {
+  return normalizeTermId(value).toUpperCase();
+}
 function parseCourseLinks(html, options) {
   const filters2 = {
-    terms: options.termFilter?.map((value) => value.toUpperCase()),
+    terms: options.termFilter?.map((value) => termKey(value)),
     courses: options.courseFilter?.map((value) => value.toLowerCase())
   };
   const byId = /* @__PURE__ */ new Map();
@@ -27684,7 +27767,7 @@ function parseCourseLinks(html, options) {
     }
   }
   const courses = [...byId.values()].filter((course2) => {
-    if (filters2.terms && filters2.terms.length > 0 && !filters2.terms.includes(course2.termId.toUpperCase())) {
+    if (filters2.terms && filters2.terms.length > 0 && !filters2.terms.includes(termKey(course2.termId))) {
       return false;
     }
     if (filters2.courses && filters2.courses.length > 0) {
@@ -27796,32 +27879,41 @@ function validDate(year, month, day) {
 function two(value) {
   return String(value).padStart(2, "0");
 }
+function dueFromParts(year, month, day, hour, minute, zone, utcOffsetMinutes) {
+  if (!validDate(year, month, day)) return { kind: "unknown" };
+  const date5 = `${year}-${two(month)}-${two(day)}`;
+  if (hour === void 0 || minute === void 0) {
+    return { kind: "local-date", date: date5, zone };
+  }
+  if (hour > 23 || minute > 59) return { kind: "local-date", date: date5, zone };
+  const utc = new Date(
+    Date.UTC(year, month - 1, day, hour, minute) - utcOffsetMinutes * 6e4
+  ).toISOString();
+  return { kind: "instant", utc, zone };
+}
 function parseDue(value, zone, utcOffsetMinutes) {
   const text2 = stripHtml(value);
   const chinese = new RegExp(
     `(\\d{4})\\s*\u5E74\\s*(\\d{1,2})\\s*\u6708\\s*(\\d{1,2})\\s*\u65E5(?:\\s*\u661F\u671F[\u4E00\u4E8C\u4E09\u56DB\u4E94\u516D\u65E5\u5929])?(?:\\s*(\u4E0A\u5348|\u4E0B\u5348|\u665A\u4E0A)?\\s*(\\d{1,2})\\s*[:\uFF1A]\\s*(\\d{2}))?`
   ).exec(text2);
   if (chinese?.[1] && chinese[2] && chinese[3]) {
-    const year = Number(chinese[1]);
-    const month = Number(chinese[2]);
-    const day = Number(chinese[3]);
-    if (!validDate(year, month, day)) return { kind: "unknown" };
-    const date5 = `${year}-${two(month)}-${two(day)}`;
     const hourText = chinese[4];
-    const hourRaw = chinese[5];
-    const minuteRaw = chinese[6];
-    if (hourRaw && minuteRaw) {
-      let hour = Number(hourRaw);
-      const minute = Number(minuteRaw);
-      if (hourText && /上午/.test(hourText) && hour === 12) hour = 0;
-      if (hourText && /下午|晚上/.test(hourText) && hour < 12) hour += 12;
-      if (hour > 23 || minute > 59) return { kind: "local-date", date: date5, zone };
-      const utc = new Date(
-        Date.UTC(year, month - 1, day, hour, minute) - utcOffsetMinutes * 6e4
-      ).toISOString();
-      return { kind: "instant", utc, zone };
+    let hour = chinese[5] ? Number(chinese[5]) : void 0;
+    if (hour !== void 0 && hourText && /上午/.test(hourText) && hour === 12) {
+      hour = 0;
     }
-    return { kind: "local-date", date: date5, zone };
+    if (hour !== void 0 && hourText && /下午|晚上/.test(hourText) && hour < 12) {
+      hour += 12;
+    }
+    return dueFromParts(
+      Number(chinese[1]),
+      Number(chinese[2]),
+      Number(chinese[3]),
+      hour,
+      chinese[6] ? Number(chinese[6]) : void 0,
+      zone,
+      utcOffsetMinutes
+    );
   }
   const english = new RegExp(
     `(${MONTHS.join("|")})\\s+(\\d{1,2}),?\\s+(\\d{4})(?:\\s+(\\d{1,2}):(\\d{2})\\s*(AM|PM)?)?`,
@@ -27831,37 +27923,49 @@ function parseDue(value, zone, utcOffsetMinutes) {
     const month = MONTHS.indexOf(
       MONTHS.find((name) => name.toLowerCase() === english[1].toLowerCase()) ?? english[1]
     ) + 1;
-    const day = Number(english[2]);
-    const year = Number(english[3]);
-    if (!validDate(year, month, day)) return { kind: "unknown" };
-    const date5 = `${year}-${two(month)}-${two(day)}`;
-    if (english[4] && english[5]) {
-      let hour = Number(english[4]);
-      const minute = Number(english[5]);
-      if (english[6]?.toUpperCase() === "PM" && hour < 12) hour += 12;
-      if (english[6]?.toUpperCase() === "AM" && hour === 12) hour = 0;
-      if (hour > 23 || minute > 59) return { kind: "local-date", date: date5, zone };
-      const utc = new Date(
-        Date.UTC(year, month - 1, day, hour, minute) - utcOffsetMinutes * 6e4
-      ).toISOString();
-      return { kind: "instant", utc, zone };
-    }
-    return { kind: "local-date", date: date5, zone };
+    let hour = english[4] ? Number(english[4]) : void 0;
+    const meridiem = english[6]?.toUpperCase();
+    if (hour !== void 0 && meridiem === "PM" && hour < 12) hour += 12;
+    if (hour !== void 0 && meridiem === "AM" && hour === 12) hour = 0;
+    return dueFromParts(
+      Number(english[3]),
+      month,
+      Number(english[2]),
+      hour,
+      english[5] ? Number(english[5]) : void 0,
+      zone,
+      utcOffsetMinutes
+    );
   }
-  const iso = /(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(text2);
-  if (iso?.[1] && iso[2] && iso[3]) {
-    const year = Number(iso[1]);
-    const month = Number(iso[2]);
-    const day = Number(iso[3]);
-    if (!validDate(year, month, day)) return { kind: "unknown" };
-    const date5 = `${year}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
-    if (iso[4] && iso[5]) {
-      const utc = new Date(
-        Date.UTC(year, month - 1, day, Number(iso[4]), Number(iso[5])) - utcOffsetMinutes * 6e4
-      ).toISOString();
-      return { kind: "instant", utc, zone };
-    }
-    return { kind: "local-date", date: date5, zone };
+  const yearFirst = /(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s](\d{1,2}):(\d{2}))?/.exec(text2);
+  if (yearFirst?.[1] && yearFirst[2] && yearFirst[3]) {
+    return dueFromParts(
+      Number(yearFirst[1]),
+      Number(yearFirst[2]),
+      Number(yearFirst[3]),
+      yearFirst[4] ? Number(yearFirst[4]) : void 0,
+      yearFirst[5] ? Number(yearFirst[5]) : void 0,
+      zone,
+      utcOffsetMinutes
+    );
+  }
+  const monthFirst = /(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})\s*(AM|PM)?)?/i.exec(
+    text2
+  );
+  if (monthFirst?.[1] && monthFirst[2] && monthFirst[3]) {
+    let hour = monthFirst[4] ? Number(monthFirst[4]) : void 0;
+    const meridiem = monthFirst[6]?.toUpperCase();
+    if (hour !== void 0 && meridiem === "PM" && hour < 12) hour += 12;
+    if (hour !== void 0 && meridiem === "AM" && hour === 12) hour = 0;
+    return dueFromParts(
+      Number(monthFirst[3]),
+      Number(monthFirst[1]),
+      Number(monthFirst[2]),
+      hour,
+      monthFirst[5] ? Number(monthFirst[5]) : void 0,
+      zone,
+      utcOffsetMinutes
+    );
   }
   return { kind: "unknown" };
 }
@@ -28322,7 +28426,8 @@ function createBlackboardEngine(options = {}) {
       }).courses.map((course2) => ({
         sourceId: context2.sourceId,
         externalCourseId: course2.externalCourseId,
-        termId: course2.termId,
+        // Blackboard 的 2026FA 与领域里的 2026-fall 指同一学期，统一后再落库。
+        termId: normalizeTermId(course2.termId),
         code: course2.code,
         title: course2.title
       }));
@@ -31761,10 +31866,10 @@ function compareDocumentPosition(nodeA, nodeB) {
 function uniqueSort(nodes) {
   nodes = nodes.filter((node2, i, arr) => !arr.includes(node2, i + 1));
   nodes.sort((a, b) => {
-    const relative = compareDocumentPosition(a, b);
-    if (relative & DocumentPosition.PRECEDING) {
+    const relative2 = compareDocumentPosition(a, b);
+    if (relative2 & DocumentPosition.PRECEDING) {
       return -1;
-    } else if (relative & DocumentPosition.FOLLOWING) {
+    } else if (relative2 & DocumentPosition.FOLLOWING) {
       return 1;
     }
     return 0;
@@ -33281,7 +33386,7 @@ function parseSelector(subselects2, selector, selectorIndex) {
     selectorIndex += offset + name.length;
     return unescapeCSS(name);
   }
-  function stripWhitespace(offset) {
+  function stripWhitespace2(offset) {
     selectorIndex += offset;
     while (selectorIndex < selector.length && isWhitespace2(selector.charCodeAt(selectorIndex))) {
       selectorIndex++;
@@ -33343,7 +33448,7 @@ function parseSelector(subselects2, selector, selectorIndex) {
     }
     subselects2.push(tokens);
   }
-  stripWhitespace(0);
+  stripWhitespace2(0);
   if (selector.length === selectorIndex) {
     return selectorIndex;
   }
@@ -33360,28 +33465,28 @@ function parseSelector(subselects2, selector, selectorIndex) {
           ensureNotTraversal();
           tokens.push({ type: SelectorType.Descendant });
         }
-        stripWhitespace(1);
+        stripWhitespace2(1);
         break;
       }
       // Traversals
       case CharCode.GreaterThan: {
         addTraversal(SelectorType.Child);
-        stripWhitespace(1);
+        stripWhitespace2(1);
         break;
       }
       case CharCode.LessThan: {
         addTraversal(SelectorType.Parent);
-        stripWhitespace(1);
+        stripWhitespace2(1);
         break;
       }
       case CharCode.Tilde: {
         addTraversal(SelectorType.Sibling);
-        stripWhitespace(1);
+        stripWhitespace2(1);
         break;
       }
       case CharCode.Plus: {
         addTraversal(SelectorType.Adjacent);
-        stripWhitespace(1);
+        stripWhitespace2(1);
         break;
       }
       // Special attribute selectors: .class, #id
@@ -33394,7 +33499,7 @@ function parseSelector(subselects2, selector, selectorIndex) {
         break;
       }
       case CharCode.LeftSquareBracket: {
-        stripWhitespace(1);
+        stripWhitespace2(1);
         let name;
         let namespace = null;
         if (selector.charCodeAt(selectorIndex) === CharCode.Pipe) {
@@ -33409,7 +33514,7 @@ function parseSelector(subselects2, selector, selectorIndex) {
             name = getName4(1);
           }
         }
-        stripWhitespace(0);
+        stripWhitespace2(0);
         let action = AttributeAction.Exists;
         const possibleAction = actionTypes.get(selector.charCodeAt(selectorIndex));
         if (possibleAction) {
@@ -33417,10 +33522,10 @@ function parseSelector(subselects2, selector, selectorIndex) {
           if (selector.charCodeAt(selectorIndex + 1) !== CharCode.Equal) {
             throw new Error("Expected `=`");
           }
-          stripWhitespace(2);
+          stripWhitespace2(2);
         } else if (selector.charCodeAt(selectorIndex) === CharCode.Equal) {
           action = AttributeAction.Equals;
-          stripWhitespace(1);
+          stripWhitespace2(1);
         }
         let value = "";
         let ignoreCase2 = null;
@@ -33446,17 +33551,17 @@ function parseSelector(subselects2, selector, selectorIndex) {
             }
             value = unescapeCSS(selector.slice(valueStart, selectorIndex));
           }
-          stripWhitespace(0);
+          stripWhitespace2(0);
           switch (selector.charCodeAt(selectorIndex) | 32) {
             // If the forceIgnore flag is set (either `i` or `s`), use that value
             case CharCode.LowerI: {
               ignoreCase2 = true;
-              stripWhitespace(1);
+              stripWhitespace2(1);
               break;
             }
             case CharCode.LowerS: {
               ignoreCase2 = false;
-              stripWhitespace(1);
+              stripWhitespace2(1);
               break;
             }
           }
@@ -33523,7 +33628,7 @@ function parseSelector(subselects2, selector, selectorIndex) {
       case CharCode.Comma: {
         finalizeSubselector();
         tokens = [];
-        stripWhitespace(1);
+        stripWhitespace2(1);
         break;
       }
       default: {
@@ -33534,7 +33639,7 @@ function parseSelector(subselects2, selector, selectorIndex) {
           }
           selectorIndex = endIndex + 2;
           if (tokens.length === 0) {
-            stripWhitespace(0);
+            stripWhitespace2(0);
           }
           break;
         }
@@ -33547,7 +33652,7 @@ function parseSelector(subselects2, selector, selectorIndex) {
           name = "";
           if (selector.charCodeAt(selectorIndex + 1) === CharCode.Pipe) {
             addTraversal(SelectorType.ColumnCombinator);
-            stripWhitespace(2);
+            stripWhitespace2(2);
             break;
           }
         } else if (reName.test(selector.slice(selectorIndex))) {
@@ -34210,11 +34315,11 @@ function compareDocumentPosition2(nodeA, nodeB) {
 function uniqueSort2(nodes) {
   nodes = nodes.filter((node2, index, array2) => !array2.includes(node2, index + 1));
   nodes.sort((a, b) => {
-    const relative = compareDocumentPosition2(a, b);
-    if (relative & DocumentPosition2.PRECEDING) {
+    const relative2 = compareDocumentPosition2(a, b);
+    if (relative2 & DocumentPosition2.PRECEDING) {
       return -1;
     }
-    if (relative & DocumentPosition2.FOLLOWING) {
+    if (relative2 & DocumentPosition2.FOLLOWING) {
       return 1;
     }
     return 0;
@@ -39456,7 +39561,7 @@ var ManifestClient = class {
       if (result.status >= 500) {
         throw new AdapterTransientError(`\u5E73\u53F0\u8FD4\u56DE HTTP ${result.status}`);
       }
-      const loginLike = (this.#config.loggedOutPatterns ?? []).some((pattern) => {
+      const loginLike2 = (this.#config.loggedOutPatterns ?? []).some((pattern) => {
         try {
           return new RegExp(pattern).test(`${result.finalUrl}
 ${result.body.slice(0, 4e3)}`);
@@ -39464,7 +39569,7 @@ ${result.body.slice(0, 4e3)}`);
           return false;
         }
       });
-      if (loginLike) {
+      if (loginLike2) {
         throw new AdapterAuthError("\u4F1A\u8BDD\u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
       }
       return result.body;
@@ -40259,6 +40364,1784 @@ var AdapterCandidateService = class {
   }
 };
 
+// packages/academic-materials/src/library.ts
+import { createHash as createHash8 } from "node:crypto";
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join2, relative, sep } from "node:path";
+
+// packages/academic-materials/src/chunk.ts
+var TARGET_CHARS = 1200;
+var MAX_CHARS = 2e3;
+var OVERLAP_CHARS = 160;
+function normalize(value) {
+  return value.replace(/\r\n?/g, "\n").replace(/[ \t]+/g, " ").replace(/([\u3400-\u9fff])\n(?=[\u3400-\u9fff])/g, "$1").trim();
+}
+function splitLongBlock(block) {
+  const text2 = normalize(block.text);
+  if (text2.length <= MAX_CHARS) return [{ ...block, text: text2 }];
+  const parts = [];
+  let start = 0;
+  while (start < text2.length) {
+    let end = Math.min(text2.length, start + MAX_CHARS);
+    if (end < text2.length) {
+      const window3 = text2.slice(start, end);
+      const boundary = Math.max(
+        window3.lastIndexOf("\u3002"),
+        window3.lastIndexOf("\uFF01"),
+        window3.lastIndexOf("\uFF1F"),
+        window3.lastIndexOf(". "),
+        window3.lastIndexOf("; "),
+        window3.lastIndexOf("\n")
+      );
+      if (boundary > MAX_CHARS * 0.5) end = start + boundary + 1;
+    }
+    const value = text2.slice(start, end).trim();
+    if (value) parts.push({ ...block, text: value });
+    if (end >= text2.length) break;
+    start = Math.max(start + 1, end - OVERLAP_CHARS);
+  }
+  return parts;
+}
+function buildChunks(blocks) {
+  const normalized2 = blocks.map((block) => ({ ...block, text: normalize(block.text) })).filter((block) => block.text.length > 0).flatMap(splitLongBlock);
+  const chunks = [];
+  let current;
+  const flush = () => {
+    if (!current) return;
+    const text2 = current.text.trim();
+    if (text2) chunks.push({ ...current, text: text2 });
+    current = void 0;
+  };
+  for (const block of normalized2) {
+    const contextChanged = current !== void 0 && (current.page !== block.page || current.heading !== block.heading);
+    if (contextChanged) flush();
+    if (!current) {
+      current = {
+        text: block.text,
+        ...block.page !== void 0 ? { page: block.page } : {},
+        ...block.heading ? { heading: block.heading } : {}
+      };
+      if (current.text.length >= TARGET_CHARS) flush();
+      continue;
+    }
+    if (current.text.length + block.text.length + 1 > MAX_CHARS) {
+      flush();
+      current = {
+        text: block.text,
+        ...block.page !== void 0 ? { page: block.page } : {},
+        ...block.heading ? { heading: block.heading } : {}
+      };
+      if (current.text.length >= TARGET_CHARS) flush();
+      continue;
+    }
+    current.text += `
+${block.text}`;
+    if (current.text.length >= TARGET_CHARS) flush();
+  }
+  flush();
+  return chunks;
+}
+
+// packages/academic-materials/src/text.ts
+import { inflateRawSync as inflateRawSync2 } from "node:zlib";
+
+// packages/academic-materials/src/pdf.ts
+import { inflateRawSync, inflateSync } from "node:zlib";
+function stripWhitespace(value) {
+  return value.replace(/\r\n?/g, "\n").replace(/[ \t]+/g, " ").trim();
+}
+function decodeStream(dict, data) {
+  if (!/\/FlateDecode/.test(dict)) return data;
+  try {
+    return inflateSync(data);
+  } catch {
+    try {
+      return inflateRawSync(data);
+    } catch {
+      return void 0;
+    }
+  }
+}
+function parseObjects(text2) {
+  const objects = /* @__PURE__ */ new Map();
+  const pattern = /(\d+)\s+(\d+)\s+obj\b/g;
+  for (; ; ) {
+    const match = pattern.exec(text2);
+    if (!match) break;
+    const start = match.index + match[0].length;
+    const end = text2.indexOf("endobj", start);
+    if (end < 0) break;
+    const body = text2.slice(start, end);
+    const object2 = { num: Number(match[1]), body };
+    const streamMatch = /\bstream\b/.exec(body);
+    if (streamMatch) {
+      let dataStart = streamMatch.index + streamMatch[0].length;
+      if (body[dataStart] === "\r") dataStart += 1;
+      if (body[dataStart] === "\n") dataStart += 1;
+      let dataEnd = body.lastIndexOf("endstream");
+      if (dataEnd < dataStart) dataEnd = body.length;
+      let raw = body.slice(dataStart, dataEnd);
+      if (raw.endsWith("\r\n")) raw = raw.slice(0, -2);
+      else if (raw.endsWith("\n")) raw = raw.slice(0, -1);
+      const decoded = decodeStream(body.slice(0, streamMatch.index), Buffer.from(raw, "latin1"));
+      if (decoded) object2.stream = decoded;
+    }
+    objects.set(object2.num, object2);
+    pattern.lastIndex = end + "endobj".length;
+  }
+  return objects;
+}
+function objectRefs(value) {
+  const refs3 = [];
+  for (const match of value.matchAll(/(\d+)\s+\d+\s+R\b/g)) refs3.push(Number(match[1]));
+  return refs3;
+}
+function dictArrayValue(body, key2) {
+  const match = new RegExp(`/${key2}\\s*(\\[[\\s\\S]*?\\])`).exec(body);
+  return match?.[1];
+}
+function pageTree(ojects) {
+  const roots = [...ojects.values()].filter(
+    (object2) => /\/Type\s*\/Pages\b/.test(object2.body) && !/\/Parent\s+\d+\s+\d+\s+R/.test(object2.body)
+  );
+  if (roots.length === 0) return void 0;
+  const pages = [];
+  const visited = /* @__PURE__ */ new Set();
+  const walk = (ref) => {
+    if (visited.has(ref)) return;
+    visited.add(ref);
+    const object2 = ojects.get(ref);
+    if (!object2) return;
+    if (/\/Type\s*\/Page\b/.test(object2.body)) {
+      pages.push(ref);
+      return;
+    }
+    const kids = dictArrayValue(object2.body, "Kids");
+    if (!kids) return;
+    for (const child of objectRefs(kids)) walk(child);
+  };
+  walk(roots[0].num);
+  return pages.length > 0 ? pages : void 0;
+}
+function hexToUnicode(hex3) {
+  const clean = hex3.length % 2 === 0 ? hex3 : `0${hex3}`;
+  let value = "";
+  for (let index = 0; index < clean.length; index += 4) {
+    const code = Number.parseInt(clean.slice(index, index + 4).padEnd(4, "0"), 16);
+    if (Number.isFinite(code) && code !== 0) value += String.fromCharCode(code);
+  }
+  return value;
+}
+function parseCMap(text2) {
+  const map2 = /* @__PURE__ */ new Map();
+  let maxWidth = 0;
+  for (const block of text2.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
+    for (const match of (block[1] ?? "").matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g)) {
+      const source = match[1];
+      const width = Math.ceil(source.length / 2);
+      maxWidth = Math.max(maxWidth, width);
+      map2.set(Number.parseInt(source, 16), hexToUnicode(match[2]));
+    }
+  }
+  for (const block of text2.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+    const body = block[1] ?? "";
+    for (const match of body.matchAll(
+      /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*(?:<([0-9a-fA-F]+)>|\[([\s\S]*?)\])/g
+    )) {
+      const low = Number.parseInt(match[1], 16);
+      const high = Number.parseInt(match[2], 16);
+      if (!Number.isFinite(low) || !Number.isFinite(high) || high < low) continue;
+      const width = Math.ceil(match[1].length / 2);
+      maxWidth = Math.max(maxWidth, width);
+      if (match[3]) {
+        const base = hexToUnicode(match[3]);
+        const baseCode = base.codePointAt(0) ?? 0;
+        for (let offset = 0; offset <= Math.min(high - low, 65535); offset += 1) {
+          const target = baseCode + offset;
+          if (target > 1114111) break;
+          map2.set(low + offset, String.fromCodePoint(target));
+        }
+        continue;
+      }
+      const destinations = [...(match[4] ?? "").matchAll(/<([0-9a-fA-F]+)>/g)];
+      destinations.forEach((destination, offset) => {
+        if (low + offset <= high) {
+          map2.set(low + offset, hexToUnicode(destination[1]));
+        }
+      });
+    }
+  }
+  if (map2.size === 0) return void 0;
+  return { maxWidth: Math.max(1, Math.min(maxWidth, 4)), map: map2 };
+}
+function decodePdfString(bytes, font) {
+  if (bytes.length === 0) return "";
+  const cmap = font?.cmap;
+  if (cmap) {
+    let value = "";
+    for (let index = 0; index < bytes.length; ) {
+      const width = Math.min(cmap.maxWidth, bytes.length - index);
+      let code = 0;
+      for (let offset = 0; offset < width; offset += 1) {
+        code = code << 8 | bytes[index + offset];
+      }
+      const mapped = cmap.map.get(code);
+      if (mapped !== void 0) {
+        value += mapped;
+      } else if (width === 1 && bytes[index] >= 32 && bytes[index] < 127) {
+        value += String.fromCharCode(bytes[index]);
+      }
+      index += width;
+    }
+    return value;
+  }
+  if (bytes.length >= 2 && bytes[0] === 254 && bytes[1] === 255) {
+    let value = "";
+    for (let index = 2; index + 1 < bytes.length; index += 2) {
+      const code = bytes[index] << 8 | bytes[index + 1];
+      if (code !== 0) value += String.fromCharCode(code);
+    }
+    return value;
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return bytes.toString("latin1").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
+  }
+}
+function readLiteralString(source, start) {
+  const bytes = [];
+  let depth = 1;
+  let index = start + 1;
+  while (index < source.length) {
+    const char = source[index];
+    if (char === "\\") {
+      const next = source[index + 1];
+      index += 2;
+      if (next === void 0) break;
+      if (next === "n") bytes.push(10);
+      else if (next === "r") bytes.push(13);
+      else if (next === "t") bytes.push(9);
+      else if (next === "b") bytes.push(8);
+      else if (next === "f") bytes.push(12);
+      else if (next === "\n") continue;
+      else if (next === "\r") {
+        if (source[index] === "\n") index += 1;
+      } else if (/[0-7]/.test(next)) {
+        let octal = next;
+        while (octal.length < 3 && /[0-7]/.test(source[index] ?? "")) {
+          octal += source[index];
+          index += 1;
+        }
+        bytes.push(Number.parseInt(octal, 8) & 255);
+      } else bytes.push(next.charCodeAt(0) & 255);
+      continue;
+    }
+    if (char === "(") depth += 1;
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) return { value: Buffer.from(bytes), next: index + 1 };
+    }
+    bytes.push(char.charCodeAt(0) & 255);
+    index += 1;
+  }
+  return { value: Buffer.from(bytes), next: index };
+}
+function hexString(source, start) {
+  const end = source.indexOf(">", start + 1);
+  const hex3 = source.slice(start + 1, end < 0 ? source.length : end);
+  const clean = hex3.replace(/[^0-9a-fA-F]/g, "");
+  return {
+    value: Buffer.from(clean.length % 2 === 0 ? clean : `${clean}0`, "hex"),
+    next: end < 0 ? source.length : end + 1
+  };
+}
+function tokenizeContent(source) {
+  const tokens = [];
+  let index = 0;
+  const readArray = () => {
+    const values = [];
+    while (index < source.length) {
+      const token = nextToken();
+      if (!token) break;
+      if (token.type === "op" && token.value === "]") break;
+      values.push(token);
+    }
+    return values;
+  };
+  const nextToken = () => {
+    while (index < source.length) {
+      const char = source[index];
+      if (/\s/.test(char)) {
+        index += 1;
+        continue;
+      }
+      if (char === "%") {
+        const end2 = source.indexOf("\n", index);
+        index = end2 < 0 ? source.length : end2 + 1;
+        continue;
+      }
+      if (char === "(") {
+        const result = readLiteralString(source, index);
+        index = result.next;
+        return { type: "string", value: result.value };
+      }
+      if (char === "<") {
+        if (source[index + 1] === "<") {
+          let depth = 0;
+          while (index < source.length) {
+            if (source[index] === "<" && source[index + 1] === "<") {
+              depth += 1;
+              index += 2;
+              continue;
+            }
+            if (source[index] === ">" && source[index + 1] === ">") {
+              depth -= 1;
+              index += 2;
+              if (depth <= 0) break;
+              continue;
+            }
+            index += 1;
+          }
+          continue;
+        }
+        const result = hexString(source, index);
+        index = result.next;
+        return { type: "string", value: result.value };
+      }
+      if (char === "[") {
+        index += 1;
+        return { type: "array", values: readArray() };
+      }
+      if (char === "]") {
+        index += 1;
+        return { type: "op", value: "]" };
+      }
+      if (char === "/") {
+        let end2 = index + 1;
+        while (end2 < source.length && !/[\s/<>\[\]()%{}]/.test(source[end2])) end2 += 1;
+        const name = source.slice(index + 1, end2);
+        index = end2;
+        return { type: "name", value: name };
+      }
+      if (/[-+.\d]/.test(char)) {
+        let end2 = index + 1;
+        while (end2 < source.length && /[-+.\d]/.test(source[end2])) end2 += 1;
+        const value = Number(source.slice(index, end2));
+        index = end2;
+        if (Number.isFinite(value)) return { type: "number", value };
+        continue;
+      }
+      let end = index + 1;
+      while (end < source.length && !/[\s/<>\[\]()%]/.test(source[end])) end += 1;
+      const word = source.slice(index, end);
+      index = end;
+      return { type: "op", value: word };
+    }
+    return void 0;
+  };
+  for (; ; ) {
+    const token = nextToken();
+    if (!token) break;
+    if (token.type === "op" && token.value === "BI") {
+      const end = source.indexOf("EI", index);
+      index = end < 0 ? source.length : end + 2;
+      tokens.length = 0;
+      continue;
+    }
+    tokens.push(token);
+  }
+  return tokens;
+}
+function interpretContent(content, fonts) {
+  const tokens = tokenizeContent(content);
+  const operands = [];
+  let font;
+  let output2 = "";
+  let lineY;
+  let pendingSpace = false;
+  const newline = () => {
+    if (output2 && !output2.endsWith("\n")) output2 += "\n";
+    pendingSpace = false;
+  };
+  const append4 = (value) => {
+    const text2 = value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
+    if (!text2) return;
+    if (pendingSpace) {
+      if (output2 && !output2.endsWith("\n") && !output2.endsWith(" ")) output2 += " ";
+      pendingSpace = false;
+    } else if (output2 && !output2.endsWith("\n") && !output2.endsWith(" ") && /[A-Za-z0-9]$/.test(output2) && /^[A-Za-z0-9]/.test(text2)) {
+      output2 += " ";
+    }
+    output2 += text2;
+  };
+  const numbersOf = () => operands.filter((entry) => entry.type === "number").map((entry) => entry.value);
+  for (const token of tokens) {
+    if (token.type !== "op") {
+      operands.push(token);
+      continue;
+    }
+    switch (token.value) {
+      case "Tf": {
+        const name = operands.findLast((entry) => entry.type === "name");
+        font = name && name.type === "name" ? fonts.get(name.value) : void 0;
+        break;
+      }
+      case "BT":
+      case "ET":
+        break;
+      case "Td":
+      case "TD": {
+        const y = numbersOf().at(-1);
+        if (y !== void 0) {
+          if (lineY === void 0) lineY = y;
+          else if (Math.abs(y - lineY) > 6) {
+            newline();
+            lineY = y;
+          }
+        }
+        break;
+      }
+      case "Tm": {
+        const values = numbersOf();
+        const y = values.at(-1);
+        if (y !== void 0) {
+          if (lineY === void 0 || Math.abs(y - lineY) > 6) newline();
+          lineY = y;
+        }
+        break;
+      }
+      case "T*":
+        newline();
+        break;
+      case "Tj": {
+        const value = operands.at(-1);
+        if (value?.type === "string") append4(decodePdfString(value.value, font));
+        break;
+      }
+      case "TJ": {
+        const array2 = operands.findLast((entry) => entry.type === "array");
+        if (array2?.type === "array") {
+          for (const entry of array2.values) {
+            if (entry.type === "string") append4(decodePdfString(entry.value, font));
+            else if (entry.type === "number" && entry.value < -150) pendingSpace = true;
+          }
+        }
+        break;
+      }
+      case "'":
+      case '"': {
+        newline();
+        const value = operands.at(-1);
+        if (value?.type === "string") append4(decodePdfString(value.value, font));
+        break;
+      }
+      default:
+        break;
+    }
+    operands.length = 0;
+  }
+  return stripWhitespace(output2);
+}
+function inlineDict(body, key2) {
+  const index = body.search(new RegExp(`/${key2}\\s*<<`));
+  if (index < 0) return void 0;
+  let cursor = index + body.slice(index).indexOf("<<");
+  let depth = 0;
+  for (; cursor < body.length; cursor += 1) {
+    if (body[cursor] === "<" && body[cursor + 1] === "<") {
+      depth += 1;
+      cursor += 1;
+      continue;
+    }
+    if (body[cursor] === ">" && body[cursor + 1] === ">") {
+      depth -= 1;
+      cursor += 1;
+      if (depth === 0) return body.slice(index, cursor + 1);
+    }
+  }
+  return void 0;
+}
+function pageFonts(page, objects) {
+  let resourcesBody = page.body;
+  const resourcesRef = /\/Resources\s+(\d+)\s+\d+\s+R\b/.exec(page.body);
+  if (resourcesRef) {
+    resourcesBody = objects.get(Number(resourcesRef[1]))?.body ?? "";
+  } else {
+    const inline = inlineDict(page.body, "Resources");
+    if (inline) resourcesBody = inline;
+  }
+  const fontMatch = /\/Font\s*<<([\s\S]*?)>>/.exec(resourcesBody);
+  const fonts = /* @__PURE__ */ new Map();
+  if (!fontMatch) return fonts;
+  for (const match of (fontMatch[1] ?? "").matchAll(/\/([^\s/<>\[\]()]+)\s+(\d+)\s+\d+\s+R\b/g)) {
+    const name = match[1];
+    const fontObject = objects.get(Number(match[2]));
+    if (!fontObject) continue;
+    const toUnicode = /\/ToUnicode\s+(\d+)\s+\d+\s+R\b/.exec(fontObject.body);
+    const cmapObject = toUnicode ? objects.get(Number(toUnicode[1])) : void 0;
+    const cmap = cmapObject?.stream && /beginbfchar|beginbfrange/.test(cmapObject.stream.toString("latin1")) ? parseCMap(cmapObject.stream.toString("latin1")) : void 0;
+    fonts.set(name, cmap ? { cmap } : {});
+  }
+  return fonts;
+}
+function contentStreams(page, objects) {
+  const match = /\/Contents\s*(\[[\s\S]*?\]|\d+\s+\d+\s+R)/.exec(page.body);
+  if (!match) return [];
+  const refs3 = objectRefs(match[1]);
+  const streams = [];
+  for (const ref of refs3) {
+    const object2 = objects.get(ref);
+    if (object2?.stream) streams.push(object2.stream);
+  }
+  return streams;
+}
+function extractPdf(bytes) {
+  const text2 = Buffer.from(bytes).toString("latin1");
+  if (!text2.startsWith("%PDF")) throw new Error("\u4E0D\u662F\u6709\u6548\u7684 PDF \u6587\u4EF6");
+  const objects = parseObjects(text2);
+  if (objects.size === 0) throw new Error("PDF \u5BF9\u8C61\u89E3\u6790\u5931\u8D25");
+  const tree = pageTree(objects);
+  const pageNumbers = tree ?? [...objects.values()].filter((object2) => /\/Type\s*\/Page\b/.test(object2.body)).sort((left, right) => left.num - right.num).map((object2) => object2.num);
+  const blocks = [];
+  pageNumbers.forEach((ref, index) => {
+    const page = objects.get(ref);
+    if (!page) return;
+    const fonts = pageFonts(page, objects);
+    const pageText = contentStreams(page, objects).map((stream) => interpretContent(stream.toString("latin1"), fonts)).filter(Boolean).join("\n");
+    for (const paragraph of pageText.split(/\n{2,}/)) {
+      const value = paragraph.trim();
+      if (!value) continue;
+      blocks.push({
+        text: value,
+        page: index + 1,
+        heading: `\u7B2C ${index + 1} \u9875`
+      });
+    }
+  });
+  if (blocks.length === 0 && pageNumbers.length === 0) {
+    for (const object2 of objects.values()) {
+      if (!object2.stream) continue;
+      const value = interpretContent(object2.stream.toString("latin1"), /* @__PURE__ */ new Map());
+      if (!value) continue;
+      blocks.push({ text: value });
+    }
+  }
+  const countMatch = /\/Count\s+(\d+)/.exec(text2);
+  const pageCount = countMatch ? Number(countMatch[1]) : pageNumbers.length > 0 ? pageNumbers.length : void 0;
+  return {
+    blocks,
+    ...pageCount ? { pageCount } : {},
+    ...blocks.length === 0 ? { note: "PDF \u4E2D\u672A\u62BD\u53D6\u5230\u53EF\u9009\u6587\u5B57\uFF08\u53EF\u80FD\u662F\u626B\u63CF\u4EF6\u6216\u7F3A\u5C11 ToUnicode \u6620\u5C04\uFF09" } : {}
+  };
+}
+
+// packages/academic-materials/src/text.ts
+var MAX_ZIP_ENTRIES = 2e3;
+var MAX_ZIP_ENTRY_BYTES = 40 * 1024 * 1024;
+var MAX_ZIP_TOTAL_BYTES = 96 * 1024 * 1024;
+var HTML_BLOCK_TAGS = /* @__PURE__ */ new Set([
+  "p",
+  "div",
+  "section",
+  "article",
+  "li",
+  "tr",
+  "td",
+  "th",
+  "blockquote",
+  "pre",
+  "br",
+  "hr",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6"
+]);
+function decodeUtf8(bytes) {
+  const text2 = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  return text2.replace(/^\uFEFF/, "");
+}
+function decodeTextBytes(bytes) {
+  if (bytes.length >= 2 && bytes[0] === 255 && bytes[1] === 254) {
+    return new TextDecoder("utf-16le").decode(bytes.subarray(2)).replace(/^\uFEFF/, "");
+  }
+  if (bytes.length >= 2 && bytes[0] === 254 && bytes[1] === 255) {
+    return new TextDecoder("utf-16be").decode(bytes.subarray(2)).replace(/^\uFEFF/, "");
+  }
+  try {
+    return decodeUtf8(bytes);
+  } catch {
+    try {
+      return new TextDecoder("gb18030").decode(bytes);
+    } catch {
+      return new TextDecoder("utf-8").decode(bytes);
+    }
+  }
+}
+function compact(value) {
+  return value.replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
+}
+function textBlocks(text2) {
+  const normalized2 = compact(text2);
+  if (!normalized2) return [];
+  return normalized2.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean).map((block) => ({ text: block }));
+}
+var NAMED_ENTITIES2 = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  ensp: " ",
+  emsp: " ",
+  middot: "\xB7",
+  mdash: "\u2014",
+  ndash: "\u2013",
+  hellip: "\u2026"
+};
+function decodeHtmlEntities(value) {
+  return value.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, entity) => {
+    if (entity.startsWith("#x") || entity.startsWith("#X")) {
+      const code = Number.parseInt(entity.slice(2), 16);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+    }
+    if (entity.startsWith("#")) {
+      const code = Number.parseInt(entity.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+    }
+    return NAMED_ENTITIES2[entity.toLowerCase()] ?? match;
+  });
+}
+function stripInlineHtml(value) {
+  return decodeHtmlEntities(
+    value.replace(/<script\b[\s\S]*?<\/script>/gi, " ").replace(/<style\b[\s\S]*?<\/style>/gi, " ").replace(/<noscript\b[\s\S]*?<\/noscript>/gi, " ").replace(/<svg\b[\s\S]*?<\/svg>/gi, " ").replace(/<[^>]*>/g, " ")
+  ).replace(/[ \t\u00a0]+/g, " ").trim();
+}
+function extractHtmlText(html) {
+  const body = html.replace(/<script\b[\s\S]*?<\/script>/gi, " ").replace(/<style\b[\s\S]*?<\/style>/gi, " ").replace(/<noscript\b[\s\S]*?<\/noscript>/gi, " ");
+  const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(body);
+  const title = titleMatch?.[1] ? stripInlineHtml(titleMatch[1]) : void 0;
+  const blocks = [];
+  let currentHeading;
+  const tokenPattern = /<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g;
+  let cursor = 0;
+  let pendingText = "";
+  const flushText = () => {
+    const text2 = stripInlineHtml(pendingText);
+    pendingText = "";
+    if (!text2) return;
+    blocks.push(
+      currentHeading ? { text: text2, heading: currentHeading } : { text: text2 }
+    );
+  };
+  for (; ; ) {
+    const match = tokenPattern.exec(body);
+    if (!match) break;
+    pendingText += body.slice(cursor, match.index);
+    cursor = match.index + match[0].length;
+    const tag = match[1].toLowerCase();
+    const closing = match[0].startsWith("</");
+    if (!HTML_BLOCK_TAGS.has(tag)) continue;
+    flushText();
+    if (/^h[1-6]$/.test(tag) && !closing) {
+      currentHeading = void 0;
+    } else if (/^h[1-6]$/.test(tag) && closing) {
+      const last = blocks[blocks.length - 1];
+      if (last && !last.heading) {
+        currentHeading = last.text.slice(0, 200);
+        last.heading = currentHeading;
+      }
+    }
+  }
+  pendingText += body.slice(cursor);
+  flushText();
+  return { blocks, ...title ? { title } : {} };
+}
+function extractMarkdownText(markdown) {
+  const withoutFrontMatter = markdown.replace(/^---\n[\s\S]*?\n---\n?/, "");
+  const blocks = [];
+  let currentHeading;
+  let buffer = [];
+  const flush = () => {
+    const text2 = buffer.join("\n").trim();
+    buffer = [];
+    if (!text2) return;
+    blocks.push(currentHeading ? { text: text2, heading: currentHeading } : { text: text2 });
+  };
+  for (const line of withoutFrontMatter.replace(/\r\n?/g, "\n").split("\n")) {
+    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
+    if (heading) {
+      flush();
+      currentHeading = heading[2].trim().slice(0, 200);
+      blocks.push({ text: currentHeading, heading: currentHeading });
+      continue;
+    }
+    if (!line.trim()) {
+      flush();
+      continue;
+    }
+    buffer.push(line);
+  }
+  flush();
+  return blocks;
+}
+function extractPlainText(text2) {
+  return textBlocks(text2);
+}
+function readUInt32LE(buffer, offset) {
+  if (offset < 0 || offset + 4 > buffer.length) return -1;
+  return buffer.readUInt32LE(offset);
+}
+function readUInt16LE(buffer, offset) {
+  if (offset < 0 || offset + 2 > buffer.length) return -1;
+  return buffer.readUInt16LE(offset);
+}
+function readZipEntries(bytes) {
+  const buffer = Buffer.from(bytes);
+  let eocd = -1;
+  for (let offset = buffer.length - 22; offset >= Math.max(0, buffer.length - 66e3); offset -= 1) {
+    if (readUInt32LE(buffer, offset) === 101010256) {
+      eocd = offset;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error("ZIP \u6587\u4EF6\u7F3A\u5C11\u76EE\u5F55\u7ED3\u5C3E");
+  const entryCount = readUInt16LE(buffer, eocd + 10);
+  const centralOffset = readUInt32LE(buffer, eocd + 16);
+  if (entryCount < 0 || entryCount > MAX_ZIP_ENTRIES || centralOffset < 0) {
+    throw new Error("ZIP \u6761\u76EE\u6570\u91CF\u6216\u76EE\u5F55\u4F4D\u7F6E\u5F02\u5E38");
+  }
+  const entries2 = /* @__PURE__ */ new Map();
+  let cursor = centralOffset;
+  for (let index = 0; index < entryCount; index += 1) {
+    if (readUInt32LE(buffer, cursor) !== 33639248) break;
+    const method = readUInt16LE(buffer, cursor + 10);
+    const compressedSize = readUInt32LE(buffer, cursor + 20);
+    const uncompressedSize = readUInt32LE(buffer, cursor + 24);
+    const nameLength = readUInt16LE(buffer, cursor + 28);
+    const extraLength = readUInt16LE(buffer, cursor + 30);
+    const commentLength = readUInt16LE(buffer, cursor + 32);
+    const localHeaderOffset = readUInt32LE(buffer, cursor + 42);
+    if (nameLength < 0 || localHeaderOffset < 0) break;
+    const name = buffer.subarray(cursor + 46, cursor + 46 + nameLength).toString("utf8");
+    if (compressedSize > MAX_ZIP_ENTRY_BYTES || uncompressedSize > MAX_ZIP_ENTRY_BYTES) {
+      throw new Error(`ZIP \u6761\u76EE\u8FC7\u5927\uFF1A${name}`);
+    }
+    entries2.set(name, {
+      name,
+      method,
+      compressedSize,
+      uncompressedSize,
+      localHeaderOffset
+    });
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries2;
+}
+function readZipEntry(bytes, entry) {
+  const buffer = Buffer.from(bytes);
+  if (readUInt32LE(buffer, entry.localHeaderOffset) !== 67324752) {
+    throw new Error(`ZIP \u672C\u5730\u5934\u65E0\u6548\uFF1A${entry.name}`);
+  }
+  const nameLength = readUInt16LE(buffer, entry.localHeaderOffset + 26);
+  const extraLength = readUInt16LE(buffer, entry.localHeaderOffset + 28);
+  if (nameLength < 0 || extraLength < 0) throw new Error(`ZIP \u672C\u5730\u5934\u635F\u574F\uFF1A${entry.name}`);
+  const dataStart = entry.localHeaderOffset + 30 + nameLength + extraLength;
+  const dataEnd = dataStart + entry.compressedSize;
+  if (dataEnd > buffer.length) throw new Error(`ZIP \u6570\u636E\u8D8A\u754C\uFF1A${entry.name}`);
+  const data = buffer.subarray(dataStart, dataEnd);
+  if (entry.method === 0) return Buffer.from(data);
+  if (entry.method === 8) {
+    return inflateRawSync2(data, { maxOutputLength: MAX_ZIP_ENTRY_BYTES });
+  }
+  throw new Error(`\u4E0D\u652F\u6301\u7684 ZIP \u538B\u7F29\u65B9\u5F0F\uFF1A${entry.method}`);
+}
+function extractDocxText(bytes) {
+  const entries2 = readZipEntries(bytes);
+  const parts = ["word/document.xml"];
+  for (const [name] of entries2) {
+    if (/^word\/(header|footer)\d*\.xml$/.test(name)) parts.push(name);
+  }
+  const blocks = [];
+  let total = 0;
+  for (const part of parts) {
+    const entry = entries2.get(part);
+    if (!entry) continue;
+    total += entry.uncompressedSize;
+    if (total > MAX_ZIP_TOTAL_BYTES) throw new Error("DOCX \u5185\u5BB9\u8D85\u8FC7\u4E0A\u9650");
+    const xml = readZipEntry(bytes, entry).toString("utf8");
+    let currentHeading;
+    for (const paragraph of xml.matchAll(/<w:p\b[^>]*>([\s\S]*?)<\/w:p>/g)) {
+      const inner = paragraph[1] ?? "";
+      const style = /<w:pStyle\b[^>]*w:val="([^"]+)"/.exec(inner)?.[1];
+      if (style && /^heading[1-6]$/i.test(style)) {
+        const headingText = inner.replace(/<w:tab\/>/g, "	").replace(/<w:br\/>/g, "\n").replace(/<[^>]*>/g, "");
+        const decoded = decodeHtmlEntities(headingText).replace(/\s+/g, " ").trim();
+        if (decoded) currentHeading = decoded.slice(0, 200);
+      }
+      const text2 = inner.replace(/<w:tab\/>/g, "	").replace(/<w:br\/>/g, "\n").replace(/<\/w:p>/g, "\n").replace(
+        /<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g,
+        (_, value) => decodeHtmlEntities(value)
+      ).replace(/<[^>]*>/g, "").replace(/[ \t]+\n/g, "\n").trim();
+      if (!text2) continue;
+      blocks.push(currentHeading ? { text: text2, heading: currentHeading } : { text: text2 });
+    }
+  }
+  return { blocks, ...blocks.length > 0 ? {} : { note: "\u672A\u4ECE DOCX \u4E2D\u62BD\u53D6\u5230\u6587\u5B57" } };
+}
+function extractPptxText(bytes) {
+  const entries2 = readZipEntries(bytes);
+  const slides = [...entries2.values()].map((entry) => {
+    const match = /^ppt\/slides\/slide(\d+)\.xml$/.exec(entry.name);
+    return match ? { entry, page: Number(match[1]) } : void 0;
+  }).filter((value) => value !== void 0).sort((left, right) => left.page - right.page);
+  if (slides.length === 0) throw new Error("PPTX \u4E2D\u6CA1\u6709\u5E7B\u706F\u7247");
+  const blocks = [];
+  let total = 0;
+  for (const slide of slides) {
+    total += slide.entry.uncompressedSize;
+    if (total > MAX_ZIP_TOTAL_BYTES) throw new Error("PPTX \u5185\u5BB9\u8D85\u8FC7\u4E0A\u9650");
+    const xml = readZipEntry(bytes, slide.entry).toString("utf8");
+    const paragraphs = [];
+    for (const paragraph of xml.matchAll(/<a:p\b[^>]*>([\s\S]*?)<\/a:p>/g)) {
+      const text2 = (paragraph[1] ?? "").replace(/<a:br\/>/g, "\n").replace(
+        /<a:t\b[^>]*>([\s\S]*?)<\/a:t>/g,
+        (_, value) => decodeHtmlEntities(value)
+      ).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+      if (text2) paragraphs.push(text2);
+    }
+    if (paragraphs.length === 0) continue;
+    blocks.push({
+      text: paragraphs.join("\n"),
+      page: slide.page,
+      heading: `\u7B2C ${slide.page} \u9875`
+    });
+  }
+  return { blocks, pageCount: slides.length };
+}
+function extractDocument(kind, bytes) {
+  switch (kind) {
+    case "text":
+      return { blocks: extractPlainText(decodeTextBytes(bytes)) };
+    case "markdown":
+      return { blocks: extractMarkdownText(decodeTextBytes(bytes)) };
+    case "html": {
+      const html = decodeTextBytes(bytes);
+      const { blocks } = extractHtmlText(html);
+      return { blocks };
+    }
+    case "pdf":
+      return extractPdf(bytes);
+    case "docx":
+      return extractDocxText(bytes);
+    case "pptx":
+      return extractPptxText(bytes);
+  }
+}
+function htmlTitle(html) {
+  return extractHtmlText(html).title;
+}
+
+// packages/academic-materials/src/media.ts
+var KIND_BY_EXTENSION = {
+  pdf: "pdf",
+  html: "html",
+  htm: "html",
+  xhtml: "html",
+  md: "markdown",
+  markdown: "markdown",
+  txt: "text",
+  text: "text",
+  log: "text",
+  csv: "text",
+  pptx: "pptx",
+  docx: "docx"
+};
+var MIME_BY_KIND = {
+  pdf: "application/pdf",
+  html: "text/html",
+  markdown: "text/markdown",
+  text: "text/plain",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+};
+var EXTENSION_BY_KIND = {
+  pdf: ".pdf",
+  html: ".html",
+  markdown: ".md",
+  text: ".txt",
+  pptx: ".pptx",
+  docx: ".docx"
+};
+function kindFromFileName(fileName) {
+  const extension = /\.([a-zA-Z0-9]+)$/.exec(fileName)?.[1]?.toLowerCase();
+  return extension ? KIND_BY_EXTENSION[extension] : void 0;
+}
+function kindFromContentType(contentType) {
+  const value = (contentType ?? "").toLowerCase();
+  if (value.includes("application/pdf")) return "pdf";
+  if (value.includes("text/html") || value.includes("application/xhtml")) return "html";
+  if (value.includes("text/markdown")) return "markdown";
+  if (value.includes("presentationml.presentation")) return "pptx";
+  if (value.includes("wordprocessingml.document")) return "docx";
+  if (value.startsWith("text/")) return "text";
+  return void 0;
+}
+function mimeForKind(kind) {
+  return MIME_BY_KIND[kind];
+}
+function extensionForKind(kind) {
+  return EXTENSION_BY_KIND[kind];
+}
+function safeSourceUrl(value) {
+  try {
+    const url2 = new URL(value);
+    url2.username = "";
+    url2.password = "";
+    url2.search = "";
+    url2.hash = "";
+    return url2.toString();
+  } catch {
+    return void 0;
+  }
+}
+var MATERIAL_ATTACHMENT_EXTENSIONS = new Set(Object.keys(KIND_BY_EXTENSION));
+
+// packages/academic-materials/src/library.ts
+var MaterialError = class extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.name = "MaterialError";
+    this.code = code;
+  }
+};
+var MATERIAL_LIMITS = {
+  maxFileBytes: 80 * 1024 * 1024,
+  maxPageBytes: 4 * 1024 * 1024,
+  maxAttachmentFiles: 12,
+  maxAttachmentCandidates: 40,
+  maxDiscoveredLinks: 400,
+  attachmentDeadlineMs: 12e4,
+  maxTitleChars: 300,
+  maxChunksPerMaterial: 4e3
+};
+function transaction(db, operation) {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = operation();
+    db.exec("COMMIT");
+    return result;
+  } catch (error62) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+    }
+    throw error62;
+  }
+}
+function clampText(value, max) {
+  if (value === void 0) return void 0;
+  const trimmed = value.replace(/\s+/g, " ").trim();
+  return trimmed ? trimmed.slice(0, max) : void 0;
+}
+function escapeLike(value) {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+function codepointLength(value) {
+  return [...value].length;
+}
+function snippetAround(text2, terms) {
+  const lower = text2.toLowerCase();
+  let index = -1;
+  let matched = "";
+  for (const term of terms) {
+    const found = lower.indexOf(term.toLowerCase());
+    if (found >= 0 && (index < 0 || found < index)) {
+      index = found;
+      matched = term;
+    }
+  }
+  if (index < 0) return text2.slice(0, 180);
+  const start = Math.max(0, index - 60);
+  const end = Math.min(text2.length, index + matched.length + 120);
+  let snippet = text2.slice(start, end);
+  if (matchIndex(snippet.toLowerCase(), matched.toLowerCase()) >= 0) {
+    const offset = matchIndex(snippet.toLowerCase(), matched.toLowerCase());
+    snippet = snippet.slice(0, offset) + "[" + snippet.slice(offset, offset + matched.length) + "]" + snippet.slice(offset + matched.length);
+  }
+  return `${start > 0 ? "\u2026" : ""}${snippet}${end < text2.length ? "\u2026" : ""}`;
+}
+function matchIndex(haystack, needle) {
+  return needle ? haystack.indexOf(needle) : -1;
+}
+function loginLike(url2, html) {
+  if (/\/login|\/signin|\/sign-in|\/cas\/login|\/sso\//i.test(url2)) return true;
+  const title = htmlTitle(html.slice(0, 1e5)) ?? "";
+  if (/登录|sign in|log in|统一身份/i.test(title)) return true;
+  return /name=["'](?:username|password|login)["']/i.test(html.slice(0, 5e4));
+}
+function anchorLinks(html) {
+  const links = [];
+  for (const match of html.matchAll(
+    /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi
+  )) {
+    const href = match[1] ?? match[2] ?? match[3] ?? "";
+    if (!href) continue;
+    const text2 = decodeHtmlEntities((match[4] ?? "").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+    links.push({ href, text: text2 });
+  }
+  return links;
+}
+function fileNameFromUrl(url2) {
+  const last = url2.pathname.split("/").filter(Boolean).at(-1) ?? "material";
+  try {
+    return decodeURIComponent(last);
+  } catch {
+    return last;
+  }
+}
+function safeTitle(value, fallback) {
+  return clampText(value, MATERIAL_LIMITS.maxTitleChars) ?? fallback;
+}
+var MaterialLibrary = class {
+  #db;
+  #clock;
+  #ids;
+  #rootDir;
+  #fetchResource;
+  #validateCourse;
+  #validateItem;
+  #maxFileBytes;
+  constructor(options) {
+    this.#db = options.db;
+    this.#clock = options.clock;
+    this.#ids = options.ids;
+    this.#rootDir = options.rootDir;
+    this.#fetchResource = options.fetchResource;
+    this.#validateCourse = options.validateCourse;
+    this.#validateItem = options.validateItem;
+    this.#maxFileBytes = options.maxFileBytes ?? MATERIAL_LIMITS.maxFileBytes;
+    mkdirSync2(this.#rootDir, { recursive: true });
+  }
+  get rootDir() {
+    return this.#rootDir;
+  }
+  list(params = {}) {
+    const limit = Math.min(Math.max(params.limit ?? 200, 1), 500);
+    const clauses = [];
+    const values = [];
+    if (params.courseId) {
+      clauses.push("course_id = ?");
+      values.push(params.courseId);
+    }
+    if (params.itemId) {
+      clauses.push("item_id = ?");
+      values.push(params.itemId);
+    }
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.#db.prepare(
+      `SELECT * FROM materials ${where} ORDER BY created_at DESC, rowid DESC LIMIT ?`
+    ).all(...values, limit);
+    return rows.map((row) => this.#toView(row));
+  }
+  get(materialId) {
+    const row = this.#db.prepare("SELECT * FROM materials WHERE material_id = ?").get(materialId);
+    return row ? this.#toView(row) : void 0;
+  }
+  async importText(input2) {
+    const title = clampText(input2.title, MATERIAL_LIMITS.maxTitleChars);
+    if (!title) throw new MaterialError("VALIDATION", "\u8D44\u6599\u6807\u9898\u4E0D\u80FD\u4E3A\u7A7A");
+    if (!input2.text.trim()) {
+      throw new MaterialError("VALIDATION", "\u8D44\u6599\u6B63\u6587\u4E0D\u80FD\u4E3A\u7A7A");
+    }
+    return this.importBytes({
+      courseId: input2.courseId,
+      ...input2.itemId ? { itemId: input2.itemId } : {},
+      fileName: `${title.replace(/[\\/:*?"<>|\s]+/g, "-").slice(0, 80) || "pasted"}.txt`,
+      bytes: Buffer.from(input2.text, "utf8"),
+      title,
+      sourceKind: "text",
+      ...input2.sourceUrl ? { sourceUrl: input2.sourceUrl } : {},
+      ...input2.originLabel ? { originLabel: input2.originLabel } : {}
+    });
+  }
+  async importFile(input2) {
+    let bytes;
+    try {
+      bytes = readFileSync3(input2.filePath);
+    } catch {
+      throw new MaterialError("NOT_FOUND", `\u65E0\u6CD5\u8BFB\u53D6\u6587\u4EF6\uFF1A${input2.filePath}`);
+    }
+    const name = input2.filePath.split(/[\\/]/).at(-1) ?? "material";
+    return this.importBytes({
+      courseId: input2.courseId,
+      ...input2.itemId ? { itemId: input2.itemId } : {},
+      fileName: name,
+      bytes,
+      ...input2.title ? { title: input2.title } : {},
+      sourceKind: "file",
+      ...input2.originLabel ? { originLabel: input2.originLabel } : {}
+    });
+  }
+  async importUrl(input2) {
+    const target = new URL(input2.url);
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
+      throw new MaterialError("VALIDATION", "\u53EA\u5141\u8BB8 http(s) \u94FE\u63A5");
+    }
+    const resource = await this.#fetch(input2.url, {
+      binary: true,
+      maxBytes: MATERIAL_LIMITS.maxPageBytes,
+      ...input2.sourceId ? { sourceId: input2.sourceId } : {},
+      ...input2.sessionId ? { sessionId: input2.sessionId } : {}
+    });
+    const html = resource.body.byteLength > 0 ? decodeTextBytes(resource.body) : "";
+    this.#assertPageStatus(resource, html);
+    const fromUrl = kindFromFileName(target.pathname);
+    const contentTypeKind = kindFromContentType(resource.contentType);
+    const head = html.slice(0, 200).trim().toLowerCase();
+    const looksHtml = head.startsWith("<!doctype html") || head.startsWith("<html") || /<body[\s>]/.test(head);
+    const kind = fromUrl ?? contentTypeKind ?? (looksHtml ? "html" : void 0);
+    if (!kind) {
+      throw new MaterialError(
+        "UNSUPPORTED",
+        "\u65E0\u6CD5\u4ECE URL \u6216 Content-Type \u8BC6\u522B\u8D44\u6599\u7C7B\u578B"
+      );
+    }
+    const fileName = fromUrl ? fileNameFromUrl(target) : `${fileNameFromUrl(target).replace(/\.[^.]*$/, "") || "page"}${extensionForKind(kind)}`;
+    const title = clampText(input2.title, MATERIAL_LIMITS.maxTitleChars) ?? (kind === "html" ? clampText(htmlTitle(html), MATERIAL_LIMITS.maxTitleChars) : void 0) ?? fileNameFromUrl(target);
+    return this.importBytes({
+      courseId: input2.courseId,
+      ...input2.itemId ? { itemId: input2.itemId } : {},
+      fileName,
+      bytes: resource.body,
+      title,
+      sourceKind: "url",
+      sourceUrl: safeSourceUrl(resource.finalUrl) ?? safeSourceUrl(input2.url) ?? input2.url,
+      ...input2.sourceId ? { originLabel: input2.sourceId } : {}
+    });
+  }
+  async importBytes(input2) {
+    await this.#assertCourse(input2.courseId);
+    if (input2.itemId) {
+      const valid = await this.#validateItem?.(input2.itemId, input2.courseId);
+      if (valid === false) {
+        throw new MaterialError("NOT_FOUND", "\u5173\u8054\u4E8B\u9879\u4E0D\u5B58\u5728\u6216\u4E0D\u5C5E\u4E8E\u8BE5\u8BFE\u7A0B");
+      }
+    }
+    const kind = kindFromFileName(input2.fileName);
+    if (!kind) {
+      throw new MaterialError(
+        "UNSUPPORTED",
+        "\u6682\u4E0D\u652F\u6301\u8BE5\u6587\u4EF6\u7C7B\u578B\uFF1B\u652F\u6301 PDF\u3001HTML\u3001Markdown\u3001TXT\u3001PPTX\u3001DOCX"
+      );
+    }
+    const bytes = Buffer.from(input2.bytes);
+    if (bytes.byteLength === 0) {
+      throw new MaterialError("VALIDATION", "\u8D44\u6599\u5185\u5BB9\u4E3A\u7A7A");
+    }
+    if (bytes.byteLength > this.#maxFileBytes) {
+      throw new MaterialError(
+        "VALIDATION",
+        `\u6587\u4EF6\u8D85\u8FC7\u4E0A\u9650\uFF08${Math.round(this.#maxFileBytes / 1024 / 1024)} MB\uFF09`
+      );
+    }
+    const sha256 = createHash8("sha256").update(bytes).digest("hex");
+    const existing = this.#byCourseHash(input2.courseId, sha256);
+    if (existing) {
+      return { material: this.#toView(existing), duplicate: true, chunks: existing.chunk_count };
+    }
+    const fallbackTitle = input2.fileName.replace(/\.[^.]+$/, "") || "\u672A\u547D\u540D\u8D44\u6599";
+    const title = safeTitle(input2.title ?? fallbackTitle, fallbackTitle);
+    const filePath = this.#writeContentFile(sha256, extensionForKind(kind), bytes);
+    const extraction = this.#extract(kind, bytes);
+    const chunks = extraction.chunks;
+    const materialId = this.#ids.next();
+    const now = this.#clock.now();
+    const pageCount = extraction.pageCount ?? chunks.reduce(
+      (max, chunk) => chunk.page !== void 0 ? Math.max(max ?? 0, chunk.page) : max,
+      void 0
+    );
+    const sourceKind = input2.sourceKind ?? "file";
+    const sourceUrl = input2.sourceUrl ? safeSourceUrl(input2.sourceUrl) : void 0;
+    const originLabel = clampText(input2.originLabel, 200);
+    try {
+      transaction(this.#db, () => {
+        this.#db.prepare(
+          `INSERT INTO materials (
+               material_id, course_id, item_id, title, kind, source_kind,
+               source_url, origin_label, file_path, sha256, bytes, mime,
+               page_count, extraction_status, extraction_note, chunk_count,
+               created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          materialId,
+          input2.courseId,
+          input2.itemId ?? null,
+          title,
+          kind,
+          sourceKind,
+          sourceUrl ?? null,
+          originLabel ?? null,
+          filePath,
+          sha256,
+          bytes.byteLength,
+          mimeForKind(kind),
+          pageCount ?? null,
+          extraction.status,
+          extraction.note ?? null,
+          chunks.length,
+          now,
+          now
+        );
+        this.#insertChunks(materialId, chunks);
+      });
+    } catch (error62) {
+      const duplicate = this.#byCourseHash(input2.courseId, sha256);
+      if (duplicate) {
+        return { material: this.#toView(duplicate), duplicate: true, chunks: duplicate.chunk_count };
+      }
+      throw error62;
+    }
+    return {
+      material: this.get(materialId),
+      duplicate: false,
+      chunks: chunks.length
+    };
+  }
+  async importAttachments(input2) {
+    if (!this.#subscription(input2.sourceId, input2.courseId)) {
+      throw new MaterialError(
+        "SUBSCRIPTION_REQUIRED",
+        "\u8BE5\u6765\u6E90\u4E0E\u8BFE\u7A0B\u5C1A\u672A\u5F00\u542F\u81EA\u52A8\u5BFC\u5165\uFF1B\u8BF7\u5148\u7531\u7528\u6237\u5F00\u542F"
+      );
+    }
+    await this.#assertCourse(input2.courseId);
+    const resource = await this.#fetch(input2.pageUrl, {
+      binary: true,
+      maxBytes: MATERIAL_LIMITS.maxPageBytes,
+      sourceId: input2.sourceId
+    });
+    const html = resource.body.byteLength > 0 ? decodeTextBytes(resource.body) : "";
+    this.#assertPageStatus(resource, html);
+    const finalPage = new URL(resource.finalUrl);
+    const links = anchorLinks(html);
+    const candidates = [];
+    const seen = /* @__PURE__ */ new Set();
+    let skipped = 0;
+    for (const link of links.slice(0, MATERIAL_LIMITS.maxDiscoveredLinks)) {
+      let candidate;
+      try {
+        candidate = new URL(link.href, finalPage);
+      } catch {
+        skipped += 1;
+        continue;
+      }
+      if (candidate.protocol !== "http:" && candidate.protocol !== "https:") {
+        skipped += 1;
+        continue;
+      }
+      if (candidate.host.toLowerCase() !== finalPage.host.toLowerCase()) {
+        skipped += 1;
+        continue;
+      }
+      if (input2.pathPrefix && !candidate.pathname.startsWith(input2.pathPrefix)) {
+        skipped += 1;
+        continue;
+      }
+      candidate.hash = "";
+      const extension = /\.([a-zA-Z0-9]+)$/.exec(candidate.pathname)?.[1]?.toLowerCase();
+      if (!extension || !MATERIAL_ATTACHMENT_EXTENSIONS.has(extension)) {
+        skipped += 1;
+        continue;
+      }
+      const key2 = candidate.toString();
+      if (seen.has(key2)) {
+        skipped += 1;
+        continue;
+      }
+      seen.add(key2);
+      candidates.push({ url: candidate, title: link.text });
+      if (candidates.length >= MATERIAL_LIMITS.maxAttachmentCandidates) break;
+    }
+    const limit = Math.min(
+      Math.max(input2.maxFiles ?? MATERIAL_LIMITS.maxAttachmentFiles, 1),
+      MATERIAL_LIMITS.maxAttachmentCandidates
+    );
+    const items = [];
+    const failures = [];
+    let duplicates = 0;
+    let stopReason;
+    const deadline = Date.now() + MATERIAL_LIMITS.attachmentDeadlineMs;
+    for (const candidate of candidates.slice(0, limit)) {
+      if (Date.now() > deadline) {
+        stopReason = "time-limit";
+        break;
+      }
+      const display = safeSourceUrl(candidate.url.toString()) ?? candidate.url.toString();
+      try {
+        const attachment = await this.#fetch(candidate.url.toString(), {
+          binary: true,
+          maxBytes: this.#maxFileBytes,
+          sourceId: input2.sourceId
+        });
+        if (attachment.status === 401 || attachment.status === 403) {
+          stopReason = "auth-required";
+          break;
+        }
+        if (attachment.status === 429) {
+          stopReason = "rate-limited";
+          break;
+        }
+        if (attachment.status < 200 || attachment.status >= 300) {
+          failures.push({ url: display, message: `HTTP ${attachment.status}` });
+          continue;
+        }
+        if (attachment.truncated) {
+          failures.push({ url: display, message: "\u6587\u4EF6\u8D85\u8FC7\u5927\u5C0F\u4E0A\u9650\uFF0C\u5DF2\u8DF3\u8FC7" });
+          continue;
+        }
+        const fromUrl = kindFromFileName(candidate.url.pathname);
+        const kind = fromUrl ?? kindFromContentType(attachment.contentType);
+        if (!kind) {
+          failures.push({ url: display, message: "\u65E0\u6CD5\u8BC6\u522B\u9644\u4EF6\u7C7B\u578B" });
+          continue;
+        }
+        const fileName = fromUrl ? fileNameFromUrl(candidate.url) : `${fileNameFromUrl(candidate.url)}${extensionForKind(kind)}`;
+        const result = await this.importBytes({
+          courseId: input2.courseId,
+          ...input2.itemId ? { itemId: input2.itemId } : {},
+          fileName,
+          bytes: attachment.body,
+          title: candidate.title || fileNameFromUrl(candidate.url),
+          sourceKind: "attachment",
+          sourceUrl: safeSourceUrl(attachment.finalUrl) ?? display,
+          originLabel: input2.sourceId
+        });
+        if (result.duplicate) duplicates += 1;
+        else items.push(result);
+      } catch (error62) {
+        if (error62 instanceof MaterialError && error62.code === "AUTH_REQUIRED") {
+          stopReason = "auth-required";
+          break;
+        }
+        if (error62 instanceof MaterialError && error62.code === "RATE_LIMITED") {
+          stopReason = "rate-limited";
+          break;
+        }
+        failures.push({
+          url: display,
+          message: error62 instanceof Error ? error62.message : String(error62)
+        });
+      }
+    }
+    if (!stopReason && candidates.length > limit) {
+      stopReason = "max-files";
+    }
+    return {
+      pageUrl: safeSourceUrl(resource.finalUrl) ?? safeSourceUrl(input2.pageUrl) ?? input2.pageUrl,
+      discovered: candidates.length,
+      imported: items.length,
+      duplicates,
+      skipped,
+      failed: failures.length,
+      ...stopReason ? { stopReason } : {},
+      items,
+      failures
+    };
+  }
+  delete(materialId) {
+    const material = this.get(materialId);
+    if (!material) throw new MaterialError("NOT_FOUND", `\u8D44\u6599\u4E0D\u5B58\u5728\uFF1A${materialId}`);
+    const row = this.#db.prepare("SELECT file_path FROM materials WHERE material_id = ?").get(materialId);
+    transaction(this.#db, () => {
+      const chunkRows = this.#db.prepare("SELECT rowid FROM material_chunks WHERE material_id = ?").all(materialId);
+      const removeFts = this.#db.prepare("DELETE FROM material_chunks_fts WHERE rowid = ?");
+      for (const chunk of chunkRows) removeFts.run(chunk.rowid);
+      this.#db.prepare("DELETE FROM materials WHERE material_id = ?").run(materialId);
+    });
+    if (row?.file_path) {
+      const remaining = this.#db.prepare("SELECT COUNT(*) AS count FROM materials WHERE file_path = ?").get(row.file_path);
+      if (Number(remaining.count) === 0) {
+        const absolute = join2(this.#rootDir, row.file_path);
+        if (existsSync2(absolute)) rmSync2(absolute, { force: true });
+      }
+    }
+  }
+  /** Moves materials and auto-import subscriptions from a duplicate course. */
+  mergeCourse(fromCourseId, toCourseId) {
+    if (fromCourseId === toCourseId) {
+      return { movedMaterials: 0, removedMaterials: 0, movedSubscriptions: 0 };
+    }
+    const rows = this.#db.prepare("SELECT material_id, sha256 FROM materials WHERE course_id = ?").all(fromCourseId);
+    let movedMaterials = 0;
+    let removedMaterials = 0;
+    const now = this.#clock.now();
+    for (const row of rows) {
+      const existing = this.#db.prepare("SELECT material_id FROM materials WHERE course_id = ? AND sha256 = ?").get(toCourseId, row.sha256);
+      if (existing) {
+        this.delete(row.material_id);
+        removedMaterials += 1;
+        continue;
+      }
+      this.#db.prepare("UPDATE materials SET course_id = ?, updated_at = ? WHERE material_id = ?").run(toCourseId, now, row.material_id);
+      movedMaterials += 1;
+    }
+    const subscriptions = this.#db.prepare("SELECT source_id, enabled FROM material_source_subscriptions WHERE course_id = ?").all(fromCourseId);
+    let movedSubscriptions = 0;
+    for (const subscription of subscriptions) {
+      this.#db.prepare(
+        `INSERT INTO material_source_subscriptions (
+             source_id, course_id, enabled, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(source_id, course_id) DO UPDATE SET
+             enabled = MAX(material_source_subscriptions.enabled, excluded.enabled),
+             updated_at = excluded.updated_at`
+      ).run(subscription.source_id, toCourseId, subscription.enabled, now, now);
+      this.#db.prepare(
+        "DELETE FROM material_source_subscriptions WHERE source_id = ? AND course_id = ?"
+      ).run(subscription.source_id, fromCourseId);
+      movedSubscriptions += 1;
+    }
+    return { movedMaterials, removedMaterials, movedSubscriptions };
+  }
+  rebuildIndex() {
+    const rows = this.#db.prepare("SELECT * FROM materials ORDER BY created_at ASC, rowid ASC").all();
+    let missingFiles = 0;
+    const prepared = [];
+    for (const row of rows) {
+      const absolute = join2(this.#rootDir, row.file_path);
+      if (!existsSync2(absolute)) {
+        missingFiles += 1;
+        const existing = this.#chunksFor(row.material_id);
+        prepared.push({
+          materialId: row.material_id,
+          status: row.extraction_status,
+          note: row.extraction_note,
+          pageCount: row.page_count ?? void 0,
+          chunks: existing.map((chunk) => ({
+            text: chunk.text,
+            ...chunk.page !== null ? { page: chunk.page } : {},
+            ...chunk.heading ? { heading: chunk.heading } : {}
+          }))
+        });
+        continue;
+      }
+      let extraction;
+      try {
+        extraction = this.#extract(row.kind, readFileSync3(absolute));
+      } catch (error62) {
+        extraction = {
+          chunks: [],
+          status: "failed",
+          note: `\u91CD\u65B0\u62BD\u53D6\u5931\u8D25\uFF1A${error62 instanceof Error ? error62.message : String(error62)}`
+        };
+      }
+      prepared.push({
+        materialId: row.material_id,
+        status: extraction.status,
+        note: extraction.note ?? null,
+        pageCount: extraction.pageCount,
+        chunks: extraction.chunks
+      });
+    }
+    let chunkTotal = 0;
+    transaction(this.#db, () => {
+      this.#db.exec("DELETE FROM material_chunks_fts");
+      const now = this.#clock.now();
+      for (const entry of prepared) {
+        this.#db.prepare("DELETE FROM material_chunks WHERE material_id = ?").run(entry.materialId);
+        this.#insertChunks(entry.materialId, entry.chunks);
+        this.#db.prepare(
+          `UPDATE materials SET
+               extraction_status = ?, extraction_note = ?, page_count = ?,
+               chunk_count = ?, updated_at = ?
+             WHERE material_id = ?`
+        ).run(
+          entry.status,
+          entry.note,
+          entry.pageCount ?? null,
+          entry.chunks.length,
+          now,
+          entry.materialId
+        );
+        chunkTotal += entry.chunks.length;
+      }
+    });
+    return { materials: prepared.length, chunks: chunkTotal, missingFiles };
+  }
+  search(params) {
+    const query2 = params.query.trim();
+    if (!query2) throw new MaterialError("VALIDATION", "\u68C0\u7D22\u5173\u952E\u8BCD\u4E0D\u80FD\u4E3A\u7A7A");
+    if (query2.length > 200) {
+      throw new MaterialError("VALIDATION", "\u68C0\u7D22\u5173\u952E\u8BCD\u8FC7\u957F");
+    }
+    const limit = Math.min(Math.max(params.limit ?? 8, 1), 50);
+    const terms = query2.split(/\s+/).filter(Boolean).slice(0, 8);
+    const supportsFts = terms.every((term) => codepointLength(term) >= 3);
+    const filters2 = [];
+    const filterValues = [];
+    if (params.courseId) {
+      filters2.push("m.course_id = ?");
+      filterValues.push(params.courseId);
+    }
+    if (params.itemId) {
+      filters2.push("m.item_id = ?");
+      filterValues.push(params.itemId);
+    }
+    if (supportsFts) {
+      const expression = terms.map((term) => `"${term.replace(/"/g, '""')}"`).join(" AND ");
+      const where2 = [`material_chunks_fts MATCH ?`, ...filters2].join(" AND ");
+      const totalRow2 = this.#db.prepare(
+        `SELECT COUNT(*) AS count
+           FROM material_chunks_fts
+           JOIN material_chunks c ON c.rowid = material_chunks_fts.rowid
+           JOIN materials m ON m.material_id = c.material_id
+           WHERE ${where2}`
+      ).get(expression, ...filterValues);
+      const rows2 = this.#db.prepare(
+        `SELECT m.material_id, m.course_id, m.title, m.kind, c.page, c.heading,
+                  snippet(material_chunks_fts, 0, '[', ']', '\u2026', 16) AS snippet,
+                  bm25(material_chunks_fts) AS rank
+           FROM material_chunks_fts
+           JOIN material_chunks c ON c.rowid = material_chunks_fts.rowid
+           JOIN materials m ON m.material_id = c.material_id
+           WHERE ${where2}
+           ORDER BY rank ASC, m.created_at DESC
+           LIMIT ?`
+      ).all(expression, ...filterValues, limit);
+      return {
+        query: query2,
+        total: Number(totalRow2.count),
+        hits: rows2.map((row) => this.#toHit(row))
+      };
+    }
+    const likeFilters = terms.map(() => "(c.text LIKE ? ESCAPE '\\' OR c.heading LIKE ? ESCAPE '\\')");
+    const where = [...likeFilters, ...filters2].join(" AND ");
+    const likeValues = terms.flatMap((term) => {
+      const pattern = `%${escapeLike(term)}%`;
+      return [pattern, pattern];
+    });
+    const totalRow = this.#db.prepare(
+      `SELECT COUNT(*) AS count
+         FROM material_chunks c
+         JOIN materials m ON m.material_id = c.material_id
+         WHERE ${where}`
+    ).get(...likeValues, ...filterValues);
+    const rows = this.#db.prepare(
+      `SELECT m.material_id, m.course_id, m.title, m.kind, c.page, c.heading, c.text
+         FROM material_chunks c
+         JOIN materials m ON m.material_id = c.material_id
+         WHERE ${where}
+         ORDER BY m.created_at DESC, c.ordinal ASC
+         LIMIT ?`
+    ).all(...likeValues, ...filterValues, limit);
+    return {
+      query: query2,
+      total: Number(totalRow.count),
+      hits: rows.map((row) => ({
+        materialId: row.material_id,
+        courseId: row.course_id,
+        title: row.title,
+        kind: row.kind,
+        ...row.page !== null ? { page: row.page } : {},
+        ...row.heading ? { heading: row.heading } : {},
+        snippet: snippetAround(row.text, terms)
+      }))
+    };
+  }
+  subscriptions() {
+    const rows = this.#db.prepare(
+      "SELECT * FROM material_source_subscriptions ORDER BY updated_at DESC, rowid DESC"
+    ).all();
+    return rows.map((row) => ({
+      sourceId: row.source_id,
+      courseId: row.course_id,
+      enabled: Boolean(row.enabled),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
+  }
+  setSubscription(sourceId, courseId, enabled) {
+    if (!sourceId.trim() || !courseId.trim()) {
+      throw new MaterialError("VALIDATION", "\u6765\u6E90\u4E0E\u8BFE\u7A0B\u4E0D\u80FD\u4E3A\u7A7A");
+    }
+    const now = this.#clock.now();
+    this.#db.prepare(
+      `INSERT INTO material_source_subscriptions (
+           source_id, course_id, enabled, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(source_id, course_id) DO UPDATE SET
+           enabled = excluded.enabled,
+           updated_at = excluded.updated_at`
+    ).run(sourceId, courseId, enabled ? 1 : 0, now, now);
+    const row = this.#db.prepare(
+      "SELECT * FROM material_source_subscriptions WHERE source_id = ? AND course_id = ?"
+    ).get(sourceId, courseId);
+    return {
+      sourceId: row.source_id,
+      courseId: row.course_id,
+      enabled: Boolean(row.enabled),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+  #subscription(sourceId, courseId) {
+    const row = this.#db.prepare(
+      "SELECT enabled FROM material_source_subscriptions WHERE source_id = ? AND course_id = ?"
+    ).get(sourceId, courseId);
+    return Boolean(row?.enabled);
+  }
+  #byCourseHash(courseId, sha256) {
+    return this.#db.prepare("SELECT * FROM materials WHERE course_id = ? AND sha256 = ?").get(courseId, sha256);
+  }
+  #chunksFor(materialId) {
+    return this.#db.prepare("SELECT rowid, * FROM material_chunks WHERE material_id = ? ORDER BY ordinal ASC").all(materialId);
+  }
+  #assertPageStatus(resource, html) {
+    if (resource.status === 401 || resource.status === 403) {
+      throw new MaterialError("AUTH_REQUIRED", "\u767B\u5F55\u5DF2\u5931\u6548\u6216\u65E0\u8BBF\u95EE\u6743\u9650\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55\u8BE5\u6765\u6E90");
+    }
+    if (resource.status === 429) {
+      throw new MaterialError("RATE_LIMITED", "\u7F51\u7AD9\u8FD4\u56DE 429 \u9650\u6D41\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5");
+    }
+    if (resource.status < 200 || resource.status >= 300) {
+      throw new MaterialError("NETWORK", `\u9875\u9762\u8BF7\u6C42\u5931\u8D25\uFF1AHTTP ${resource.status}`);
+    }
+    if (loginLike(resource.finalUrl, html)) {
+      throw new MaterialError("AUTH_REQUIRED", "\u9875\u9762\u88AB\u91CD\u5B9A\u5411\u5230\u767B\u5F55\u9875\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55\u8BE5\u6765\u6E90");
+    }
+  }
+  async #fetch(url2, options) {
+    if (!this.#fetchResource) {
+      throw new MaterialError("CAPABILITY_UNAVAILABLE", "\u5F53\u524D Host \u672A\u914D\u7F6E\u8D44\u6599\u6293\u53D6");
+    }
+    try {
+      return await this.#fetchResource(url2, options);
+    } catch (error62) {
+      if (error62 instanceof MaterialError) throw error62;
+      const code = error62 && typeof error62 === "object" && "code" in error62 ? String(error62.code) : void 0;
+      const message = error62 instanceof Error ? error62.message : String(error62);
+      if (code === "RATE_LIMITED") {
+        throw new MaterialError("RATE_LIMITED", `\u8BF7\u6C42\u88AB\u9650\u6D41\uFF1A${message}`);
+      }
+      if (code === "INVALID_URL" || code === "UNSAFE_HOST" || code === "UNSAFE_PROTOCOL" || code === "UNSAFE_PORT" || code === "UNSAFE_PATH") {
+        throw new MaterialError("VALIDATION", `\u6293\u53D6\u8303\u56F4\u4E0D\u5141\u8BB8\uFF1A${message}`);
+      }
+      throw new MaterialError("NETWORK", `\u6293\u53D6\u5931\u8D25\uFF1A${message}`);
+    }
+  }
+  async #assertCourse(courseId) {
+    if (!courseId.trim()) throw new MaterialError("VALIDATION", "\u5FC5\u987B\u5173\u8054\u8BFE\u7A0B");
+    if (this.#validateCourse && !await this.#validateCourse(courseId)) {
+      throw new MaterialError("NOT_FOUND", `\u8BFE\u7A0B\u4E0D\u5B58\u5728\u6216\u5DF2\u5220\u9664\uFF1A${courseId}`);
+    }
+  }
+  #writeContentFile(sha256, extension, bytes) {
+    const directory = join2(this.#rootDir, sha256.slice(0, 2));
+    mkdirSync2(directory, { recursive: true });
+    const absolute = join2(directory, `${sha256}${extension}`);
+    if (!existsSync2(absolute)) {
+      try {
+        writeFileSync2(absolute, bytes, { flag: "wx" });
+      } catch (error62) {
+        if (error62.code !== "EEXIST") throw error62;
+      }
+    }
+    return relative(this.#rootDir, absolute).split(sep).join("/");
+  }
+  #extract(kind, bytes) {
+    try {
+      const document2 = extractDocument(kind, bytes);
+      const chunks = buildChunks(document2.blocks);
+      if (chunks.length > MATERIAL_LIMITS.maxChunksPerMaterial) {
+        return {
+          chunks: chunks.slice(0, MATERIAL_LIMITS.maxChunksPerMaterial),
+          status: "indexed",
+          note: `\u5206\u5757\u8D85\u8FC7\u4E0A\u9650\uFF0C\u4EC5\u7D22\u5F15\u524D ${MATERIAL_LIMITS.maxChunksPerMaterial} \u6BB5`,
+          ...document2.pageCount ? { pageCount: document2.pageCount } : {}
+        };
+      }
+      if (chunks.length === 0) {
+        return {
+          chunks: [],
+          status: "empty",
+          note: document2.note ?? "\u672A\u62BD\u53D6\u5230\u53EF\u68C0\u7D22\u7684\u6587\u5B57",
+          ...document2.pageCount ? { pageCount: document2.pageCount } : {}
+        };
+      }
+      return {
+        chunks,
+        status: "indexed",
+        ...document2.note ? { note: document2.note } : {},
+        ...document2.pageCount ? { pageCount: document2.pageCount } : {}
+      };
+    } catch (error62) {
+      return {
+        chunks: [],
+        status: "failed",
+        note: `\u6587\u672C\u62BD\u53D6\u5931\u8D25\uFF1A${error62 instanceof Error ? error62.message : String(error62)}`
+      };
+    }
+  }
+  #insertChunks(materialId, chunks) {
+    const insert2 = this.#db.prepare(
+      `INSERT INTO material_chunks (chunk_id, material_id, ordinal, page, heading, text)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    );
+    const insertFts = this.#db.prepare(
+      "INSERT INTO material_chunks_fts (rowid, text, heading) VALUES (?, ?, ?)"
+    );
+    chunks.forEach((chunk, index) => {
+      const result = insert2.run(
+        this.#ids.next(),
+        materialId,
+        index,
+        chunk.page ?? null,
+        chunk.heading ?? null,
+        chunk.text
+      );
+      insertFts.run(Number(result.lastInsertRowid), chunk.text, chunk.heading ?? "");
+    });
+  }
+  #toView(row) {
+    return {
+      materialId: row.material_id,
+      courseId: row.course_id,
+      ...row.item_id ? { itemId: row.item_id } : {},
+      title: row.title,
+      kind: row.kind,
+      sourceKind: row.source_kind,
+      ...row.source_url ? { sourceUrl: row.source_url } : {},
+      ...row.origin_label ? { originLabel: row.origin_label } : {},
+      sha256: row.sha256,
+      bytes: Number(row.bytes),
+      mime: row.mime,
+      ...row.page_count !== null ? { pageCount: Number(row.page_count) } : {},
+      extractionStatus: row.extraction_status,
+      ...row.extraction_note ? { extractionNote: row.extraction_note } : {},
+      chunkCount: Number(row.chunk_count),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+  #toHit(row) {
+    return {
+      materialId: row.material_id,
+      courseId: row.course_id,
+      title: row.title,
+      kind: row.kind,
+      ...row.page !== null ? { page: Number(row.page) } : {},
+      ...row.heading ? { heading: row.heading } : {},
+      snippet: row.snippet
+    };
+  }
+};
+
 // packages/academic-agent-tools/src/tools.ts
 var ACADEMIC_TOOL_NAMES = {
   ListCourses: "academic_list_courses",
@@ -40279,7 +42162,11 @@ var ACADEMIC_TOOL_NAMES = {
   SyncSource: "academic_sync_source",
   UpdateSource: "academic_update_source",
   UpdateTask: "academic_update_task",
-  RequestReplan: "academic_request_replan"
+  RequestReplan: "academic_request_replan",
+  ListMaterials: "academic_list_materials",
+  SearchMaterials: "academic_search_materials",
+  ImportMaterial: "academic_import_material",
+  DeleteMaterial: "academic_delete_material"
 };
 function failure2(code, message) {
   return { ok: false, code, message };
@@ -40398,6 +42285,38 @@ var updateSourceSchema = external_exports.object({
   enabled: external_exports.boolean().optional(),
   expectedVersion: external_exports.number().int().min(1).optional()
 });
+var materialListSchema = external_exports.object({
+  courseId: external_exports.string().min(1).max(200).optional(),
+  itemId: external_exports.string().min(1).max(200).optional(),
+  limit: external_exports.number().int().min(1).max(200).optional()
+});
+var materialSearchSchema = external_exports.object({
+  query: external_exports.string().min(1).max(200),
+  courseId: external_exports.string().min(1).max(200).optional(),
+  itemId: external_exports.string().min(1).max(200).optional(),
+  limit: external_exports.number().int().min(1).max(30).optional()
+});
+var materialImportSchema = external_exports.object({
+  courseId: external_exports.string().min(1).max(200),
+  itemId: external_exports.string().min(1).max(200).optional(),
+  title: external_exports.string().min(1).max(300).optional(),
+  text: external_exports.string().min(1).max(2e6).optional(),
+  url: external_exports.string().url().max(2e3).optional()
+}).refine(
+  (value) => (value.text ? 1 : 0) + (value.url ? 1 : 0) === 1,
+  { message: "Provide exactly one of text or url" }
+);
+var materialDeleteSchema = external_exports.object({
+  materialId: external_exports.string().min(1).max(200)
+});
+function materialFailure(error62) {
+  const code = error62 && typeof error62 === "object" && "code" in error62 ? String(error62.code) : void 0;
+  const message = error62 instanceof Error ? error62.message : String(error62);
+  if (code === "VALIDATION") return failure2("VALIDATION", message);
+  if (code === "NOT_FOUND") return failure2("NOT_FOUND", message);
+  if (code === "AUTH_REQUIRED") return failure2("AUTH_REQUIRED", message);
+  return failure2("UNAVAILABLE", message);
+}
 function createAcademicTools(dependencies) {
   const allowWrites = dependencies.allowWrites ?? false;
   async function requireWriteApproval(tool, args) {
@@ -40792,7 +42711,108 @@ function createAcademicTools(dependencies) {
           }
         }
       )
-    ] : []
+    ] : [],
+    defineTool(
+      ACADEMIC_TOOL_NAMES.ListMaterials,
+      "List indexed course materials (title, course, kind, page/slide count, extraction status). Read-only; never returns file bytes.",
+      materialListSchema,
+      async (input2) => {
+        if (!dependencies.materials) {
+          return failure2("CAPABILITY_UNAVAILABLE", "Material library is not available in this host");
+        }
+        return success2({
+          materials: dependencies.materials.list({
+            ...input2.courseId ? { courseId: input2.courseId } : {},
+            ...input2.itemId ? { itemId: input2.itemId } : {},
+            ...input2.limit ? { limit: input2.limit } : {}
+          })
+        });
+      }
+    ),
+    defineTool(
+      ACADEMIC_TOOL_NAMES.SearchMaterials,
+      "Search indexed course material chunks. Returns the smallest relevant snippets with material title, course, page/slide and heading. Read-only; the full document is never sent to the model.",
+      materialSearchSchema,
+      async (input2) => {
+        if (!dependencies.materials) {
+          return failure2("CAPABILITY_UNAVAILABLE", "Material library is not available in this host");
+        }
+        try {
+          return success2(
+            dependencies.materials.search({
+              query: input2.query,
+              ...input2.courseId ? { courseId: input2.courseId } : {},
+              ...input2.itemId ? { itemId: input2.itemId } : {},
+              ...input2.limit ? { limit: input2.limit } : {}
+            })
+          );
+        } catch (error62) {
+          return materialFailure(error62);
+        }
+      }
+    ),
+    defineTool(
+      ACADEMIC_TOOL_NAMES.ImportMaterial,
+      "Import user-provided text or a single user-provided URL into the course material library. This is a write; the host must obtain trusted user approval for each call. It never crawls other pages or submits work.",
+      materialImportSchema,
+      async (input2) => {
+        if (!dependencies.materials) {
+          return failure2("CAPABILITY_UNAVAILABLE", "Material library is not available in this host");
+        }
+        const approval = await requireWriteApproval(
+          ACADEMIC_TOOL_NAMES.ImportMaterial,
+          input2
+        );
+        if (approval) return approval;
+        try {
+          if (input2.text) {
+            if (!input2.title) {
+              return failure2("VALIDATION", "title is required when importing text");
+            }
+            return success2(
+              await dependencies.materials.importText({
+                courseId: input2.courseId,
+                ...input2.itemId ? { itemId: input2.itemId } : {},
+                title: input2.title,
+                text: input2.text,
+                originLabel: "agent"
+              })
+            );
+          }
+          return success2(
+            await dependencies.materials.importUrl({
+              courseId: input2.courseId,
+              ...input2.itemId ? { itemId: input2.itemId } : {},
+              ...input2.title ? { title: input2.title } : {},
+              url: input2.url
+            })
+          );
+        } catch (error62) {
+          return materialFailure(error62);
+        }
+      }
+    ),
+    defineTool(
+      ACADEMIC_TOOL_NAMES.DeleteMaterial,
+      "Delete one material file, its metadata and search index. Never touches academic events, tasks, plans or school platforms. This is a write; the host must obtain trusted user approval for each call.",
+      materialDeleteSchema,
+      async (input2) => {
+        if (!dependencies.materials) {
+          return failure2("CAPABILITY_UNAVAILABLE", "Material library is not available in this host");
+        }
+        const approval = await requireWriteApproval(
+          ACADEMIC_TOOL_NAMES.DeleteMaterial,
+          input2
+        );
+        if (approval) return approval;
+        try {
+          dependencies.materials.delete(input2.materialId);
+          return success2({ deleted: true, materialId: input2.materialId });
+        } catch (error62) {
+          return materialFailure(error62);
+        }
+      }
+    )
   ];
 }
 
@@ -40836,6 +42856,14 @@ function registerAcademicTools(host, dependencies) {
 }
 
 // packages/academic-connectors/src/connector.ts
+function selectMissingItems(items, seenExternalIds, scopeCourseIds) {
+  return items.filter((item) => {
+    const externalId = item.source.externalItemId;
+    if (externalId && seenExternalIds.has(externalId)) return false;
+    if (scopeCourseIds && !scopeCourseIds.has(item.courseId)) return false;
+    return true;
+  });
+}
 function errorMessage(error62) {
   return error62 instanceof Error ? error62.message : String(error62);
 }
@@ -40853,11 +42881,27 @@ var ConnectorService = class {
     this.#ids = dependencies.ids;
   }
   async registerCourse(input2) {
+    const aliased = this.#aliasedCourse(input2.sourceId, input2.externalCourseId);
+    if (aliased) {
+      const course3 = await this.#queries.getCourse(aliased);
+      if (course3 && !course3.deleted) return course3;
+      this.#removeAlias(input2.sourceId, input2.externalCourseId);
+    }
     const existing = await this.#queries.getCourseBySource(
       input2.sourceId,
       input2.externalCourseId
     );
-    if (existing) return existing;
+    if (existing && !existing.deleted) {
+      this.#linkCourseSource(input2.sourceId, input2.externalCourseId, existing.courseId);
+      return existing;
+    }
+    const sameTitle = (await this.#queries.listCourses(input2.termId)).items.find(
+      (course3) => !course3.deleted && !course3.archived && courseIdentityKey(course3.termId, course3.title) === courseIdentityKey(input2.termId, input2.title)
+    );
+    if (sameTitle) {
+      this.#linkCourseSource(input2.sourceId, input2.externalCourseId, sameTitle.courseId);
+      return sameTitle;
+    }
     const courseId = this.#ids.next();
     const command = parseCommand({
       commandId: this.#ids.next(),
@@ -40880,12 +42924,36 @@ var ConnectorService = class {
     if (!result.ok && result.code !== "CONFLICT") {
       throw new Error(`Could not register course: ${result.message}`);
     }
-    const course2 = await this.#queries.getCourseBySource(
-      input2.sourceId,
-      input2.externalCourseId
-    );
+    this.#linkCourseSource(input2.sourceId, input2.externalCourseId, courseId);
+    const course2 = await this.#queries.getCourse(courseId);
     if (!course2) throw new Error("Course registration did not become visible");
     return course2;
+  }
+  /** Records that one external course identity maps to a local course. */
+  linkCourseSource(sourceId, externalCourseId, courseId) {
+    this.#linkCourseSource(sourceId, externalCourseId, courseId);
+  }
+  #aliasedCourse(sourceId, externalCourseId) {
+    const row = this.#db.prepare(
+      "SELECT course_id FROM course_source_aliases WHERE source_id = ? AND external_course_id = ?"
+    ).get(sourceId, externalCourseId);
+    return row?.course_id;
+  }
+  #linkCourseSource(sourceId, externalCourseId, courseId) {
+    const now = this.#clock.now();
+    this.#db.prepare(
+      `INSERT INTO course_source_aliases (
+           source_id, external_course_id, course_id, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(source_id, external_course_id) DO UPDATE SET
+           course_id = excluded.course_id,
+           updated_at = excluded.updated_at`
+    ).run(sourceId, externalCourseId, courseId, now, now);
+  }
+  #removeAlias(sourceId, externalCourseId) {
+    this.#db.prepare(
+      "DELETE FROM course_source_aliases WHERE source_id = ? AND external_course_id = ?"
+    ).run(sourceId, externalCourseId);
   }
   async preview(adapter2, options = {}) {
     let credentials;
@@ -41032,6 +43100,13 @@ var ConnectorService = class {
     let created = 0;
     let updated = 0;
     try {
+      const scopeCourseIds = options.scopeCourseExternalIds?.length ? new Set(
+        (await Promise.all(
+          options.scopeCourseExternalIds.map(
+            (externalId) => this.#queries.getCourseBySource(adapter2.sourceId, externalId)
+          )
+        )).flatMap((course2) => course2 ? [course2.courseId] : [])
+      ) : void 0;
       for (const item of adapterResult.items) {
         if (!item.externalItemId) {
           warnings.push(`Skipped "${item.title}": no stable external item id`);
@@ -41076,8 +43151,10 @@ var ConnectorService = class {
         else if (outcome.kind === "failed") warnings.push(outcome.message);
       }
       if (adapterResult.completeness === "full" && !options.archiveMissing) {
-        const missing = (await this.#listActiveItems(adapter2.sourceId)).filter(
-          (item) => !item.source.externalItemId || !seenExternalIds.has(item.source.externalItemId)
+        const missing = selectMissingItems(
+          await this.#listActiveItems(adapter2.sourceId),
+          seenExternalIds,
+          scopeCourseIds
         );
         if (missing.length > 0) {
           warnings.push(
@@ -41090,7 +43167,8 @@ var ConnectorService = class {
           adapter2.sourceId,
           seenExternalIds,
           runId,
-          warnings
+          warnings,
+          scopeCourseIds
         );
       }
       const summary2 = {
@@ -41196,7 +43274,7 @@ var ConnectorService = class {
     } while (cursor);
     return items;
   }
-  async #archiveMissing(sourceId, seenExternalIds, runId, warnings) {
+  async #archiveMissing(sourceId, seenExternalIds, runId, warnings, scopeCourseIds) {
     let archived = 0;
     let cursor;
     do {
@@ -41210,6 +43288,8 @@ var ConnectorService = class {
         if (item.source.externalItemId && seenExternalIds.has(item.source.externalItemId)) {
           continue;
         }
+        if (scopeCourseIds && !scopeCourseIds.has(item.courseId)) continue;
+        if (scopeCourseIds && !scopeCourseIds.has(item.courseId)) continue;
         let result = await this.#commands.execute(
           this.#buildCommand(
             COMMAND.AcademicItemArchive,
@@ -41748,7 +43828,7 @@ async function registerNotificationReaction(options) {
 }
 
 // packages/academic-notifications/src/deadline-reminders.ts
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 var DEADLINE_REMINDER_CONSUMER_ID = "academic.notifications.deadline.v1";
 function zoneOffsetMs(zone, instant) {
   const truncated = new Date(Math.floor(instant.getTime() / 1e3) * 1e3);
@@ -41809,7 +43889,7 @@ function describeDue2(due) {
   }
 }
 function hash2(value) {
-  return createHash8("sha256").update(value).digest("hex").slice(0, 32);
+  return createHash9("sha256").update(value).digest("hex").slice(0, 32);
 }
 async function scanDeadlineReminders(dependencies) {
   const consumerId = dependencies.consumerId ?? DEADLINE_REMINDER_CONSUMER_ID;
@@ -42406,7 +44486,7 @@ function buildPlan(input2) {
 }
 
 // packages/academic-planner-basic/src/replan-store.ts
-import { createHash as createHash9, randomUUID as randomUUID2 } from "node:crypto";
+import { createHash as createHash10, randomUUID as randomUUID2 } from "node:crypto";
 function parseJson(value) {
   return JSON.parse(String(value));
 }
@@ -42433,7 +44513,7 @@ var ReplanStore = class {
            ORDER BY created_at DESC, rowid DESC LIMIT 1`
       ).get(input2.reason, rangeJson);
       if (pending) return this.#toRequest(pending);
-      const replanRequestId = input2.replanRequestId ?? `replan-${createHash9("sha256").update(input2.sourceKey ?? randomUUID2()).digest("hex").slice(0, 32)}`;
+      const replanRequestId = input2.replanRequestId ?? `replan-${createHash10("sha256").update(input2.sourceKey ?? randomUUID2()).digest("hex").slice(0, 32)}`;
       const now = this.#clock.now();
       this.#db.prepare(
         `INSERT OR IGNORE INTO replan_requests (
@@ -43410,6 +45490,13 @@ var academicItemHandler = {
           updatedAt: event.occurredAt,
           version: event.streamVersion
         };
+      case EVENT.AcademicItemCourseChanged:
+        return {
+          ...state,
+          courseId: event.payload.to,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion
+        };
       default:
         throw new Error(`Unexpected academic item event: ${event.type}`);
     }
@@ -43473,6 +45560,14 @@ var academicItemHandler = {
         return accepted({
           type: EVENT.AcademicItemProgressChanged,
           payload: { progress: next }
+        });
+      }
+      case COMMAND.AcademicItemReassignCourse: {
+        if (state.version === 0) return rejected("NOT_FOUND", "Academic item does not exist");
+        if (state.courseId === command.payload.courseId) return accepted();
+        return accepted({
+          type: EVENT.AcademicItemCourseChanged,
+          payload: { from: state.courseId, to: command.payload.courseId }
         });
       }
       case COMMAND.AcademicItemArchive:
@@ -43834,6 +45929,7 @@ var HANDLERS_BY_COMMAND = {
   [COMMAND.AcademicItemSetProgress]: academicItem,
   [COMMAND.AcademicItemArchive]: academicItem,
   [COMMAND.AcademicItemRestore]: academicItem,
+  [COMMAND.AcademicItemReassignCourse]: academicItem,
   [COMMAND.StudyTaskCreate]: studyTask,
   [COMMAND.StudyTaskChangeEstimate]: studyTask,
   [COMMAND.StudyTaskChangeDetails]: studyTask,
@@ -43874,8 +45970,8 @@ function replayAggregate(handler4, aggregateId, events) {
 }
 
 // packages/academic-storage-sqlite/src/database.ts
-import { readFileSync as readFileSync3, readdirSync } from "node:fs";
-import { join as join2 } from "node:path";
+import { readFileSync as readFileSync4, readdirSync } from "node:fs";
+import { join as join3 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 var defaultMigrationsDir = fileURLToPath2(
@@ -43908,7 +46004,7 @@ function runMigrations(db, migrationsDir = defaultMigrationsDir) {
   const newlyApplied = [];
   for (const file2 of files) {
     if (applied.has(file2)) continue;
-    const sql = readFileSync3(join2(migrationsDir, file2), "utf8");
+    const sql = readFileSync4(join3(migrationsDir, file2), "utf8");
     inTransaction4(db, () => {
       db.exec(sql);
       db.prepare("INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)").run(
@@ -44455,7 +46551,16 @@ var SqliteQueryService = class {
     const row = this.#db.prepare(
       "SELECT * FROM courses_current WHERE source_id = ? AND external_course_id = ?"
     ).get(sourceId, externalCourseId);
-    return row ? { ...this.#toCourse(row), meta: this.#meta() } : void 0;
+    if (row) {
+      const course3 = this.#toCourse(row);
+      if (!course3.deleted) return { ...course3, meta: this.#meta() };
+    }
+    const alias = this.#db.prepare(
+      "SELECT course_id FROM course_source_aliases WHERE source_id = ? AND external_course_id = ?"
+    ).get(sourceId, externalCourseId);
+    if (!alias) return void 0;
+    const course2 = await this.getCourse(alias.course_id);
+    return course2 && !course2.deleted ? course2 : void 0;
   }
   async listAcademicItems(params = {}) {
     const limit = Math.min(
@@ -44778,14 +46883,14 @@ function createAcademicStore(options) {
 }
 
 // apps/academic-cli/src/backup.ts
-import { copyFileSync, existsSync as existsSync2, mkdirSync as mkdirSync2, rmSync as rmSync2 } from "node:fs";
+import { copyFileSync, existsSync as existsSync3, mkdirSync as mkdirSync3, rmSync as rmSync3 } from "node:fs";
 import { dirname } from "node:path";
 function backupDatabase(store, targetPath) {
   if (targetPath === ":memory:") throw new Error("Cannot back up to :memory:");
-  if (existsSync2(targetPath)) {
+  if (existsSync3(targetPath)) {
     throw new Error(`Backup target already exists: ${targetPath}`);
   }
-  mkdirSync2(dirname(targetPath), { recursive: true });
+  mkdirSync3(dirname(targetPath), { recursive: true });
   store.database.prepare("VACUUM INTO ?").run(targetPath);
 }
 
@@ -44845,7 +46950,7 @@ function configAllowsHost(config2, host) {
 }
 async function createAcademicApp(options) {
   if (options.databasePath !== ":memory:") {
-    mkdirSync3(dirname2(options.databasePath), { recursive: true });
+    mkdirSync4(dirname2(options.databasePath), { recursive: true });
   }
   const clock = options.clock ?? systemClock;
   const ids = options.ids ?? { next: () => randomUUID4() };
@@ -44998,6 +47103,110 @@ async function createAcademicApp(options) {
       });
     }
   }
+  const ephemeralMaterials = options.databasePath === ":memory:" && options.materialsDir === void 0;
+  const materialRoot = options.materialsDir ?? (options.databasePath === ":memory:" ? join4(tmpdir(), `academic-materials-${randomUUID4()}`) : join4(dirname2(options.databasePath), "materials"));
+  const toMaterialResource = (result) => ({
+    status: result.status,
+    finalUrl: result.finalUrl,
+    ...result.contentType ? { contentType: result.contentType } : {},
+    body: result.body,
+    truncated: result.truncated
+  });
+  const fetchMaterialResource = async (url2, fetchOptions) => {
+    if (options.materialFetch) return options.materialFetch(url2, fetchOptions);
+    const target = new URL(url2);
+    const maxBytes = fetchOptions.maxBytes ?? MATERIAL_LIMITS.maxFileBytes;
+    const timeoutMs = 2e4;
+    if (fetchOptions.sourceId) {
+      const source = sources.get(fetchOptions.sourceId);
+      if (!source || source.archived || !source.enabled) {
+        throw new MaterialError(
+          "CAPABILITY_UNAVAILABLE",
+          `\u6570\u636E\u6E90\u4E0D\u53EF\u7528\uFF1A${fetchOptions.sourceId}`
+        );
+      }
+      const connection = connections.list().find(
+        (entry) => entry.sourceId === source.sourceId && entry.hasCredential
+      );
+      if (!connection) {
+        throw new MaterialError("AUTH_REQUIRED", "\u8BE5\u6765\u6E90\u6CA1\u6709\u5DF2\u4FDD\u5B58\u7684\u767B\u5F55\u4F1A\u8BDD");
+      }
+      const lease = await connections.openCredential(
+        connection.connectionId,
+        source.sourceId
+      );
+      let cookies = [];
+      try {
+        const parsed = JSON.parse(await lease.getSecret());
+        cookies = parsed.cookies ?? [];
+      } catch {
+        cookies = [];
+      }
+      if (cookies.length === 0) {
+        throw new MaterialError(
+          "AUTH_REQUIRED",
+          "\u8BE5\u6765\u6E90\u6CA1\u6709\u6D4F\u89C8\u5668\u4F1A\u8BDD Cookie\uFF0C\u65E0\u6CD5\u6293\u53D6\u8D44\u6599"
+        );
+      }
+      const configured = Array.isArray(source.config.cookieDomains) ? source.config.cookieDomains.filter(
+        (entry) => typeof entry === "string"
+      ) : [];
+      const result2 = await safeFetchBytes(url2, {
+        cookies,
+        allowedHosts: configured.length > 0 ? configured : [target.hostname],
+        allowSubdomains: true,
+        allowedProtocols: source.config.allowHttp === true ? ["http:", "https:"] : ["https:"],
+        timeoutMs,
+        maxBytes
+      });
+      return toMaterialResource(result2);
+    }
+    const session = webSessions.list().find((entry) => {
+      const host2 = target.hostname.toLowerCase();
+      const domain2 = entry.domain.toLowerCase().replace(/^\./, "");
+      return host2 === domain2 || host2.endsWith(`.${domain2}`);
+    });
+    if (session || fetchOptions.sessionId) {
+      const result2 = await webSessions.fetchBytes(
+        fetchOptions.sessionId ?? session.sessionId,
+        url2,
+        { maxBytes, timeoutMs }
+      );
+      return {
+        status: result2.status,
+        finalUrl: result2.finalUrl,
+        ...result2.contentType ? { contentType: result2.contentType } : {},
+        body: result2.body,
+        truncated: result2.truncated
+      };
+    }
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
+      throw new MaterialError("VALIDATION", "\u53EA\u5141\u8BB8 http(s) \u94FE\u63A5");
+    }
+    const result = await safeFetchBytes(url2, {
+      allowedHosts: [target.hostname],
+      allowSubdomains: false,
+      allowedProtocols: target.protocol === "http:" ? ["http:"] : ["https:"],
+      timeoutMs,
+      maxBytes
+    });
+    return toMaterialResource(result);
+  };
+  const materials = new MaterialLibrary({
+    db: store.database,
+    clock,
+    ids,
+    rootDir: materialRoot,
+    fetchResource: fetchMaterialResource,
+    validateCourse: async (courseId) => {
+      const course2 = await store.queries.getCourse(courseId);
+      return Boolean(course2 && !course2.deleted);
+    },
+    validateItem: async (itemId, courseId) => {
+      const item = await store.queries.getAcademicItem(itemId);
+      return Boolean(item && item.courseId === courseId && !item.archived);
+    }
+  });
   const probeSamples = new ProbeSampleStore();
   const probeLimiter = new ProbeRateLimiter({
     ...options.probeMinIntervalMs !== void 0 ? { minIntervalMs: options.probeMinIntervalMs } : {}
@@ -45151,6 +47360,7 @@ async function createAcademicApp(options) {
     sources,
     sourceEngines,
     webSessions,
+    materials,
     adapterCandidates,
     activateAdapterCandidate: (request) => activateCandidate(request.adapterId, request.version),
     adapterAutomation: () => preferences.get().agentAdapterAutomation,
@@ -45217,7 +47427,7 @@ async function createAcademicApp(options) {
       async handler(event) {
         if (event.type !== EVENT.AcademicItemDiscovered) return;
         const itemId = event.streamId.slice(event.streamId.indexOf("/") + 1);
-        const taskId = `task-default-${createHash10("sha256").update(itemId).digest("hex").slice(0, 32)}`;
+        const taskId = `task-default-${createHash11("sha256").update(itemId).digest("hex").slice(0, 32)}`;
         const result = await store.commands.execute(
           parseCommand({
             commandId: `default-task:${event.eventId}`,
@@ -45356,6 +47566,7 @@ async function createAcademicApp(options) {
     rollbackAdapterCandidate: rollbackCandidate,
     connections,
     webSessions,
+    materials,
     replans,
     availability,
     preferences,
@@ -45445,9 +47656,10 @@ async function createAcademicApp(options) {
         } else if (source.authKind !== "none") {
           throw new CapabilityUnavailableError(`source.credentials.${sourceId}`);
         }
+        let courses;
         if (engine.listCourses) {
           try {
-            const courses = await retryTransient(
+            courses = await retryTransient(
               () => engine.listCourses(context2, credentials)
             );
             for (const course2 of courses) {
@@ -45462,7 +47674,16 @@ async function createAcademicApp(options) {
         }
         const summary2 = await connectors.sync(
           engine.createAdapter(context2),
-          connection ? { connection } : {}
+          {
+            ...connection ? { connection } : {},
+            // The engine only covers these courses (for example after termFilter),
+            // so items of other courses must not look "missing".
+            ...courses ? {
+              scopeCourseExternalIds: courses.map(
+                (course2) => course2.externalCourseId
+              )
+            } : {}
+          }
         );
         await dispatcher.processOnce();
         return summary2;
@@ -45493,6 +47714,17 @@ async function createAcademicApp(options) {
       return processed;
     },
     async addCourse(input2) {
+      const existing = (await store.queries.listCourses(input2.termId)).items.find(
+        (course2) => !course2.deleted && !course2.archived && courseIdentityKey(course2.termId, course2.title) === courseIdentityKey(input2.termId, input2.title)
+      );
+      if (existing) {
+        return {
+          ok: true,
+          aggregateId: existing.courseId,
+          version: existing.version,
+          eventIds: []
+        };
+      }
       const courseId = ids.next();
       return store.commands.execute(
         parseCommand({
@@ -45505,6 +47737,133 @@ async function createAcademicApp(options) {
           payload: input2
         })
       );
+    },
+    async mergeDuplicateCourses() {
+      const actor = { kind: "automation", id: "academic-course-merge" };
+      const courses = (await store.queries.listCourses()).items.filter(
+        (course2) => !course2.deleted && !course2.archived
+      );
+      const groups = /* @__PURE__ */ new Map();
+      for (const course2 of courses) {
+        const key2 = courseIdentityKey(course2.termId, course2.title);
+        const group = groups.get(key2);
+        if (group) group.push(course2);
+        else groups.set(key2, [course2]);
+      }
+      let groupsMerged = 0;
+      let mergedCourses = 0;
+      let movedItems = 0;
+      let movedMaterials = 0;
+      let removedMaterials = 0;
+      const mergedInto = [];
+      for (const group of groups.values()) {
+        if (group.length < 2) continue;
+        groupsMerged += 1;
+        group.sort(
+          (left, right) => left.createdAt.localeCompare(right.createdAt) || left.courseId.localeCompare(right.courseId)
+        );
+        const canonical = group[0];
+        if (canonical.source) {
+          connectors.linkCourseSource(
+            canonical.source.sourceId,
+            canonical.source.externalCourseId,
+            canonical.courseId
+          );
+        }
+        for (const duplicate of group.slice(1)) {
+          const items = [];
+          let cursor;
+          do {
+            const page = await store.queries.listAcademicItems({
+              courseId: duplicate.courseId,
+              status: "all",
+              limit: 200,
+              ...cursor ? { cursor } : {}
+            });
+            items.push(...page.items);
+            cursor = page.nextCursor;
+          } while (cursor);
+          for (const item of items) {
+            let current = item;
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+              const result = await store.commands.execute(
+                parseCommand({
+                  commandId: ids.next(),
+                  type: COMMAND.AcademicItemReassignCourse,
+                  aggregateId: item.itemId,
+                  expectedVersion: current.version,
+                  actor,
+                  correlationId: `course-merge/${canonical.courseId}`,
+                  payload: { courseId: canonical.courseId }
+                })
+              );
+              if (result.ok) {
+                if (result.eventIds.length > 0) movedItems += 1;
+                break;
+              }
+              if (result.code !== "CONFLICT" || attempt === 2) {
+                throw new Error(`Could not move item ${item.itemId}: ${result.message}`);
+              }
+              const refreshed = await store.queries.getAcademicItem(item.itemId);
+              if (!refreshed) break;
+              current = refreshed;
+            }
+          }
+          const materialMerge = materials.mergeCourse(
+            duplicate.courseId,
+            canonical.courseId
+          );
+          movedMaterials += materialMerge.movedMaterials;
+          removedMaterials += materialMerge.removedMaterials;
+          const preference = preferences.get();
+          const priority = preference.coursePriorities[duplicate.courseId];
+          if (priority !== void 0) {
+            const coursePriorities = { ...preference.coursePriorities };
+            delete coursePriorities[duplicate.courseId];
+            coursePriorities[canonical.courseId] = Math.max(
+              coursePriorities[canonical.courseId] ?? 0,
+              priority
+            );
+            preferences.update({ coursePriorities });
+          }
+          if (duplicate.source) {
+            connectors.linkCourseSource(
+              duplicate.source.sourceId,
+              duplicate.source.externalCourseId,
+              canonical.courseId
+            );
+          }
+          const deleted = await store.commands.execute(
+            parseCommand({
+              commandId: ids.next(),
+              type: COMMAND.CourseDelete,
+              aggregateId: duplicate.courseId,
+              expectedVersion: duplicate.version,
+              actor,
+              correlationId: `course-merge/${canonical.courseId}`,
+              payload: { reason: `merged into ${canonical.courseId}` }
+            })
+          );
+          if (!deleted.ok) {
+            throw new Error(
+              `Could not close duplicate course ${duplicate.courseId}: ${deleted.message}`
+            );
+          }
+          mergedCourses += 1;
+          mergedInto.push({
+            fromCourseId: duplicate.courseId,
+            toCourseId: canonical.courseId
+          });
+        }
+      }
+      return {
+        groups: groupsMerged,
+        mergedCourses,
+        movedItems,
+        movedMaterials,
+        removedMaterials,
+        mergedInto
+      };
     },
     async updateCourse(courseId, input2) {
       const course2 = await store.queries.getCourse(courseId);
@@ -45801,6 +48160,9 @@ async function createAcademicApp(options) {
       scheduler.close();
       dispatcher.close();
       store.close();
+      if (ephemeralMaterials) {
+        rmSync4(materialRoot, { recursive: true, force: true });
+      }
     }
   };
   appRef = app;
@@ -45810,8 +48172,8 @@ async function createAcademicApp(options) {
 // packages/academic-dsh-plugin/src/host.ts
 var DEFAULT_MIGRATIONS_DIR = fileURLToPath3(new URL("../migrations/", import.meta.url));
 function defaultDatabasePath() {
-  const home = process.env.DSH_HOME ?? join3(homedir2(), ".dsh");
-  return join3(home, "academic-agent", "academic.db");
+  const home = process.env.DSH_HOME ?? join5(homedir2(), ".dsh");
+  return join5(home, "academic-agent", "academic.db");
 }
 var AcademicAppService = class extends Service {
   appReady;

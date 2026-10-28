@@ -31,7 +31,7 @@ __export(index_exports, {
   name: () => name
 });
 module.exports = __toCommonJS(index_exports);
-var import_react9 = require("react");
+var import_react10 = require("react");
 
 // packages/academic-dsh-ui/src/client/api.ts
 function mapRpcCode(code) {
@@ -760,6 +760,324 @@ var CSS = `
   .ac-block-row { grid-template-columns: 1fr; }
   .ac-inline-bar { align-items: flex-start; flex-direction: column; }
   .ac-source-actions { flex-direction: row; flex-wrap: wrap; }
+}
+
+.ac-material-page { padding-bottom: 12px; }
+.ac-material-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 16px 0 18px;
+}
+.ac-material-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(340px, 0.8fr);
+  gap: 18px;
+  align-items: start;
+}
+.ac-material-panel {
+  border: 1px solid color-mix(in srgb, currentColor 13%, transparent);
+  border-radius: 14px;
+  padding: 18px;
+  background: color-mix(in srgb, currentColor 2%, transparent);
+}
+.ac-material-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.ac-material-head h2 { margin: 0; font-size: 16px; }
+.ac-material-head p { margin: 3px 0 0; font-size: 12px; opacity: 0.62; }
+.ac-material-course {
+  max-width: 250px;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: color-mix(in srgb, currentColor 4%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.ac-material-searchbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 10px;
+  padding: 5px 6px 5px 12px;
+  background: color-mix(in srgb, currentColor 3%, transparent);
+}
+.ac-material-searchbar > svg { flex: none; opacity: 0.5; }
+.ac-material-searchbar input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 0;
+  outline: none;
+}
+.ac-material-clear {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+  opacity: 0.5;
+}
+.ac-material-clear:hover { opacity: 0.9; }
+.ac-material-results {
+  margin-top: 14px;
+  border: 1px solid color-mix(in srgb, #2563eb 22%, transparent);
+  border-radius: 12px;
+  padding: 12px;
+  background: color-mix(in srgb, #2563eb 4%, transparent);
+}
+.ac-material-results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.ac-material-hit-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ac-material-hit {
+  border-left: 3px solid color-mix(in srgb, #2563eb 55%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, currentColor 3%, transparent);
+}
+.ac-material-hit-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+.ac-material-hit-head strong { overflow-wrap: anywhere; }
+.ac-material-hit-place {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  white-space: nowrap;
+}
+.ac-material-hit p { margin: 6px 0 3px; font-size: 13px; line-height: 1.55; }
+.ac-material-hit mark {
+  background: color-mix(in srgb, #f5b301 32%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+.ac-material-hit-actions { text-align: right; }
+.ac-material-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 16px 0 8px;
+}
+.ac-material-list-head h3 { margin: 0; font-size: 13px; }
+.ac-material-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ac-material-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 12px;
+  padding: 12px;
+  background: color-mix(in srgb, currentColor 2%, transparent);
+}
+.ac-material-item:hover { border-color: color-mix(in srgb, currentColor 22%, transparent); }
+.ac-material-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+.ac-material-icon-pdf {
+  color: color-mix(in srgb, #b3261e 85%, currentColor);
+  border-color: color-mix(in srgb, #b3261e 28%, transparent);
+  background: color-mix(in srgb, #b3261e 9%, transparent);
+}
+.ac-material-icon-html {
+  color: color-mix(in srgb, #2563eb 85%, currentColor);
+  border-color: color-mix(in srgb, #2563eb 28%, transparent);
+  background: color-mix(in srgb, #2563eb 9%, transparent);
+}
+.ac-material-icon-pptx {
+  color: color-mix(in srgb, #b45309 85%, currentColor);
+  border-color: color-mix(in srgb, #b45309 28%, transparent);
+  background: color-mix(in srgb, #b45309 9%, transparent);
+}
+.ac-material-icon-docx {
+  color: color-mix(in srgb, #1d4ed8 85%, currentColor);
+  border-color: color-mix(in srgb, #1d4ed8 28%, transparent);
+  background: color-mix(in srgb, #1d4ed8 9%, transparent);
+}
+.ac-material-item-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ac-material-item-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ac-material-item-title strong { font-size: 14px; overflow-wrap: anywhere; }
+.ac-material-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  font-size: 12px;
+  opacity: 0.62;
+}
+.ac-material-note {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: color-mix(in srgb, #b45309 78%, currentColor);
+  overflow-wrap: anywhere;
+}
+.ac-material-item-actions { display: flex; align-items: center; gap: 8px; }
+.ac-material-side { position: sticky; top: 16px; }
+.ac-material-modes { width: 100%; margin-bottom: 12px; }
+.ac-material-modes button { flex: 1; }
+.ac-material-form { display: flex; flex-direction: column; gap: 12px; }
+.ac-material-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: color-mix(in srgb, currentColor 4%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 7px;
+  padding: 7px 9px;
+}
+.ac-material-form textarea:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 40%, transparent);
+  outline-offset: 1px;
+}
+.ac-material-drop {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  text-align: center;
+  border: 1px dashed color-mix(in srgb, currentColor 26%, transparent);
+  border-radius: 12px;
+  padding: 20px 12px 16px;
+  cursor: pointer;
+  background: color-mix(in srgb, currentColor 2%, transparent);
+}
+.ac-material-drop:hover { border-color: color-mix(in srgb, #2563eb 45%, transparent); }
+.ac-material-drop:focus-within {
+  outline: 2px solid color-mix(in srgb, currentColor 40%, transparent);
+  outline-offset: 2px;
+}
+.ac-material-drop strong { font-size: 13px; overflow-wrap: anywhere; }
+.ac-material-drop span { font-size: 12px; opacity: 0.58; }
+.ac-material-pick { margin-top: 6px; opacity: 1 !important; pointer-events: none; }
+.ac-material-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.ac-material-drop-filled {
+  border-style: solid;
+  border-color: color-mix(in srgb, #2563eb 40%, transparent);
+  background: color-mix(in srgb, #2563eb 5%, transparent);
+}
+.ac-material-submit { width: 100%; padding: 8px 12px; font-weight: 600; }
+.ac-material-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border: 1px dashed color-mix(in srgb, currentColor 24%, transparent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.ac-material-callout .ac-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+.ac-material-advanced {
+  margin-top: 16px;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  padding-top: 12px;
+}
+.ac-material-advanced summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  list-style: none;
+}
+.ac-material-advanced summary::-webkit-details-marker { display: none; }
+.ac-material-advanced summary::before {
+  content: '\u203A';
+  display: inline-block;
+  margin-right: 4px;
+  transition: transform 0.15s ease;
+  opacity: 0.6;
+}
+.ac-material-advanced[open] summary::before { transform: rotate(90deg); }
+.ac-material-advanced summary > span { flex: 1; }
+.ac-material-advanced-body { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
+.ac-material-permission {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.ac-material-permission > div { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.ac-material-auto-result {
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+}
+.ac-material-auto-stats { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 6px; }
+.ac-material-auto-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.ac-material-auto-list li { display: flex; justify-content: space-between; gap: 10px; }
+.ac-material-auto-list li span:first-child { overflow-wrap: anywhere; }
+@media (max-width: 1180px) {
+  .ac-material-layout { grid-template-columns: 1fr; }
+  .ac-material-side { position: static; }
+  .ac-material-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .ac-material-stats { grid-template-columns: 1fr; }
+  .ac-material-head { flex-direction: column; }
+  .ac-material-item { grid-template-columns: 32px minmax(0, 1fr); }
+  .ac-material-item-actions { grid-column: 1 / -1; justify-content: flex-end; }
+  .ac-material-searchbar { flex-wrap: wrap; }
+  .ac-material-course { max-width: 100%; }
 }
 `;
 function injectStyles() {
@@ -4370,11 +4688,770 @@ function WebSessionPanel({ ctx }) {
   );
 }
 
-// packages/academic-dsh-ui/src/client/pages/AutomationPage.tsx
+// packages/academic-dsh-ui/src/client/pages/MaterialsPage.tsx
 var import_react7 = require("react");
 var import_jsx_runtime6 = require("react/jsx-runtime");
-function AutomationPage({ ctx, active }) {
+var MAX_MATERIAL_FILE_BYTES = 80 * 1024 * 1024;
+var KIND_META = {
+  pdf: { short: "PDF", label: "PDF" },
+  html: { short: "WEB", label: "\u7F51\u9875" },
+  markdown: { short: "MD", label: "Markdown" },
+  text: { short: "TXT", label: "\u6587\u672C" },
+  pptx: { short: "PPT", label: "PPTX" },
+  docx: { short: "DOC", label: "DOCX" }
+};
+function formatBytes(value) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+function formatDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
+}
+function extractionTone(status) {
+  return status === "indexed" ? "ok" : status === "empty" ? "warn" : "bad";
+}
+function extractionLabel(status) {
+  return status === "indexed" ? "\u53EF\u68C0\u7D22" : status === "empty" ? "\u672A\u63D0\u53D6\u5230\u6587\u5B57" : "\u62BD\u53D6\u5931\u8D25";
+}
+function renderSnippet(snippet) {
+  return snippet.split(/(\[[^\]]+\])/g).map(
+    (part, index) => part.startsWith("[") && part.endsWith("]") ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("mark", { children: part.slice(1, -1) }, index) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: part }, index)
+  );
+}
+function importNotice(result) {
+  if (result.duplicate) {
+    return { tone: "info", text: "\u5DF2\u5B58\u5728\u76F8\u540C\u8D44\u6599\uFF0C\u672A\u91CD\u590D\u5B58\u50A8" };
+  }
+  if (result.material.extractionStatus === "indexed") {
+    return {
+      tone: "ok",
+      text: `\u5DF2\u5BFC\u5165\u5E76\u5EFA\u7ACB\u7D22\u5F15\uFF1A${result.material.title}\uFF08${result.chunks} \u6BB5\uFF09`
+    };
+  }
+  return {
+    tone: "info",
+    text: `\u5DF2\u4FDD\u5B58\u539F\u6587\u4EF6\uFF0C\u4F46${result.material.extractionStatus === "failed" ? "\u62BD\u53D6\u5931\u8D25" : "\u672A\u63D0\u53D6\u5230\u6587\u5B57"}\uFF1A${result.material.extractionNote ?? "\u53EF\u5BFC\u5165\u6587\u5B57\u7248\u6216\u624B\u52A8\u6574\u7406"}`
+  };
+}
+function readFileBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result ?? "");
+      const comma = value.indexOf(",");
+      resolve(comma >= 0 ? value.slice(comma + 1) : "");
+    };
+    reader.onerror = () => reject(new Error("\u8BFB\u53D6\u6587\u4EF6\u5931\u8D25"));
+    reader.readAsDataURL(file);
+  });
+}
+function SearchIcon() {
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("svg", { width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", "aria-hidden": "true", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("circle", { cx: "11", cy: "11", r: "7" }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("path", { d: "m20 20-3.5-3.5" })
+  ] });
+}
+function UploadIcon() {
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("svg", { width: "22", height: "22", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("path", { d: "M12 16V4m0 0L7 9m5-5 5 5" }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("path", { d: "M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" })
+  ] });
+}
+function MaterialsPage({ ctx, active, onNavigate }) {
   const load = (0, import_react7.useCallback)(
+    (signal) => callApi(ctx, "materials", {}, signal),
+    [ctx]
+  );
+  const { state, refresh } = useLoad(load, active);
+  const data = state.data;
+  const view = viewState(state);
+  const [courseId, setCourseId] = (0, import_react7.useState)("");
+  const initialized = (0, import_react7.useRef)(false);
+  const [query, setQuery] = (0, import_react7.useState)("");
+  const [search, setSearch] = (0, import_react7.useState)();
+  const [searching, setSearching] = (0, import_react7.useState)(false);
+  const [busy, setBusy] = (0, import_react7.useState)();
+  const [notice, setNotice] = (0, import_react7.useState)();
+  const [mode, setMode] = (0, import_react7.useState)("file");
+  const [file, setFile] = (0, import_react7.useState)();
+  const [fileTitle, setFileTitle] = (0, import_react7.useState)("");
+  const [textTitle, setTextTitle] = (0, import_react7.useState)("");
+  const [textBody, setTextBody] = (0, import_react7.useState)("");
+  const [urlValue, setUrlValue] = (0, import_react7.useState)("");
+  const [urlTitle, setUrlTitle] = (0, import_react7.useState)("");
+  const [urlSource, setUrlSource] = (0, import_react7.useState)("");
+  const [autoSource, setAutoSource] = (0, import_react7.useState)("");
+  const [autoPageUrl, setAutoPageUrl] = (0, import_react7.useState)("");
+  const [autoPrefix, setAutoPrefix] = (0, import_react7.useState)("");
+  const [autoResult, setAutoResult] = (0, import_react7.useState)();
+  (0, import_react7.useEffect)(() => {
+    if (!data) return;
+    if (!initialized.current && data.courses.length > 0) {
+      initialized.current = true;
+      setCourseId(data.courses[0].courseId);
+      return;
+    }
+    if (courseId && !data.courses.some((course) => course.courseId === courseId)) {
+      setCourseId(data.courses[0]?.courseId ?? "");
+      setSearch(void 0);
+    }
+  }, [data, courseId]);
+  const courses = data?.courses ?? [];
+  const selectedCourse = courses.find((course) => course.courseId === courseId);
+  const materials = (data?.materials ?? []).filter(
+    (card) => !courseId || card.material.courseId === courseId
+  );
+  const sourcesWithSession = (0, import_react7.useMemo)(
+    () => (data?.sources ?? []).filter((source) => !source.archived && source.hasSession),
+    [data]
+  );
+  const totalBytes = materials.reduce((sum, card) => sum + card.material.bytes, 0);
+  const indexedCount = materials.filter(
+    (card) => card.material.extractionStatus === "indexed"
+  ).length;
+  const pageTotal = materials.reduce(
+    (sum, card) => sum + (card.material.pageCount ?? 0),
+    0
+  );
+  const subscription = data?.subscriptions.find(
+    (entry) => entry.sourceId === autoSource && entry.courseId === courseId
+  );
+  const autoEnabled = Boolean(subscription?.enabled);
+  const run = async (label, action, success) => {
+    setBusy(label);
+    setNotice(void 0);
+    const result = await action();
+    setBusy(void 0);
+    if (!result.ok) {
+      setNotice({ tone: "error", text: result.error.message });
+      return void 0;
+    }
+    setNotice(success(result.value));
+    await refresh();
+    return result.value;
+  };
+  const changeCourse = (value) => {
+    setCourseId(value);
+    setSearch(void 0);
+    setAutoResult(void 0);
+    setNotice(void 0);
+  };
+  const runSearch = async () => {
+    const value = query.trim();
+    if (!value || searching) return;
+    setSearching(true);
+    setNotice(void 0);
+    const result = await callApi(ctx, "materialSearch", {
+      query: value,
+      ...courseId ? { courseId } : {},
+      limit: 8
+    });
+    setSearching(false);
+    if (result.ok) setSearch(result.value);
+    else setNotice({ tone: "error", text: result.error.message });
+  };
+  const importFile = async () => {
+    if (!courseId || !file || busy) return;
+    if (file.size > MAX_MATERIAL_FILE_BYTES) {
+      setNotice({ tone: "error", text: "\u6587\u4EF6\u8D85\u8FC7 80 MB \u4E0A\u9650\uFF1B\u8BF7\u538B\u7F29\u540E\u91CD\u8BD5" });
+      return;
+    }
+    let contentBase64;
+    try {
+      contentBase64 = await readFileBase64(file);
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error)
+      });
+      return;
+    }
+    const value = await run(
+      "import-file",
+      () => callApi(ctx, "importMaterialFile", {
+        courseId,
+        fileName: file.name,
+        contentBase64,
+        ...fileTitle.trim() ? { title: fileTitle.trim() } : {}
+      }),
+      (result) => importNotice(result.result)
+    );
+    if (value) {
+      setFile(void 0);
+      setFileTitle("");
+      setSearch(void 0);
+    }
+  };
+  const importText = async () => {
+    if (!courseId || !textTitle.trim() || !textBody.trim() || busy) return;
+    const value = await run(
+      "import-text",
+      () => callApi(ctx, "importMaterialText", {
+        courseId,
+        title: textTitle.trim(),
+        text: textBody
+      }),
+      (result) => importNotice(result.result)
+    );
+    if (value) {
+      setTextTitle("");
+      setTextBody("");
+      setSearch(void 0);
+    }
+  };
+  const importUrl = async () => {
+    if (!courseId || !urlValue.trim() || busy) return;
+    const value = await run(
+      "import-url",
+      () => callApi(ctx, "importMaterialUrl", {
+        courseId,
+        url: urlValue.trim(),
+        ...urlTitle.trim() ? { title: urlTitle.trim() } : {},
+        ...urlSource ? { sourceId: urlSource } : {}
+      }),
+      (result) => importNotice(result.result)
+    );
+    if (value) {
+      setUrlValue("");
+      setUrlTitle("");
+      setSearch(void 0);
+    }
+  };
+  const rebuild = async () => {
+    if (busy) return;
+    const value = await run(
+      "rebuild",
+      () => callApi(ctx, "rebuildMaterials", {}),
+      (result) => ({
+        tone: result.result.missingFiles > 0 ? "info" : "ok",
+        text: `\u7D22\u5F15\u91CD\u5EFA\u5B8C\u6210\uFF1A${result.result.materials} \u4EFD\u8D44\u6599\u3001${result.result.chunks} \u6BB5${result.result.missingFiles > 0 ? `\uFF1B\u7F3A\u5931\u539F\u6587\u4EF6 ${result.result.missingFiles} \u4EFD` : ""}`
+      })
+    );
+    if (value) setSearch(void 0);
+  };
+  const toggleAutoImport = async () => {
+    if (!courseId || !autoSource || busy) return;
+    await run(
+      "subscription",
+      () => callApi(ctx, "setMaterialSubscription", {
+        sourceId: autoSource,
+        courseId,
+        enabled: !autoEnabled
+      }),
+      () => ({
+        tone: "ok",
+        text: autoEnabled ? "\u5DF2\u5173\u95ED\u8BE5\u6765\u6E90+\u8BFE\u7A0B\u7684\u81EA\u52A8\u5BFC\u5165\u8BB8\u53EF" : "\u5DF2\u5F00\u542F\u81EA\u52A8\u5BFC\u5165\u8BB8\u53EF\uFF1B\u626B\u63CF\u4ECD\u53EA\u9650\u4F60\u7ED9\u51FA\u7684\u8BFE\u7A0B\u9875"
+      })
+    );
+  };
+  const scanAttachments = async () => {
+    if (!courseId || !autoSource || !autoPageUrl.trim() || !autoEnabled || busy) {
+      return;
+    }
+    const value = await run(
+      "attachments",
+      () => callApi(ctx, "importMaterialAttachments", {
+        courseId,
+        sourceId: autoSource,
+        pageUrl: autoPageUrl.trim(),
+        ...autoPrefix.trim() ? { pathPrefix: autoPrefix.trim() } : {}
+      }),
+      (result) => ({
+        tone: result.result.failed > 0 ? "info" : "ok",
+        text: `\u626B\u63CF\u5B8C\u6210\uFF1A\u53D1\u73B0 ${result.result.discovered} \u4E2A\u9644\u4EF6\uFF0C\u65B0\u589E ${result.result.imported} \u4E2A${result.result.duplicates > 0 ? `\uFF0C\u5DF2\u5B58\u5728 ${result.result.duplicates} \u4E2A` : ""}${result.result.stopReason ? `\uFF1B\u505C\u6B62\u539F\u56E0\uFF1A${result.result.stopReason}` : ""}`
+      })
+    );
+    if (value) {
+      setAutoResult(value.result);
+      setSearch(void 0);
+    }
+  };
+  const removeMaterial = async (materialId, title) => {
+    const value = await run(
+      `delete-${materialId}`,
+      () => callApi(ctx, "deleteMaterial", { materialId }),
+      () => ({ tone: "ok", text: `\u5DF2\u5220\u9664\u8D44\u6599\uFF1A${title}` })
+    );
+    if (value) setSearch(void 0);
+  };
+  const askAbout = (title, page) => {
+    const prompt = [
+      `\u8BF7\u57FA\u4E8E\u672C\u5730\u8BFE\u7A0B\u8D44\u6599\u56DE\u7B54\u95EE\u9898\uFF1A${query.trim() || "\u89E3\u91CA\u8FD9\u4EFD\u8D44\u6599\u7684\u91CD\u70B9"}`,
+      `\u5148\u8C03\u7528 academic_search_materials${courseId ? `\uFF08courseId=${courseId}\uFF09` : ""}\u3002`,
+      `\u5DF2\u77E5\u8D44\u6599\uFF1A${title}${page ? ` \u7B2C ${page} \u9875` : ""}\u3002`,
+      "\u5F15\u7528\u8D44\u6599\u6807\u9898\u4E0E\u9875\u7801\uFF1B\u8D44\u6599\u4E0D\u8DB3\u65F6\u660E\u786E\u8BF4\u660E\uFF0C\u4E0D\u8981\u7F16\u9020\u3002"
+    ].join("\n");
+    if (!askAgent(ctx, prompt)) {
+      setNotice({ tone: "error", text: "\u5F53\u524D\u73AF\u5883\u65E0\u6CD5\u6253\u5F00 Agent \u4F1A\u8BDD" });
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-panel ac-material-page", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+      StateBanner,
+      {
+        state: view,
+        failure: state.failure,
+        updatedAt: state.updatedAt,
+        onRetry: refresh
+      }
+    ),
+    notice && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NoticeBar, { notice, onDismiss: () => setNotice(void 0) }),
+    state.loading && !data && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(LoadingLine, {}),
+    data && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-stat-grid ac-material-stats", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+          StatCard,
+          {
+            label: "\u5F53\u524D\u8D44\u6599",
+            value: materials.length,
+            hint: selectedCourse ? `${selectedCourse.code} ${selectedCourse.title}` : "\u5168\u90E8\u8BFE\u7A0B"
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+          StatCard,
+          {
+            label: "\u53EF\u68C0\u7D22",
+            value: indexedCount,
+            hint: "\u5DF2\u5EFA\u7ACB\u5168\u6587\u7D22\u5F15",
+            tone: indexedCount === materials.length ? "ok" : "warn"
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(StatCard, { label: "\u9875 / \u5E7B\u706F\u7247", value: pageTotal, hint: "\u53EF\u5B9A\u4F4D\u9875\u7801\u7684\u8D44\u6599\u5408\u8BA1" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(StatCard, { label: "\u5360\u7528\u7A7A\u95F4", value: formatBytes(totalBytes), hint: "\u539F\u6587\u4EF6\uFF0C\u4E0D\u542B\u5143\u6570\u636E" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-layout", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("section", { className: "ac-material-panel", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("header", { className: "ac-material-head", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h2", { children: "\u8D44\u6599\u5E93" }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { children: "\u68C0\u7D22\u7247\u6BB5\u3001\u67E5\u770B\u9875\u7801\uFF0C\u6216\u6E05\u7406\u4E0D\u518D\u9700\u8981\u7684\u8D44\u6599" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-inline-actions", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+                "select",
+                {
+                  className: "ac-material-course",
+                  value: courseId,
+                  onChange: (event) => changeCourse(event.target.value),
+                  "aria-label": "\u8BFE\u7A0B\u8303\u56F4",
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value: "", children: "\u5168\u90E8\u8BFE\u7A0B" }),
+                    courses.map((course) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("option", { value: course.courseId, children: [
+                      course.code,
+                      " ",
+                      course.title
+                    ] }, course.courseId))
+                  ]
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                "button",
+                {
+                  type: "button",
+                  className: "ac-button",
+                  disabled: busy !== void 0,
+                  onClick: () => void rebuild(),
+                  children: busy === "rebuild" ? "\u91CD\u5EFA\u4E2D\u2026" : "\u91CD\u5EFA\u7D22\u5F15"
+                }
+              )
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-searchbar", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(SearchIcon, {}),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+              "input",
+              {
+                type: "search",
+                value: query,
+                placeholder: "\u641C\u7D22\u8BFE\u4EF6\u3001\u8BB2\u4E49\u3001\u5F80\u5E74\u9898\uFF0C\u4F8B\u5982\uFF1A\u9690\u51FD\u6570",
+                "aria-label": "\u68C0\u7D22\u8D44\u6599",
+                onChange: (event) => setQuery(event.target.value),
+                onKeyDown: (event) => {
+                  if (event.key === "Enter") void runSearch();
+                }
+              }
+            ),
+            query && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "ac-material-clear",
+                onClick: () => {
+                  setQuery("");
+                  setSearch(void 0);
+                },
+                "aria-label": "\u6E05\u9664\u68C0\u7D22",
+                children: "\xD7"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "ac-button ac-button-primary",
+                disabled: searching || !query.trim(),
+                onClick: () => void runSearch(),
+                children: searching ? "\u68C0\u7D22\u4E2D\u2026" : "\u68C0\u7D22"
+              }
+            )
+          ] }),
+          search && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-results", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-results-head", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("strong", { children: [
+                "\u627E\u5230 ",
+                search.result.total,
+                " \u6BB5\uFF0C\u663E\u793A ",
+                search.result.hits.length,
+                " \u6BB5"
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                "button",
+                {
+                  type: "button",
+                  className: "ac-button",
+                  onClick: () => setSearch(void 0),
+                  children: "\u6536\u8D77\u7ED3\u679C"
+                }
+              )
+            ] }),
+            search.result.hits.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(EmptyState, { title: "\u6CA1\u6709\u5339\u914D\u7684\u8D44\u6599", children: "\u8BD5\u8BD5\u66F4\u77ED\u7684\u5173\u952E\u8BCD\uFF0C\u6216\u786E\u8BA4\u5F53\u524D\u8BFE\u7A0B\u5DF2\u5BFC\u5165\u5BF9\u5E94\u8BFE\u4EF6\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "ac-material-hit-list", children: search.result.hits.map((hit) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+              "li",
+              {
+                className: "ac-material-hit",
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-hit-head", children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("strong", { children: hit.title }),
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "ac-material-hit-place", children: hit.page ? `\u7B2C ${hit.page} \u9875` : hit.heading ?? KIND_META[hit.kind].label })
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { children: renderSnippet(hit.snippet) }),
+                  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "ac-material-hit-actions", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                    "button",
+                    {
+                      type: "button",
+                      className: "ac-link",
+                      onClick: () => askAbout(hit.title, hit.page),
+                      children: "\u95EE Agent"
+                    }
+                  ) })
+                ]
+              },
+              `${hit.materialId}-${hit.page ?? 0}-${hit.snippet.slice(0, 16)}`
+            )) })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-list-head", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { children: search ? "\u5168\u90E8\u8D44\u6599" : "\u5DF2\u5BFC\u5165\u8D44\u6599" }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "ac-muted", children: [
+              materials.length,
+              " \u4EFD"
+            ] })
+          ] }),
+          materials.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(EmptyState, { title: selectedCourse ? "\u8FD9\u4E2A\u8BFE\u7A0B\u8FD8\u6CA1\u6709\u8D44\u6599" : "\u8FD8\u6CA1\u6709\u8D44\u6599", children: selectedCourse ? "\u5728\u53F3\u4FA7\u5BFC\u5165\u8BFE\u4EF6\u3001\u8BB2\u4E49\u6216\u5F80\u5E74\u9898\uFF0CAgent \u5C31\u80FD\u5F15\u7528\u5177\u4F53\u9875\u7801\u3002" : "\u5148\u9009\u62E9\u8BFE\u7A0B\uFF0C\u518D\u4ECE\u53F3\u4FA7\u5BFC\u5165\u8D44\u6599\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "ac-material-list", children: materials.map(({ material, course }) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { className: "ac-material-item", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: `ac-material-icon ac-material-icon-${material.kind}`, children: KIND_META[material.kind].short }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-item-main", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-item-title", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("strong", { children: material.title }),
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Badge, { tone: extractionTone(material.extractionStatus), children: extractionLabel(material.extractionStatus) }),
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Badge, { tone: "neutral", children: KIND_META[material.kind].label })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-meta", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: course ? `${course.code} ${course.title}` : material.courseId }),
+                material.pageCount ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+                  material.pageCount,
+                  " \u9875"
+                ] }) : null,
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+                  material.chunkCount,
+                  " \u6BB5"
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: formatBytes(material.bytes) }),
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+                  formatDate(material.createdAt),
+                  " \u5BFC\u5165"
+                ] })
+              ] }),
+              material.extractionNote && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "ac-material-note", children: material.extractionNote })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-item-actions", children: [
+              material.sourceUrl && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                "a",
+                {
+                  className: "ac-link",
+                  href: material.sourceUrl,
+                  target: "_blank",
+                  rel: "noreferrer",
+                  children: "\u6765\u6E90"
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                ConfirmAction,
+                {
+                  label: "\u5220\u9664",
+                  confirmLabel: "\u786E\u8BA4\u5220\u9664",
+                  disabled: busy !== void 0,
+                  onConfirm: () => removeMaterial(material.materialId, material.title)
+                }
+              )
+            ] })
+          ] }, material.materialId)) })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("aside", { className: "ac-material-panel ac-material-side", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("header", { className: "ac-material-head", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h2", { children: "\u5BFC\u5165\u8D44\u6599" }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { children: selectedCourse ? `\u5BFC\u5165\u5230 ${selectedCourse.code} ${selectedCourse.title}` : "\u5148\u5728\u5DE6\u4FA7\u9009\u62E9\u4E00\u95E8\u8BFE\u7A0B" })
+          ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "ac-toggle ac-material-modes", role: "tablist", "aria-label": "\u5BFC\u5165\u65B9\u5F0F", children: [
+            ["file", "\u6587\u4EF6"],
+            ["text", "\u7C98\u8D34\u6587\u672C"],
+            ["url", "\u7F51\u9875\u94FE\u63A5"]
+          ].map(([id, label]) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+            "button",
+            {
+              type: "button",
+              role: "tab",
+              "aria-selected": mode === id,
+              className: mode === id ? "ac-toggle-active" : void 0,
+              onClick: () => setMode(id),
+              children: label
+            },
+            id
+          )) }),
+          !courseId && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "ac-material-callout", children: "\u5148\u5728\u201C\u8D44\u6599\u5E93\u201D\u9009\u62E9\u4E00\u4E2A\u8BFE\u7A0B\uFF0C\u5BFC\u5165\u6309\u94AE\u624D\u4F1A\u542F\u7528\u3002" }),
+          mode === "file" && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-form", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: `ac-material-drop${file ? " ac-material-drop-filled" : ""}`, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(UploadIcon, {}),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("strong", { children: file ? file.name : "\u628A\u8BFE\u5802\u8D44\u6599\u653E\u8FDB\u8D44\u6599\u5E93" }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: file ? `${formatBytes(file.size)} \xB7 \u5BFC\u5165\u540E\u4F1A\u81EA\u52A8\u62BD\u53D6\u6587\u5B57\u5E76\u5EFA\u7ACB\u7D22\u5F15` : "\u652F\u6301 PDF / HTML / Markdown / TXT / PPTX / DOCX\uFF0C\u6700\u5927 80 MB" }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "ac-button ac-material-pick", children: file ? "\u66F4\u6362\u6587\u4EF6" : "\u9009\u62E9\u6587\u4EF6" }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                "input",
+                {
+                  className: "ac-material-file-input",
+                  type: "file",
+                  accept: ".pdf,.html,.htm,.md,.markdown,.txt,.pptx,.docx",
+                  disabled: !courseId || busy !== void 0,
+                  "aria-label": "\u9009\u62E9\u8D44\u6599\u6587\u4EF6",
+                  onChange: (event) => {
+                    const next = event.target.files?.[0];
+                    setFile(next);
+                    if (next && next.size > MAX_MATERIAL_FILE_BYTES) {
+                      setNotice({
+                        tone: "error",
+                        text: "\u6587\u4EF6\u8D85\u8FC7 80 MB \u4E0A\u9650\uFF1B\u8BF7\u538B\u7F29\u540E\u91CD\u8BD5"
+                      });
+                    }
+                  }
+                }
+              )
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Field, { label: "\u663E\u793A\u6807\u9898\uFF08\u53EF\u9009\uFF09", hint: "\u9ED8\u8BA4\u4F7F\u7528\u6587\u4EF6\u540D", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+              "input",
+              {
+                value: fileTitle,
+                placeholder: "\u4F8B\u5982\uFF1A\u7B2C\u4E8C\u7AE0 \u7EC4\u5408\u903B\u8F91",
+                onChange: (event) => setFileTitle(event.target.value)
+              }
+            ) }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "ac-button ac-button-primary ac-material-submit",
+                disabled: !courseId || !file || busy !== void 0,
+                onClick: () => void importFile(),
+                children: busy === "import-file" ? "\u5BFC\u5165\u5E76\u5EFA\u7ACB\u7D22\u5F15\u2026" : "\u5BFC\u5165\u6587\u4EF6"
+              }
+            )
+          ] }),
+          mode === "text" && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-form", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Field, { label: "\u6807\u9898", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+              "input",
+              {
+                value: textTitle,
+                placeholder: "\u4F8B\u5982\uFF1A\u5B9E\u9A8C\u4E00 \u7EC4\u5408\u903B\u8F91\u8BB2\u4E49",
+                onChange: (event) => setTextTitle(event.target.value)
+              }
+            ) }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Field, { label: "\u6B63\u6587", hint: `${textBody.length} \u5B57`, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+              "textarea",
+              {
+                rows: 8,
+                value: textBody,
+                placeholder: "\u7C98\u8D34\u8BB2\u4E49\u3001\u9898\u76EE\u6216\u8BFE\u7A0B\u8BF4\u660E\u2026",
+                onChange: (event) => setTextBody(event.target.value)
+              }
+            ) }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "ac-button ac-button-primary ac-material-submit",
+                disabled: !courseId || !textTitle.trim() || !textBody.trim() || busy !== void 0,
+                onClick: () => void importText(),
+                children: busy === "import-text" ? "\u5BFC\u5165\u5E76\u5EFA\u7ACB\u7D22\u5F15\u2026" : "\u5BFC\u5165\u6587\u672C"
+              }
+            )
+          ] }),
+          mode === "url" && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-form", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Field, { label: "\u7F51\u9875 URL", hint: "\u53EA\u6293\u53D6\u8FD9\u4E00\u4E2A\u9875\u9762\uFF1B\u540C\u7AD9\u5DF2\u4FDD\u5B58\u4F1A\u8BDD\u4F1A\u81EA\u52A8\u4F7F\u7528", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+              "input",
+              {
+                value: urlValue,
+                placeholder: "https://...",
+                onChange: (event) => setUrlValue(event.target.value)
+              }
+            ) }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Field, { label: "\u663E\u793A\u6807\u9898\uFF08\u53EF\u9009\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+              "input",
+              {
+                value: urlTitle,
+                placeholder: "\u9ED8\u8BA4\u4F7F\u7528\u7F51\u9875\u6807\u9898",
+                onChange: (event) => setUrlTitle(event.target.value)
+              }
+            ) }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Field, { label: "\u4F7F\u7528\u6765\u6E90\u4F1A\u8BDD\uFF08\u53EF\u9009\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("select", { value: urlSource, onChange: (event) => setUrlSource(event.target.value), children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value: "", children: "\u81EA\u52A8\u5339\u914D\u5DF2\u4FDD\u5B58\u4F1A\u8BDD" }),
+              sourcesWithSession.map((source) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value: source.sourceId, children: source.displayName }, source.sourceId))
+            ] }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "ac-button ac-button-primary ac-material-submit",
+                disabled: !courseId || !urlValue.trim() || busy !== void 0,
+                onClick: () => void importUrl(),
+                children: busy === "import-url" ? "\u6293\u53D6\u5E76\u5EFA\u7ACB\u7D22\u5F15\u2026" : "\u5BFC\u5165\u7F51\u9875"
+              }
+            )
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("details", { className: "ac-material-advanced", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("summary", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "\u6279\u91CF\u5BFC\u5165\u8BFE\u7A0B\u9875\u9644\u4EF6" }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Badge, { tone: "warn", children: "\u9AD8\u7EA7" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-advanced-body", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "ac-muted", children: "\u53EA\u626B\u63CF\u4F60\u7ED9\u51FA\u7684\u8BFE\u7A0B\u9875\u4E2D\u540C\u4E3B\u673A\u7684\u9644\u4EF6\uFF1B\u6BCF\u4E2A\u6765\u6E90+\u8BFE\u7A0B\u9700\u5355\u72EC\u6388\u6743\uFF0C\u9047\u5230\u767B\u5F55\u9875\u3001403 \u6216 429 \u4F1A\u7ACB\u5373\u505C\u6B62\u3002" }),
+              sourcesWithSession.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-callout", children: [
+                "\u8FD8\u6CA1\u6709\u4FDD\u5B58\u767B\u5F55\u4F1A\u8BDD\u7684\u6765\u6E90\u3002",
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                  "button",
+                  {
+                    type: "button",
+                    className: "ac-link",
+                    onClick: () => onNavigate("connections"),
+                    children: "\u524D\u5F80\u8FDE\u63A5\u9875\u767B\u5F55"
+                  }
+                )
+              ] }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Field, { label: "\u6765\u6E90", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+                  "select",
+                  {
+                    value: autoSource,
+                    onChange: (event) => {
+                      setAutoSource(event.target.value);
+                      setAutoResult(void 0);
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value: "", children: "\u8BF7\u9009\u62E9\u6765\u6E90" }),
+                      sourcesWithSession.map((source) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value: source.sourceId, children: source.displayName }, source.sourceId))
+                    ]
+                  }
+                ) }),
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Field, { label: "\u8BFE\u7A0B\u9875 URL", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                  "input",
+                  {
+                    value: autoPageUrl,
+                    placeholder: "https://...",
+                    onChange: (event) => setAutoPageUrl(event.target.value)
+                  }
+                ) }),
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Field, { label: "\u8DEF\u5F84\u524D\u7F00\uFF08\u53EF\u9009\uFF09", hint: "\u4F8B\u5982 /ultra/courses/_123_1/", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                  "input",
+                  {
+                    value: autoPrefix,
+                    onChange: (event) => setAutoPrefix(event.target.value)
+                  }
+                ) }),
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-permission", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("strong", { children: "\u81EA\u52A8\u5BFC\u5165\u8BB8\u53EF" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "ac-muted", children: autoEnabled ? "\u5DF2\u5F00\u542F\uFF1B\u53EA\u9650\u8BE5\u6765\u6E90\u4E0E\u8BE5\u8BFE\u7A0B" : "\u672A\u5F00\u542F\uFF0C\u626B\u63CF\u6309\u94AE\u4E0D\u53EF\u7528" })
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                    "button",
+                    {
+                      type: "button",
+                      className: "ac-button",
+                      disabled: !courseId || !autoSource || busy !== void 0,
+                      onClick: () => void toggleAutoImport(),
+                      children: autoEnabled ? "\u5173\u95ED\u8BB8\u53EF" : "\u5F00\u542F\u8BB8\u53EF"
+                    }
+                  )
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                  "button",
+                  {
+                    type: "button",
+                    className: "ac-button ac-button-primary ac-material-submit",
+                    disabled: !courseId || !autoSource || !autoPageUrl.trim() || !autoEnabled || busy !== void 0,
+                    onClick: () => void scanAttachments(),
+                    children: busy === "attachments" ? "\u626B\u63CF\u4E2D\u2026" : "\u626B\u63CF\u5E76\u5BFC\u5165\u9644\u4EF6"
+                  }
+                ),
+                autoResult && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-auto-result", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-material-auto-stats", children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+                      "\u53D1\u73B0 ",
+                      autoResult.discovered
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+                      "\u65B0\u589E ",
+                      autoResult.imported
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+                      "\u5DF2\u5B58\u5728 ",
+                      autoResult.duplicates
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+                      "\u8DF3\u8FC7 ",
+                      autoResult.skipped
+                    ] }),
+                    autoResult.failed > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "ac-text-warn", children: [
+                      "\u5931\u8D25 ",
+                      autoResult.failed
+                    ] })
+                  ] }),
+                  autoResult.stopReason && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { className: "ac-text-warn", children: [
+                    "\u505C\u6B62\u539F\u56E0\uFF1A",
+                    autoResult.stopReason
+                  ] }),
+                  autoResult.items.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "ac-material-auto-list", children: autoResult.items.map((item) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: item.material.title }),
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "ac-muted", children: [
+                      item.chunks,
+                      " \u6BB5"
+                    ] })
+                  ] }, item.material.materialId)) }),
+                  autoResult.failures.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "ac-material-auto-list", children: autoResult.failures.map((failure2) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: failure2.url }),
+                    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "ac-text-warn", children: failure2.message })
+                  ] }, failure2.url)) })
+                ] })
+              ] })
+            ] })
+          ] })
+        ] })
+      ] })
+    ] })
+  ] });
+}
+
+// packages/academic-dsh-ui/src/client/pages/AutomationPage.tsx
+var import_react8 = require("react");
+var import_jsx_runtime7 = require("react/jsx-runtime");
+function AutomationPage({ ctx, active }) {
+  const load = (0, import_react8.useCallback)(
     (signal) => callApi(ctx, "automation", {}, signal),
     [ctx]
   );
@@ -4383,7 +5460,7 @@ function AutomationPage({ ctx, active }) {
   const data = state.data;
   const view = viewState(state);
   const timeZone = data?.timeZone ?? "UTC";
-  const [thresholds, setThresholds] = (0, import_react7.useState)("");
+  const [thresholds, setThresholds] = (0, import_react8.useState)("");
   const toggleJob = async (job) => callApi(ctx, "setJobEnabled", {
     jobId: job.jobId,
     enabled: !job.enabled
@@ -4421,8 +5498,8 @@ function AutomationPage({ ctx, active }) {
       "\u63D0\u9192\u9608\u503C\u5DF2\u4FDD\u5B58"
     );
   };
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
       StateBanner,
       {
         state: view,
@@ -4431,13 +5508,13 @@ function AutomationPage({ ctx, active }) {
         onRetry: () => void refresh()
       }
     ),
-    action.notice && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) }),
-    !data && state.loading && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(LoadingLine, { children: "\u6B63\u5728\u8BFB\u53D6\u81EA\u52A8\u5316\u72B6\u6001\u2026" }),
-    data && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-inline-bar", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Badge, { tone: data.projection.consistent ? "ok" : "warn", children: data.projection.consistent ? "\u6838\u5FC3\u6295\u5F71\u4E00\u81F4" : "\u6295\u5F71\u843D\u540E" }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "ac-muted", children: [
+    action.notice && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) }),
+    !data && state.loading && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(LoadingLine, { children: "\u6B63\u5728\u8BFB\u53D6\u81EA\u52A8\u5316\u72B6\u6001\u2026" }),
+    data && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_jsx_runtime7.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-inline-bar", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Badge, { tone: data.projection.consistent ? "ok" : "warn", children: data.projection.consistent ? "\u6838\u5FC3\u6295\u5F71\u4E00\u81F4" : "\u6295\u5F71\u843D\u540E" }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "ac-muted", children: [
             "\u4E8B\u4EF6\u4F4D\u7F6E ",
             data.projection.eventPosition,
             " \xB7 \u6295\u5F71\u4F4D\u7F6E",
@@ -4448,8 +5525,8 @@ function AutomationPage({ ctx, active }) {
             data.projection.pendingEvents
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-inline-actions", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-inline-actions", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
             "button",
             {
               type: "button",
@@ -4459,37 +5536,37 @@ function AutomationPage({ ctx, active }) {
               children: action.pending === "sync" ? "\u540C\u6B65\u4E2D\u2026" : "\u7ACB\u5373\u540C\u6B65"
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { type: "button", className: "ac-button", onClick: () => void refresh(), children: "\u5237\u65B0" })
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { type: "button", className: "ac-button", onClick: () => void refresh(), children: "\u5237\u65B0" })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Section, { title: "\u81EA\u52A8\u5316\u4EFB\u52A1", subtitle: "\u6682\u505C\u540E\u65E2\u6709\u5B66\u4E1A\u6570\u636E\u4ECD\u53EF\u67E5\u8BE2", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "ac-source-grid", children: data.jobs.map((job) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { className: "ac-card ac-job-card", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-task-title", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("strong", { children: jobLabel(job.jobId) }),
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Badge, { tone: job.enabled ? "ok" : "warn", children: job.enabled ? "\u8FD0\u884C\u4E2D" : "\u5DF2\u6682\u505C" }),
-            job.consecutiveFailures > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Badge, { tone: "bad", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Section, { title: "\u81EA\u52A8\u5316\u4EFB\u52A1", subtitle: "\u6682\u505C\u540E\u65E2\u6709\u5B66\u4E1A\u6570\u636E\u4ECD\u53EF\u67E5\u8BE2", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("ul", { className: "ac-source-grid", children: data.jobs.map((job) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("li", { className: "ac-card ac-job-card", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-task-title", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("strong", { children: jobLabel(job.jobId) }),
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Badge, { tone: job.enabled ? "ok" : "warn", children: job.enabled ? "\u8FD0\u884C\u4E2D" : "\u5DF2\u6682\u505C" }),
+            job.consecutiveFailures > 0 && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Badge, { tone: "bad", children: [
               "\u8FDE\u7EED\u5931\u8D25 ",
               job.consecutiveFailures,
               " \u6B21"
             ] })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-task-meta", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-task-meta", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
               "\u4EFB\u52A1 ID\uFF1A",
               job.jobId
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
               "\u5468\u671F\uFF1A",
               job.intervalMinutes,
               " \u5206\u949F"
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
               "\u4E0B\u6B21\u6267\u884C\uFF1A",
               formatDateTimeOrDash(job.nextRunAt, timeZone)
             ] })
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
           "button",
           {
             type: "button",
@@ -4500,16 +5577,16 @@ function AutomationPage({ ctx, active }) {
           }
         )
       ] }, job.jobId)) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Section, { title: "\u63D0\u9192\u8BBE\u7F6E", subtitle: "\u53EA\u53D1\u9001\u5F53\u524D\u6700\u7D27\u6025\u7684\u4E00\u6863\uFF1B\u626B\u63CF\u5728\u542F\u52A8\u65F6\u8865\u507F", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-form-card", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "ac-inline-bar", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Badge, { tone: data.reminderSettings.enabled ? "ok" : "warn", children: data.reminderSettings.enabled ? "\u63D0\u9192\u5DF2\u542F\u7528" : "\u63D0\u9192\u5DF2\u5173\u95ED" }),
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "ac-muted", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Section, { title: "\u63D0\u9192\u8BBE\u7F6E", subtitle: "\u53EA\u53D1\u9001\u5F53\u524D\u6700\u7D27\u6025\u7684\u4E00\u6863\uFF1B\u626B\u63CF\u5728\u542F\u52A8\u65F6\u8865\u507F", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-form-card", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-inline-bar", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Badge, { tone: data.reminderSettings.enabled ? "ok" : "warn", children: data.reminderSettings.enabled ? "\u63D0\u9192\u5DF2\u542F\u7528" : "\u63D0\u9192\u5DF2\u5173\u95ED" }),
+            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "ac-muted", children: [
               "\u5F53\u524D\u9608\u503C\uFF1A",
               data.reminderSettings.thresholdsHours.slice().sort((a, b) => b - a).map((hours) => `${hours}h`).join(" / ")
             ] })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
             "button",
             {
               type: "button",
@@ -4526,7 +5603,7 @@ function AutomationPage({ ctx, active }) {
             }
           )
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "ac-form-grid", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Field, { label: "\u9608\u503C\uFF08\u5C0F\u65F6\uFF0C\u9017\u53F7\u5206\u9694\uFF09", hint: "\u9ED8\u8BA4 72,24\uFF1B\u6BCF\u4E2A\u4E8B\u9879\u6700\u591A\u53D1\u9001\u5F53\u524D\u6700\u7D27\u6025\u7684\u4E00\u6863\u3002", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "ac-form-grid", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Field, { label: "\u9608\u503C\uFF08\u5C0F\u65F6\uFF0C\u9017\u53F7\u5206\u9694\uFF09", hint: "\u9ED8\u8BA4 72,24\uFF1B\u6BCF\u4E2A\u4E8B\u9879\u6700\u591A\u53D1\u9001\u5F53\u524D\u6700\u7D27\u6025\u7684\u4E00\u6863\u3002", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
           "input",
           {
             value: thresholds,
@@ -4534,7 +5611,7 @@ function AutomationPage({ ctx, active }) {
             placeholder: data.reminderSettings.thresholdsHours.join(",")
           }
         ) }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "ac-form-actions", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "ac-form-actions", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
           "button",
           {
             type: "button",
@@ -4545,12 +5622,12 @@ function AutomationPage({ ctx, active }) {
           }
         ) })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
         Section,
         {
           title: "\u901A\u77E5",
           subtitle: `\u672A\u8BFB ${data.unread} \u6761`,
-          actions: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+          actions: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
             "button",
             {
               type: "button",
@@ -4564,17 +5641,17 @@ function AutomationPage({ ctx, active }) {
               children: "\u5168\u90E8\u5DF2\u8BFB"
             }
           ),
-          children: data.notifications.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u63D0\u9192", children: "\u622A\u6B62\u63D0\u9192\u7531\u6301\u4E45\u5316\u626B\u63CF\u4F5C\u4E1A\u751F\u6210\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "ac-list", children: data.notifications.map((notification) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+          children: data.notifications.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u63D0\u9192", children: "\u622A\u6B62\u63D0\u9192\u7531\u6301\u4E45\u5316\u626B\u63CF\u4F5C\u4E1A\u751F\u6210\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("ul", { className: "ac-list", children: data.notifications.map((notification) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
             "li",
             {
               className: `ac-list-row${notification.readAt ? "" : " ac-unread"}`,
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("strong", { children: notification.title }),
-                  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "ac-muted", children: notification.body }),
-                  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "ac-muted", children: formatDateTimeOrDash(notification.createdAt, timeZone) })
+                /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("strong", { children: notification.title }),
+                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "ac-muted", children: notification.body }),
+                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "ac-muted", children: formatDateTimeOrDash(notification.createdAt, timeZone) })
                 ] }),
-                !notification.readAt && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+                !notification.readAt && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
                   "button",
                   {
                     type: "button",
@@ -4596,54 +5673,54 @@ function AutomationPage({ ctx, active }) {
           )) })
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Section, { title: "\u81EA\u52A8\u5316\u8FD0\u884C\u8BB0\u5F55", subtitle: "\u6700\u8FD1 5 \u6B21\u4F5C\u4E1A\u8FD0\u884C", children: data.jobRuns.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u8FD0\u884C\u8BB0\u5F55" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "ac-table-wrap", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("table", { className: "ac-table", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "\u5F00\u59CB" }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "\u4EFB\u52A1" }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "\u72B6\u6001" }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "\u5C1D\u8BD5" }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "\u9519\u8BEF" })
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Section, { title: "\u81EA\u52A8\u5316\u8FD0\u884C\u8BB0\u5F55", subtitle: "\u6700\u8FD1 5 \u6B21\u4F5C\u4E1A\u8FD0\u884C", children: data.jobRuns.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u8FD0\u884C\u8BB0\u5F55" }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "ac-table-wrap", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("table", { className: "ac-table", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "\u5F00\u59CB" }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "\u4EFB\u52A1" }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "\u72B6\u6001" }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "\u5C1D\u8BD5" }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "\u9519\u8BEF" })
         ] }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("tbody", { children: data.jobRuns.map((run) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: formatDateTimeOrDash(run.startedAt, timeZone) }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: jobLabel(run.jobId) }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("tbody", { children: data.jobRuns.map((run) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: formatDateTimeOrDash(run.startedAt, timeZone) }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: jobLabel(run.jobId) }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
             Badge,
             {
               tone: run.status === "succeeded" ? "ok" : run.status === "failed" || run.status === "interrupted" ? "bad" : "warn",
               children: runStatusLabel(run.status)
             }
           ) }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: run.attempt }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: run.errorMessage ?? "\u2014" })
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: run.attempt }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: run.errorMessage ?? "\u2014" })
         ] }, run.runId)) })
       ] }) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Section, { title: "\u6570\u636E\u6E90\u540C\u6B65\u8BB0\u5F55", subtitle: "\u5931\u8D25\u65F6\u4FDD\u7559\u6700\u540E\u4E00\u6B21\u6709\u6548\u6570\u636E", children: data.syncRuns.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u540C\u6B65\u8BB0\u5F55" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "ac-table-wrap", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("table", { className: "ac-table", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "\u65F6\u95F4" }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "\u6765\u6E90" }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "\u72B6\u6001" }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "\u6293\u53D6 / \u65B0\u589E / \u66F4\u65B0" }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "\u9519\u8BEF" })
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Section, { title: "\u6570\u636E\u6E90\u540C\u6B65\u8BB0\u5F55", subtitle: "\u5931\u8D25\u65F6\u4FDD\u7559\u6700\u540E\u4E00\u6B21\u6709\u6548\u6570\u636E", children: data.syncRuns.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u540C\u6B65\u8BB0\u5F55" }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "ac-table-wrap", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("table", { className: "ac-table", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "\u65F6\u95F4" }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "\u6765\u6E90" }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "\u72B6\u6001" }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "\u6293\u53D6 / \u65B0\u589E / \u66F4\u65B0" }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "\u9519\u8BEF" })
         ] }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("tbody", { children: data.syncRuns.map((run) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: formatDateTimeOrDash(run.finishedAt ?? run.startedAt, timeZone) }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: run.sourceId }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("tbody", { children: data.syncRuns.map((run) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: formatDateTimeOrDash(run.finishedAt ?? run.startedAt, timeZone) }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: run.sourceId }),
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
             Badge,
             {
               tone: run.status === "success" ? "ok" : run.status === "failed" || run.status === "auth-required" ? "bad" : "warn",
               children: syncStatusLabel(run.status)
             }
           ) }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("td", { children: [
             run.itemsSeen,
             " / ",
             run.created,
             " / ",
             run.updated
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: run.errorMessage ?? "\u2014" })
+          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: run.errorMessage ?? "\u2014" })
         ] }, run.runId)) })
       ] }) }) })
     ] })
@@ -4651,8 +5728,8 @@ function AutomationPage({ ctx, active }) {
 }
 
 // packages/academic-dsh-ui/src/client/pages/SettingsPage.tsx
-var import_react8 = require("react");
-var import_jsx_runtime7 = require("react/jsx-runtime");
+var import_react9 = require("react");
+var import_jsx_runtime8 = require("react/jsx-runtime");
 var WEEKDAYS = [
   { value: 1, label: "\u5468\u4E00" },
   { value: 2, label: "\u5468\u4E8C" },
@@ -4673,7 +5750,7 @@ function newTemporaryBlock(start, end, title) {
   };
 }
 function SettingsPage({ ctx, active, onNavigate }) {
-  const load = (0, import_react8.useCallback)(
+  const load = (0, import_react9.useCallback)(
     (signal) => callApi(ctx, "settings", {}, signal),
     [ctx]
   );
@@ -4681,19 +5758,20 @@ function SettingsPage({ ctx, active, onNavigate }) {
   const action = useAction(refresh);
   const data = state.data;
   const view = viewState(state);
-  const initialized = (0, import_react8.useRef)(false);
-  const [timeZone, setTimeZone] = (0, import_react8.useState)("");
-  const [granularity, setGranularity] = (0, import_react8.useState)("15");
-  const [slots, setSlots] = (0, import_react8.useState)([]);
-  const [blocks, setBlocks] = (0, import_react8.useState)([]);
-  const [blockStart, setBlockStart] = (0, import_react8.useState)("");
-  const [blockEnd, setBlockEnd] = (0, import_react8.useState)("");
-  const [blockTitle, setBlockTitle] = (0, import_react8.useState)("");
-  const [interval, setIntervalMinutes] = (0, import_react8.useState)("60");
-  const [coursePriorities, setCoursePriorities] = (0, import_react8.useState)({});
-  const [agentAdapterAutomation, setAgentAdapterAutomation] = (0, import_react8.useState)(false);
-  const [dirty, setDirty] = (0, import_react8.useState)(false);
-  (0, import_react8.useEffect)(() => {
+  const initialized = (0, import_react9.useRef)(false);
+  const [timeZone, setTimeZone] = (0, import_react9.useState)("");
+  const [granularity, setGranularity] = (0, import_react9.useState)("15");
+  const [slots, setSlots] = (0, import_react9.useState)([]);
+  const [blocks, setBlocks] = (0, import_react9.useState)([]);
+  const [blockStart, setBlockStart] = (0, import_react9.useState)("");
+  const [blockEnd, setBlockEnd] = (0, import_react9.useState)("");
+  const [blockTitle, setBlockTitle] = (0, import_react9.useState)("");
+  const [interval, setIntervalMinutes] = (0, import_react9.useState)("60");
+  const [coursePriorities, setCoursePriorities] = (0, import_react9.useState)({});
+  const [agentAdapterAutomation, setAgentAdapterAutomation] = (0, import_react9.useState)(false);
+  const [dirty, setDirty] = (0, import_react9.useState)(false);
+  const [mergingCourses, setMergingCourses] = (0, import_react9.useState)(false);
+  (0, import_react9.useEffect)(() => {
     if (!data || initialized.current) return;
     initialized.current = true;
     setTimeZone(data.availability.timeZone);
@@ -4730,6 +5808,21 @@ function SettingsPage({ ctx, active, onNavigate }) {
       intervalMinutes: Math.round(minutes)
     });
   };
+  const mergeCourses = async () => {
+    setMergingCourses(true);
+    const result = await callApi(ctx, "mergeDuplicateCourses", {});
+    setMergingCourses(false);
+    if (!result.ok) {
+      action.setNotice({ tone: "error", text: result.error.message });
+      return;
+    }
+    const summary = result.value;
+    action.setNotice({
+      tone: "ok",
+      text: summary.mergedCourses === 0 ? "\u6CA1\u6709\u9700\u8981\u5408\u5E76\u7684\u540C\u5B66\u671F\u540C\u540D\u8BFE\u7A0B" : `\u5DF2\u5408\u5E76 ${summary.mergedCourses} \u95E8\u91CD\u590D\u8BFE\u7A0B\uFF1B\u8FC1\u79FB ${summary.movedItems} \u4E2A\u4E8B\u9879\u3001${summary.movedMaterials} \u4EFD\u8D44\u6599`
+    });
+    await refresh();
+  };
   const savePreferences = async () => callApi(ctx, "updatePreferences", {
     coursePriorities,
     agentAdapterAutomation
@@ -4747,8 +5840,8 @@ function SettingsPage({ ctx, active, onNavigate }) {
     setBlockTitle("");
     setDirty(true);
   };
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
       StateBanner,
       {
         state: view,
@@ -4757,19 +5850,19 @@ function SettingsPage({ ctx, active, onNavigate }) {
         onRetry: () => void refresh()
       }
     ),
-    action.notice && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) }),
-    !data && state.loading && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(LoadingLine, { children: "\u6B63\u5728\u8BFB\u53D6\u8BBE\u7F6E\u2026" }),
-    data && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_jsx_runtime7.Fragment, { children: [
-      !data.plannerAvailable && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "ac-banner ac-banner-warn", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("strong", { children: "Planner \u5F53\u524D\u4E0D\u53EF\u7528" }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { children: "\u53EF\u4EE5\u4FDD\u5B58\u53EF\u7528\u65F6\u95F4\uFF1B\u751F\u6210\u8BA1\u5212\u548C\u5019\u9009\u9700\u8981\u91CD\u65B0\u52A0\u8F7D Planner \u63D2\u4EF6\u3002" })
+    action.notice && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NoticeBar, { notice: action.notice, onDismiss: () => action.setNotice(void 0) }),
+    !data && state.loading && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(LoadingLine, { children: "\u6B63\u5728\u8BFB\u53D6\u8BBE\u7F6E\u2026" }),
+    data && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+      !data.plannerAvailable && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "ac-banner ac-banner-warn", role: "status", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("strong", { children: "Planner \u5F53\u524D\u4E0D\u53EF\u7528" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { children: "\u53EF\u4EE5\u4FDD\u5B58\u53EF\u7528\u65F6\u95F4\uFF1B\u751F\u6210\u8BA1\u5212\u548C\u5019\u9009\u9700\u8981\u91CD\u65B0\u52A0\u8F7D Planner \u63D2\u4EF6\u3002" })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
         Section,
         {
           title: "\u5B66\u4E60\u65F6\u95F4",
           subtitle: "Planner \u4E0D\u4F1A\u9ED8\u8BA4\u5168\u5929\u53EF\u7528\uFF1B\u4EE5\u4E0B\u8BBE\u7F6E\u4F1A\u6301\u4E45\u5316\u5230 Host",
-          children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+          children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
             "form",
             {
               className: "ac-form-card",
@@ -4778,8 +5871,8 @@ function SettingsPage({ ctx, active, onNavigate }) {
                 void action.run("availability", saveAvailability, "\u53EF\u7528\u65F6\u95F4\u5DF2\u4FDD\u5B58");
               },
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-form-grid", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Field, { label: "IANA \u65F6\u533A", hint: "\u4F8B\u5982 Asia/Shanghai", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "ac-form-grid", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Field, { label: "IANA \u65F6\u533A", hint: "\u4F8B\u5982 Asia/Shanghai", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                     "input",
                     {
                       value: timeZone,
@@ -4790,7 +5883,7 @@ function SettingsPage({ ctx, active, onNavigate }) {
                       required: true
                     }
                   ) }),
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Field, { label: "\u8BA1\u5212\u7C92\u5EA6\uFF08\u5206\u949F\uFF09", hint: "5\u201360 \u5206\u949F", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Field, { label: "\u8BA1\u5212\u7C92\u5EA6\uFF08\u5206\u949F\uFF09", hint: "5\u201360 \u5206\u949F", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                     "input",
                     {
                       type: "number",
@@ -4804,10 +5897,10 @@ function SettingsPage({ ctx, active, onNavigate }) {
                     }
                   ) })
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-subsection", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("h3", { children: "\u6BCF\u5468\u53EF\u7528\u65F6\u6BB5" }),
-                  slots.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u53EF\u7528\u65F6\u6BB5", children: "\u6CA1\u6709\u53EF\u7528\u65F6\u6BB5\u65F6 Planner \u4E0D\u4F1A\u81EA\u884C\u628A\u5168\u5929\u89C6\u4E3A\u53EF\u7528\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("ul", { className: "ac-slot-list", children: slots.map((slot, index) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("li", { className: "ac-slot-row", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "ac-subsection", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "\u6BCF\u5468\u53EF\u7528\u65F6\u6BB5" }),
+                  slots.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u53EF\u7528\u65F6\u6BB5", children: "\u6CA1\u6709\u53EF\u7528\u65F6\u6BB5\u65F6 Planner \u4E0D\u4F1A\u81EA\u884C\u628A\u5168\u5929\u89C6\u4E3A\u53EF\u7528\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("ul", { className: "ac-slot-list", children: slots.map((slot, index) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("li", { className: "ac-slot-row", children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                       "select",
                       {
                         "aria-label": "\u661F\u671F",
@@ -4821,10 +5914,10 @@ function SettingsPage({ ctx, active, onNavigate }) {
                           );
                           setDirty(true);
                         },
-                        children: WEEKDAYS.map((day) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("option", { value: day.value, children: day.label }, day.value))
+                        children: WEEKDAYS.map((day) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("option", { value: day.value, children: day.label }, day.value))
                       }
                     ),
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                       "input",
                       {
                         "aria-label": "\u5F00\u59CB\u65F6\u95F4",
@@ -4841,8 +5934,8 @@ function SettingsPage({ ctx, active, onNavigate }) {
                         }
                       }
                     ),
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "ac-muted", children: "\u81F3" }),
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "ac-muted", children: "\u81F3" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                       "input",
                       {
                         "aria-label": "\u7ED3\u675F\u65F6\u95F4",
@@ -4859,7 +5952,7 @@ function SettingsPage({ ctx, active, onNavigate }) {
                         }
                       }
                     ),
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                       "button",
                       {
                         type: "button",
@@ -4872,7 +5965,7 @@ function SettingsPage({ ctx, active, onNavigate }) {
                       }
                     )
                   ] }, `${slot.weekday}:${slot.start}:${slot.end}:${index}`)) }),
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                     "button",
                     {
                       type: "button",
@@ -4885,19 +5978,19 @@ function SettingsPage({ ctx, active, onNavigate }) {
                     }
                   )
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-subsection", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("h3", { children: "\u4E34\u65F6\u4E0D\u53EF\u7528\u65F6\u95F4" }),
-                  blocks.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { className: "ac-muted", children: "\u6CA1\u6709\u4E34\u65F6\u4E0D\u53EF\u7528\u65F6\u95F4\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("ul", { className: "ac-list", children: blocks.map((block) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("li", { className: "ac-list-row", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
-                      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("strong", { children: block.title ?? "\u4E34\u65F6\u4E0D\u53EF\u7528" }),
-                      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "ac-muted", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "ac-subsection", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "\u4E34\u65F6\u4E0D\u53EF\u7528\u65F6\u95F4" }),
+                  blocks.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "ac-muted", children: "\u6CA1\u6709\u4E34\u65F6\u4E0D\u53EF\u7528\u65F6\u95F4\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("ul", { className: "ac-list", children: blocks.map((block) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("li", { className: "ac-list-row", children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("strong", { children: block.title ?? "\u4E34\u65F6\u4E0D\u53EF\u7528" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { className: "ac-muted", children: [
                         formatDateTimeOrDash(block.start, timeZone),
                         " \u2014",
                         " ",
                         formatDateTimeOrDash(block.end, timeZone)
                       ] })
                     ] }),
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                       "button",
                       {
                         type: "button",
@@ -4910,8 +6003,8 @@ function SettingsPage({ ctx, active, onNavigate }) {
                       }
                     )
                   ] }, block.id)) }),
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-form-grid", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Field, { label: "\u5F00\u59CB\uFF08\u6D4F\u89C8\u5668\u672C\u5730\u65F6\u95F4\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "ac-form-grid", children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Field, { label: "\u5F00\u59CB\uFF08\u6D4F\u89C8\u5668\u672C\u5730\u65F6\u95F4\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                       "input",
                       {
                         type: "datetime-local",
@@ -4919,7 +6012,7 @@ function SettingsPage({ ctx, active, onNavigate }) {
                         onChange: (event) => setBlockStart(event.target.value)
                       }
                     ) }),
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Field, { label: "\u7ED3\u675F\uFF08\u6D4F\u89C8\u5668\u672C\u5730\u65F6\u95F4\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Field, { label: "\u7ED3\u675F\uFF08\u6D4F\u89C8\u5668\u672C\u5730\u65F6\u95F4\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                       "input",
                       {
                         type: "datetime-local",
@@ -4927,7 +6020,7 @@ function SettingsPage({ ctx, active, onNavigate }) {
                         onChange: (event) => setBlockEnd(event.target.value)
                       }
                     ) }),
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Field, { label: "\u8BF4\u660E\uFF08\u53EF\u9009\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Field, { label: "\u8BF4\u660E\uFF08\u53EF\u9009\uFF09", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                       "input",
                       {
                         value: blockTitle,
@@ -4936,18 +6029,18 @@ function SettingsPage({ ctx, active, onNavigate }) {
                       }
                     ) })
                   ] }),
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { type: "button", className: "ac-button", onClick: addTemporary, children: "\u6DFB\u52A0\u4E34\u65F6\u4E0D\u53EF\u7528" })
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { type: "button", className: "ac-button", onClick: addTemporary, children: "\u6DFB\u52A0\u4E34\u65F6\u4E0D\u53EF\u7528" })
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-form-actions", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { type: "submit", className: "ac-button ac-button-primary", disabled: action.pending !== void 0, children: action.pending === "availability" ? "\u4FDD\u5B58\u4E2D\u2026" : "\u4FDD\u5B58\u53EF\u7528\u65F6\u95F4" }),
-                  dirty && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "ac-muted", children: "\u6709\u672A\u4FDD\u5B58\u7684\u4FEE\u6539" })
+                /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "ac-form-actions", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { type: "submit", className: "ac-button ac-button-primary", disabled: action.pending !== void 0, children: action.pending === "availability" ? "\u4FDD\u5B58\u4E2D\u2026" : "\u4FDD\u5B58\u53EF\u7528\u65F6\u95F4" }),
+                  dirty && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "ac-muted", children: "\u6709\u672A\u4FDD\u5B58\u7684\u4FEE\u6539" })
                 ] })
               ]
             }
           )
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Section, { title: "\u540C\u6B65\u5468\u671F", subtitle: "\u53EA\u4FEE\u6539\u5185\u7F6E\u540C\u6B65\u4EFB\u52A1\u7684\u5468\u671F\uFF1B\u4E0D\u4F1A\u542F\u52A8\u7B2C\u4E8C\u4EFD Runtime", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Section, { title: "\u540C\u6B65\u5468\u671F", subtitle: "\u53EA\u4FEE\u6539\u5185\u7F6E\u540C\u6B65\u4EFB\u52A1\u7684\u5468\u671F\uFF1B\u4E0D\u4F1A\u542F\u52A8\u7B2C\u4E8C\u4EFD Runtime", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
         "form",
         {
           className: "ac-form-card",
@@ -4956,7 +6049,7 @@ function SettingsPage({ ctx, active, onNavigate }) {
             void action.run("interval", saveInterval, "\u540C\u6B65\u5468\u671F\u5DF2\u4FDD\u5B58");
           },
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "ac-form-grid", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Field, { label: "\u5468\u671F\uFF08\u5206\u949F\uFF09", hint: `\u5F53\u524D\u4EFB\u52A1\uFF1A${data.sync.jobId}`, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "ac-form-grid", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Field, { label: "\u5468\u671F\uFF08\u5206\u949F\uFF09", hint: `\u5F53\u524D\u4EFB\u52A1\uFF1A${data.sync.jobId}`, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
               "input",
               {
                 type: "number",
@@ -4966,9 +6059,9 @@ function SettingsPage({ ctx, active, onNavigate }) {
                 onChange: (event) => setIntervalMinutes(event.target.value)
               }
             ) }) }),
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-form-actions", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { type: "submit", className: "ac-button", disabled: action.pending !== void 0, children: "\u4FDD\u5B58\u5468\u671F" }),
-              /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "ac-muted", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "ac-form-actions", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { type: "submit", className: "ac-button", disabled: action.pending !== void 0, children: "\u4FDD\u5B58\u5468\u671F" }),
+              /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { className: "ac-muted", children: [
                 "\u4E0B\u6B21\u6267\u884C\uFF1A",
                 formatDateTimeOrDash(data.sync.nextRunAt, data.availability.timeZone)
               ] })
@@ -4976,12 +6069,32 @@ function SettingsPage({ ctx, active, onNavigate }) {
           ]
         }
       ) }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+        Section,
+        {
+          title: "\u8BFE\u7A0B\u7EF4\u62A4",
+          subtitle: "\u540C\u4E00\u5B66\u671F\u5185\u6807\u9898\u76F8\u540C\u7684\u8BFE\u7A0B\u4F1A\u89C6\u4E3A\u540C\u4E00\u95E8\u8BFE",
+          children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "ac-form-card", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "ac-muted", children: "\u540C\u6B65\u548C\u624B\u52A8\u6DFB\u52A0\u4F1A\u590D\u7528\u540C\u5B66\u671F\u540C\u540D\u8BFE\u7A0B\u3002\u82E5\u5386\u53F2\u6570\u636E\u5DF2\u6709\u91CD\u590D\uFF0C\u53EF\u5728\u8FD9\u91CC\u5408\u5E76\u4E00\u6B21\uFF1A\u4E8B\u9879\u3001\u8D44\u6599\u548C\u8BFE\u7A0B\u4F18\u5148\u7EA7\u4F1A\u8FC1\u5230\u4FDD\u7559\u8BFE\u7A0B\uFF0C\u91CD\u590D\u8BFE\u7A0B\u968F\u540E\u5173\u95ED\u3002" }),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "ac-form-actions", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+              "button",
+              {
+                type: "button",
+                className: "ac-button",
+                disabled: mergingCourses || action.pending !== void 0,
+                onClick: () => void mergeCourses(),
+                children: mergingCourses ? "\u5408\u5E76\u4E2D\u2026" : "\u5408\u5E76\u540C\u5B66\u671F\u540C\u540D\u8BFE\u7A0B"
+              }
+            ) })
+          ] })
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
         Section,
         {
           title: "\u8BFE\u7A0B\u4F18\u5148\u7EA7",
           subtitle: "\u7528\u6237\u660E\u786E\u8BBE\u5B9A\uFF1B\u4EC5\u5728\u4EFB\u52A1\u81EA\u8EAB\u4F18\u5148\u7EA7\u76F8\u540C\u65F6\u5F71\u54CD\u8BA1\u5212\u6392\u5E8F",
-          children: data.preferences.courses.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u8BFE\u7A0B", children: "\u6DFB\u52A0\u8BFE\u7A0B\u540E\u53EF\u8BBE\u7F6E\u4F18\u5148\u7EA7\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+          children: data.preferences.courses.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(EmptyState, { title: "\u8FD8\u6CA1\u6709\u8BFE\u7A0B", children: "\u6DFB\u52A0\u8BFE\u7A0B\u540E\u53EF\u8BBE\u7F6E\u4F18\u5148\u7EA7\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
             "form",
             {
               className: "ac-form-card",
@@ -4994,16 +6107,16 @@ function SettingsPage({ ctx, active, onNavigate }) {
                 );
               },
               children: [
-                data.preferences.courses.map((course) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-inline-bar", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("strong", { children: [
+                data.preferences.courses.map((course) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "ac-inline-bar", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("strong", { children: [
                       course.code,
                       " ",
                       course.title
                     ] }),
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "ac-muted", children: course.courseId })
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "ac-muted", children: course.courseId })
                   ] }),
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
                     "select",
                     {
                       value: coursePriorities[course.courseId] ?? 0,
@@ -5012,16 +6125,16 @@ function SettingsPage({ ctx, active, onNavigate }) {
                         [course.courseId]: Number(event.target.value)
                       })),
                       children: [
-                        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("option", { value: 0, children: "0 \xB7 \u666E\u901A" }),
-                        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("option", { value: 1, children: "1 \xB7 \u8F83\u9AD8" }),
-                        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("option", { value: 2, children: "2 \xB7 \u9AD8" }),
-                        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("option", { value: 3, children: "3 \xB7 \u6700\u9AD8" })
+                        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("option", { value: 0, children: "0 \xB7 \u666E\u901A" }),
+                        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("option", { value: 1, children: "1 \xB7 \u8F83\u9AD8" }),
+                        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("option", { value: 2, children: "2 \xB7 \u9AD8" }),
+                        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("option", { value: 3, children: "3 \xB7 \u6700\u9AD8" })
                       ]
                     }
                   )
                 ] }, course.courseId)),
-                /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-form-actions", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "ac-form-actions", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                     "button",
                     {
                       type: "submit",
@@ -5030,7 +6143,7 @@ function SettingsPage({ ctx, active, onNavigate }) {
                       children: action.pending === "preferences" ? "\u4FDD\u5B58\u4E2D\u2026" : "\u4FDD\u5B58\u8BFE\u7A0B\u4F18\u5148\u7EA7"
                     }
                   ),
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "ac-muted", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { className: "ac-muted", children: [
                     "\u66F4\u65B0\u4E8E ",
                     formatDateTimeOrDash(data.preferences.updatedAt, data.availability.timeZone)
                   ] })
@@ -5040,12 +6153,12 @@ function SettingsPage({ ctx, active, onNavigate }) {
           )
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
         Section,
         {
           title: "Agent \u81EA\u52A8\u63A5\u5165",
           subtitle: "\u4E00\u6B21\u6027\u5F00\u542F\uFF1B\u4E0D\u9700\u8981\u9010\u4E2A\u5019\u9009\u70B9\u51FB\u5BA1\u6838",
-          children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+          children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
             "form",
             {
               className: "ac-form-card",
@@ -5058,8 +6171,8 @@ function SettingsPage({ ctx, active, onNavigate }) {
                 );
               },
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("label", { className: "ac-inline-bar", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { className: "ac-inline-bar", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                     "input",
                     {
                       type: "checkbox",
@@ -5067,12 +6180,12 @@ function SettingsPage({ ctx, active, onNavigate }) {
                       onChange: (event) => setAgentAdapterAutomation(event.target.checked)
                     }
                   ),
-                  /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("strong", { children: "\u5141\u8BB8 Agent \u81EA\u52A8\u542F\u7528\u5DF2\u9A8C\u8BC1 Adapter \u5E76\u540C\u6B65\u5176\u58F0\u660E\u5F0F\u6570\u636E\u6E90" }),
-                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "ac-muted", children: "\u4ECD\u4E0D\u80FD\u542F\u7528\u672A\u9A8C\u8BC1\u5019\u9009\u3001\u8BFB\u53D6\u51ED\u636E\u3001\u63D0\u4EA4\u4F5C\u4E1A\u6216\u4FEE\u6539\u5B66\u6821\u5E73\u53F0\uFF1B \u5173\u95ED\u540E\u6062\u590D\u9010\u6B21\u5BA1\u6838\u3002" })
+                  /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("strong", { children: "\u5141\u8BB8 Agent \u81EA\u52A8\u542F\u7528\u5DF2\u9A8C\u8BC1 Adapter \u5E76\u540C\u6B65\u5176\u58F0\u660E\u5F0F\u6570\u636E\u6E90" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "ac-muted", children: "\u4ECD\u4E0D\u80FD\u542F\u7528\u672A\u9A8C\u8BC1\u5019\u9009\u3001\u8BFB\u53D6\u51ED\u636E\u3001\u63D0\u4EA4\u4F5C\u4E1A\u6216\u4FEE\u6539\u5B66\u6821\u5E73\u53F0\uFF1B \u5173\u95ED\u540E\u6062\u590D\u9010\u6B21\u5BA1\u6838\u3002" })
                   ] })
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "ac-form-actions", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "ac-form-actions", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
                   "button",
                   {
                     type: "submit",
@@ -5086,33 +6199,33 @@ function SettingsPage({ ctx, active, onNavigate }) {
           )
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Section, { title: "\u63D0\u9192", subtitle: "\u9608\u503C\u4E0E\u672A\u8BFB\u63D0\u9192\u5728\u81EA\u52A8\u5316\u9875\u7BA1\u7406", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "ac-inline-bar", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Badge, { tone: data.reminders.enabled ? "ok" : "warn", children: data.reminders.enabled ? "\u63D0\u9192\u5DF2\u542F\u7528" : "\u63D0\u9192\u5DF2\u5173\u95ED" }),
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "ac-muted", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Section, { title: "\u63D0\u9192", subtitle: "\u9608\u503C\u4E0E\u672A\u8BFB\u63D0\u9192\u5728\u81EA\u52A8\u5316\u9875\u7BA1\u7406", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "ac-inline-bar", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Badge, { tone: data.reminders.enabled ? "ok" : "warn", children: data.reminders.enabled ? "\u63D0\u9192\u5DF2\u542F\u7528" : "\u63D0\u9192\u5DF2\u5173\u95ED" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { className: "ac-muted", children: [
             "\u9608\u503C\uFF1A",
             data.reminders.thresholdsHours.slice().sort((a, b) => b - a).map((hours) => `${hours}h`).join(" / ")
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { type: "button", className: "ac-button", onClick: () => onNavigate("automation"), children: "\u6253\u5F00\u81EA\u52A8\u5316" })
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { type: "button", className: "ac-button", onClick: () => onNavigate("automation"), children: "\u6253\u5F00\u81EA\u52A8\u5316" })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
         Section,
         {
           title: "\u5DF2\u52A0\u8F7D\u80FD\u529B",
           subtitle: "\u53EA\u8BFB\uFF1B\u542F\u505C\u7531\u63D2\u4EF6\u751F\u547D\u5468\u671F\u63A7\u5236\uFF0C\u505C\u7528\u540E\u76F8\u5173\u64CD\u4F5C\u8FD4\u56DE CAPABILITY_UNAVAILABLE",
-          children: data.capabilities.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(EmptyState, { title: "\u6CA1\u6709\u5DF2\u6CE8\u518C\u80FD\u529B", children: "\u68C0\u67E5 Host \u63D2\u4EF6\u662F\u5426\u52A0\u8F7D\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("ul", { className: "ac-list", children: data.capabilities.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("li", { className: "ac-list-row", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("strong", { children: [
+          children: data.capabilities.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(EmptyState, { title: "\u6CA1\u6709\u5DF2\u6CE8\u518C\u80FD\u529B", children: "\u68C0\u67E5 Host \u63D2\u4EF6\u662F\u5426\u52A0\u8F7D\u3002" }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("ul", { className: "ac-list", children: data.capabilities.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("li", { className: "ac-list-row", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("strong", { children: [
               entry.id,
               " \xB7 ",
               entry.version
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "ac-muted", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { className: "ac-muted", children: [
               entry.kind,
               " \xB7 \u63D0\u4F9B\u65B9 ",
               entry.providerPlugin
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "ac-muted", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { className: "ac-muted", children: [
               "\u80FD\u529B\uFF1A",
               entry.capabilities.join("\u3001") || "\u2014",
               " \xB7 \u6743\u9650\uFF1A",
@@ -5121,9 +6234,9 @@ function SettingsPage({ ctx, active, onNavigate }) {
           ] }) }, entry.id)) })
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(Section, { title: "\u754C\u9762\u504F\u597D", subtitle: "\u53EA\u4FDD\u5B58\u975E\u654F\u611F UI \u504F\u597D", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { className: "ac-muted", children: "\u5F53\u524D\u9875\u9762\u548C\u7B5B\u9009\u7B49\u7EAF\u754C\u9762\u504F\u597D\u4FDD\u5B58\u5728\u672C\u673A\u6D4F\u89C8\u5668\uFF1B\u8BFE\u7A0B\u3001\u4EFB\u52A1\u3001\u8BA1\u5212\u3001\u53EF\u7528\u65F6\u95F4\u4E0E\u51ED\u636E\u4E0D\u4F1A\u4FDD\u5B58\u5728\u6D4F\u89C8\u5668\u5B58\u50A8\u3002" }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(Section, { title: "\u754C\u9762\u504F\u597D", subtitle: "\u53EA\u4FDD\u5B58\u975E\u654F\u611F UI \u504F\u597D", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "ac-muted", children: "\u5F53\u524D\u9875\u9762\u548C\u7B5B\u9009\u7B49\u7EAF\u754C\u9762\u504F\u597D\u4FDD\u5B58\u5728\u672C\u673A\u6D4F\u89C8\u5668\uFF1B\u8BFE\u7A0B\u3001\u4EFB\u52A1\u3001\u8BA1\u5212\u3001\u53EF\u7528\u65F6\u95F4\u4E0E\u51ED\u636E\u4E0D\u4F1A\u4FDD\u5B58\u5728\u6D4F\u89C8\u5668\u5B58\u50A8\u3002" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
           "button",
           {
             type: "button",
@@ -5144,7 +6257,7 @@ function SettingsPage({ ctx, active, onNavigate }) {
 }
 
 // packages/academic-dsh-ui/src/client/index.tsx
-var import_jsx_runtime8 = require("react/jsx-runtime");
+var import_jsx_runtime9 = require("react/jsx-runtime");
 var name = "academic-ui";
 var inject = ["slots", "connection"];
 var PANEL_ID = "academic";
@@ -5154,6 +6267,7 @@ var TABS = [
   { id: "tasks", label: "\u4EFB\u52A1" },
   { id: "plan", label: "\u8BA1\u5212" },
   { id: "connections", label: "\u8FDE\u63A5" },
+  { id: "materials", label: "\u8D44\u6599" },
   { id: "automation", label: "\u81EA\u52A8\u5316" },
   { id: "settings", label: "\u8BBE\u7F6E" }
 ];
@@ -5172,7 +6286,7 @@ function writeTab(tab) {
   }
 }
 function AcademicIcon({ size = 18 }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(
     "svg",
     {
       width: size,
@@ -5185,18 +6299,18 @@ function AcademicIcon({ size = 18 }) {
       strokeLinejoin: "round",
       "aria-hidden": "true",
       children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("path", { d: "M3 7.5 12 3l9 4.5-9 4.5-9-4.5Z" }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("path", { d: "M6 9.5V15c0 1.7 2.7 3 6 3s6-1.3 6-3V9.5" }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("path", { d: "M21 7.5V14" })
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("path", { d: "M3 7.5 12 3l9 4.5-9 4.5-9-4.5Z" }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("path", { d: "M6 9.5V15c0 1.7 2.7 3 6 3s6-1.3 6-3V9.5" }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("path", { d: "M21 7.5V14" })
       ]
     }
   );
 }
 function AcademicPanel({ ctx }) {
-  const [tab, setTab] = (0, import_react9.useState)(() => readTab());
-  const [status, setStatus] = (0, import_react9.useState)();
-  const [statusError, setStatusError] = (0, import_react9.useState)();
-  const loadStatus = (0, import_react9.useCallback)(async () => {
+  const [tab, setTab] = (0, import_react10.useState)(() => readTab());
+  const [status, setStatus] = (0, import_react10.useState)();
+  const [statusError, setStatusError] = (0, import_react10.useState)();
+  const loadStatus = (0, import_react10.useCallback)(async () => {
     const result = await callApi(ctx, "status");
     if (result.ok) {
       setStatus(result.value);
@@ -5206,17 +6320,17 @@ function AcademicPanel({ ctx }) {
       setStatusError(result.error.message);
     }
   }, [ctx]);
-  (0, import_react9.useEffect)(() => {
+  (0, import_react10.useEffect)(() => {
     void loadStatus();
   }, [loadStatus]);
-  (0, import_react9.useEffect)(() => {
+  (0, import_react10.useEffect)(() => {
     if (!statusError) return void 0;
     const timer = window.setTimeout(() => {
       if (document.visibilityState === "visible") void loadStatus();
     }, 5e3);
     return () => window.clearTimeout(timer);
   }, [loadStatus, statusError]);
-  (0, import_react9.useEffect)(() => {
+  (0, import_react10.useEffect)(() => {
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void loadStatus();
     }, 15e3);
@@ -5227,16 +6341,16 @@ function AcademicPanel({ ctx }) {
     writeTab(next);
   };
   const pageProps = { ctx, active: true, onNavigate: navigate };
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "ac-shell", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("header", { className: "ac-header", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h1", { children: "\u5B66\u4E1A" }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { children: "\u8BFE\u7A0B\u3001\u4EFB\u52A1\u3001\u8BA1\u5212\u4E0E\u6570\u636E\u6E90" })
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "ac-shell", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("header", { className: "ac-header", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h1", { children: "\u5B66\u4E1A" }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { children: "\u8BFE\u7A0B\u3001\u4EFB\u52A1\u3001\u8BA1\u5212\u4E0E\u6570\u636E\u6E90" })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "ac-header-actions", children: [
-        status && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Badge, { tone: status.plannerAvailable ? "ok" : "warn", children: status.plannerAvailable ? "Host \u5DF2\u8FDE\u63A5" : "\u89C4\u5212\u80FD\u529B\u672A\u52A0\u8F7D" }),
-        !status && statusError && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Badge, { tone: "bad", children: "Host \u4E0D\u53EF\u7528" }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "ac-header-actions", children: [
+        status && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Badge, { tone: status.plannerAvailable ? "ok" : "warn", children: status.plannerAvailable ? "Host \u5DF2\u8FDE\u63A5" : "\u89C4\u5212\u80FD\u529B\u672A\u52A0\u8F7D" }),
+        !status && statusError && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Badge, { tone: "bad", children: "Host \u4E0D\u53EF\u7528" }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
           "button",
           {
             type: "button",
@@ -5252,7 +6366,7 @@ function AcademicPanel({ ctx }) {
         )
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("nav", { className: "ac-tabs", role: "tablist", "aria-label": "\u5B66\u4E1A\u9875\u9762", children: TABS.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("nav", { className: "ac-tabs", role: "tablist", "aria-label": "\u5B66\u4E1A\u9875\u9762", children: TABS.map((entry) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
       "button",
       {
         type: "button",
@@ -5264,13 +6378,14 @@ function AcademicPanel({ ctx }) {
       },
       entry.id
     )) }),
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("main", { className: "ac-panel", role: "tabpanel", "aria-label": TABS.find((entry) => entry.id === tab)?.label, children: [
-      tab === "dashboard" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(DashboardPage, { ...pageProps }),
-      tab === "tasks" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(TasksPage, { ...pageProps }),
-      tab === "plan" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(PlanPage, { ...pageProps }),
-      tab === "connections" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ConnectionsPage, { ...pageProps }),
-      tab === "automation" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(AutomationPage, { ...pageProps }),
-      tab === "settings" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(SettingsPage, { ...pageProps })
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("main", { className: "ac-panel", role: "tabpanel", "aria-label": TABS.find((entry) => entry.id === tab)?.label, children: [
+      tab === "dashboard" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(DashboardPage, { ...pageProps }),
+      tab === "tasks" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(TasksPage, { ...pageProps }),
+      tab === "plan" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(PlanPage, { ...pageProps }),
+      tab === "connections" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ConnectionsPage, { ...pageProps }),
+      tab === "materials" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(MaterialsPage, { ...pageProps }),
+      tab === "automation" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(AutomationPage, { ...pageProps }),
+      tab === "settings" && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(SettingsPage, { ...pageProps })
     ] })
   ] });
 }
@@ -5295,7 +6410,7 @@ function apply(ctx) {
         name: "main",
         key: PANEL_ID
       },
-      () => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(AcademicPanel, { ctx })
+      () => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(AcademicPanel, { ctx })
     )
   );
 }

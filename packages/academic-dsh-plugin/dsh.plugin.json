@@ -2,7 +2,7 @@
   "id": "academic-agent",
   "version": "0.1.0",
   "main": "lib/host.js",
-  "description": "Academic Agent query and task tools for DSH. Read-only by default; writes require trusted host authorization.",
+  "description": "Academic Agent for DSH: event-sourced courses/tasks/plans, sources, materials, planning and read-only-first Agent tools. Writes require trusted host authorization.",
   "engines": {
     "dsh": ">=0.2.0-rc.1 <0.3.0-0"
   },
@@ -12,8 +12,25 @@
       "academic_list_due_items",
       "academic_get_item",
       "academic_get_study_plan",
+      "academic_list_sources",
+      "academic_list_source_engines",
+      "academic_probe_source",
+      "academic_create_source",
+      "academic_update_source",
+      "academic_list_web_sessions",
+      "academic_fetch_web_session",
+      "academic_validate_adapter_candidate",
+      "academic_list_adapter_candidates",
+      "academic_register_adapter_candidate",
+      "academic_activate_adapter_candidate",
+      "academic_preview_source_sync",
+      "academic_sync_source",
       "academic_update_task",
-      "academic_request_replan"
+      "academic_request_replan",
+      "academic_list_materials",
+      "academic_search_materials",
+      "academic_import_material",
+      "academic_delete_material"
     ],
     "skills": []
   }

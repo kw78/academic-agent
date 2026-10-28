@@ -15,5 +15,7 @@
 | [0011](0011-candidate-staging-and-unified-activation.md) | 候选暂存、统一激活与 source 级作业请求 | 已接受 |
 | [0012](0012-editable-personal-data.md) | 个人数据编辑、事件软删除/恢复与数据源彻底删除 | 已接受 |
 | [0013](0013-agent-adapter-automation.md) | 用户一次性授权的 Agent 自动接入 | 已接受 |
+| [0014](0014-course-material-library.md) | 课程资料库：文件/索引分离、FTS5 检索与受控附件导入 | 已接受 |
+| [0015](0015-course-identity-merge.md) | 同学期同名课程合并：来源别名、事项迁移与重复课程关闭 | 已接受 |
 
 新增决策时按 `NNNN-kebab-title.md` 命名，并更新本索引。已接受决策的契约不得静默修改；需要变更时新增 ADR 并说明迁移方案。

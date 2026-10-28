@@ -93,6 +93,15 @@ export interface SafeFetchResult {
   redirects: string[]
 }
 
+export interface SafeFetchBytesResult {
+  status: number
+  finalUrl: string
+  contentType?: string
+  body: Uint8Array
+  truncated: boolean
+  redirects: string[]
+}
+
 const DEFAULT_TIMEOUT_MS = 15_000
 const DEFAULT_MAX_REDIRECTS = 5
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024
@@ -455,12 +464,12 @@ function isRedirect(status: number): boolean {
   )
 }
 
-async function readBody(
+async function readBodyBytes(
   response: Response,
   finalUrl: string,
   maxBytes: number,
   signal: AbortSignal,
-): Promise<SafeFetchResult> {
+): Promise<SafeFetchBytesResult> {
   if (!response.body) {
     return {
       status: response.status,
@@ -468,7 +477,7 @@ async function readBody(
       ...(response.headers.get('content-type')
         ? { contentType: response.headers.get('content-type')! }
         : {}),
-      body: '',
+      body: new Uint8Array(0),
       truncated: false,
       redirects: [],
     }
@@ -492,8 +501,7 @@ async function readBody(
   }
 
   const reader = stream.getReader()
-  const decoder = new TextDecoder()
-  let text = ''
+  const chunks: Uint8Array[] = []
   let bytes = 0
   let truncated = false
 
@@ -505,17 +513,16 @@ async function readBody(
       const remaining = maxBytes - bytes
       if (value.byteLength > remaining) {
         if (remaining > 0) {
-          text += decoder.decode(value.subarray(0, remaining), { stream: true })
+          chunks.push(value.slice(0, remaining))
           bytes += remaining
         }
         truncated = true
         await reader.cancel().catch(() => undefined)
         break
       }
+      chunks.push(value)
       bytes += value.byteLength
-      text += decoder.decode(value, { stream: true })
     }
-    text += decoder.decode()
   } catch (error) {
     if (signal.aborted) throw new SafeFetchError('TIMEOUT', '请求超时')
     throw new SafeFetchError(
@@ -526,26 +533,28 @@ async function readBody(
     )
   }
 
+  const body = new Uint8Array(bytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
   return {
     status: response.status,
     finalUrl,
     ...(response.headers.get('content-type')
       ? { contentType: response.headers.get('content-type')! }
       : {}),
-    body: text,
+    body,
     truncated,
     redirects: [],
   }
 }
 
-/**
- * Fetch a URL with a saved session. Every hop is checked against the allowed
- * hosts and blocked network ranges; cookies are selected per URL attributes.
- */
-export async function safeFetch(
+async function fetchBytesInternal(
   input: string,
   options: SafeFetchOptions,
-): Promise<SafeFetchResult> {
+): Promise<SafeFetchBytesResult> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS
   const maxBytes = Math.max(1, options.maxBytes ?? DEFAULT_MAX_BYTES)
@@ -622,7 +631,7 @@ export async function safeFetch(
           throw new SafeFetchError('REDIRECT_LIMIT', '重定向次数超过上限')
         }
         const location = response.headers.get('location')
-        if (!location) return await readBody(response, current.toString(), maxBytes, controller.signal)
+        if (!location) return await readBodyBytes(response, current.toString(), maxBytes, controller.signal)
 
         let next: URL
         try {
@@ -639,10 +648,30 @@ export async function safeFetch(
         continue
       }
 
-      const result = await readBody(response, current.toString(), maxBytes, controller.signal)
+      const result = await readBodyBytes(response, current.toString(), maxBytes, controller.signal)
       return { ...result, redirects }
     }
   } finally {
     clearTimeout(timer)
   }
+}
+
+/** Same policy-checked fetch as safeFetch, but the body stays binary. */
+export async function safeFetchBytes(
+  input: string,
+  options: SafeFetchOptions,
+): Promise<SafeFetchBytesResult> {
+  return fetchBytesInternal(input, options)
+}
+
+/**
+ * Fetch a URL with a saved session. Every hop is checked against the allowed
+ * hosts and blocked network ranges; cookies are selected per URL attributes.
+ */
+export async function safeFetch(
+  input: string,
+  options: SafeFetchOptions,
+): Promise<SafeFetchResult> {
+  const result = await fetchBytesInternal(input, options)
+  return { ...result, body: new TextDecoder().decode(result.body) }
 }

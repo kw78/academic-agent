@@ -93,6 +93,9 @@ export const COMMAND_SCHEMAS = {
     reason: z.string().max(500).optional(),
   }),
   'academic.item.restore.v1': emptyPayloadSchema,
+  'academic.item.reassign-course.v1': z.object({
+    courseId: z.string().min(1),
+  }),
   'academic.task.create.v1': z.object({
     title: z.string().min(1),
     itemId: z.string().min(1).optional(),
@@ -146,6 +149,7 @@ export const COMMAND = {
   AcademicItemSetProgress: 'academic.item.set-progress.v1',
   AcademicItemArchive: 'academic.item.archive.v1',
   AcademicItemRestore: 'academic.item.restore.v1',
+  AcademicItemReassignCourse: 'academic.item.reassign-course.v1',
   StudyTaskCreate: 'academic.task.create.v1',
   StudyTaskChangeEstimate: 'academic.task.change-estimate.v1',
   StudyTaskChangeDetails: 'academic.task.change-details.v1',

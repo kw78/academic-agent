@@ -5,6 +5,7 @@ export type TabId =
   | 'tasks'
   | 'plan'
   | 'connections'
+  | 'materials'
   | 'automation'
   | 'settings'
 

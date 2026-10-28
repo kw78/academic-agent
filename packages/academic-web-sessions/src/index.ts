@@ -5,6 +5,7 @@ import type { Clock, IdGenerator } from '@academic/contracts'
 import {
   SafeFetchError,
   safeFetch,
+  safeFetchBytes,
   safeUrlForDisplay,
   validateCookies,
   type AllowedProtocol,
@@ -13,12 +14,20 @@ import {
   type WebCookie,
 } from './http.js'
 
-export { SafeFetchError, safeFetch, safeUrlForDisplay, validateCookies } from './http.js'
+export {
+  SafeFetchError,
+  safeFetch,
+  safeFetchBytes,
+  safeUrlForDisplay,
+  validateCookies,
+} from './http.js'
 export type {
   AllowedProtocol,
   PinnedRequest,
   PinnedTarget,
   ResolveHost,
+  SafeFetchBytesResult,
+  SafeFetchResult,
   WebCookie,
 } from './http.js'
 
@@ -41,6 +50,16 @@ export interface WebSessionFetchResult {
   status: number
   contentType?: string
   body: string
+  truncated: boolean
+}
+
+export interface WebSessionBytesResult {
+  sessionId: string
+  url: string
+  finalUrl: string
+  status: number
+  contentType?: string
+  body: Uint8Array
   truncated: boolean
 }
 
@@ -222,19 +241,10 @@ export class WebSessionStore {
   }
 
   async fetch(sessionId: string, targetUrl: string): Promise<WebSessionFetchResult> {
-    const row = this.#db
-      .prepare('SELECT * FROM web_sessions WHERE session_id = ?')
-      .get(sessionId) as unknown as WebSessionRow | undefined
-    if (!row) throw new Error('Web session not found')
-    const raw = await this.#vault.get(row.vault_ref)
-    if (!raw) throw new Error('Web session credential is unavailable')
-    const parsed = JSON.parse(raw) as { cookies?: WebCookie[] }
-    const cookies = parsed.cookies ?? []
-    if (cookies.length === 0) throw new Error('Web session has no cookies')
-
+    const cookies = await this.#loadCookies(sessionId)
     const result = await safeFetch(targetUrl, {
       cookies,
-      allowedHosts: [row.domain],
+      allowedHosts: [this.get(sessionId)!.domain],
       allowSubdomains: false,
       allowedProtocols: this.#allowedProtocols,
       ...(this.#allowedPorts ? { allowedPorts: this.#allowedPorts } : {}),
@@ -248,10 +258,7 @@ export class WebSessionStore {
       ...(this.#request ? { requestImpl: this.#request } : {}),
     })
 
-    const now = this.#clock.now()
-    this.#db
-      .prepare('UPDATE web_sessions SET last_used_at = ?, updated_at = ? WHERE session_id = ?')
-      .run(now, now, sessionId)
+    this.#touch(sessionId)
     return {
       sessionId,
       url: safeUrlForDisplay(targetUrl),
@@ -261,6 +268,66 @@ export class WebSessionStore {
       body: result.body,
       truncated: result.truncated,
     }
+  }
+
+  async fetchBytes(
+    sessionId: string,
+    targetUrl: string,
+    options: { maxBytes?: number; timeoutMs?: number } = {},
+  ): Promise<WebSessionBytesResult> {
+    const session = this.get(sessionId)
+    if (!session) throw new Error('Web session not found')
+    const cookies = await this.#loadCookies(sessionId)
+    const result = await safeFetchBytes(targetUrl, {
+      cookies,
+      allowedHosts: [session.domain],
+      allowSubdomains: false,
+      allowedProtocols: this.#allowedProtocols,
+      ...(this.#allowedPorts ? { allowedPorts: this.#allowedPorts } : {}),
+      ...(this.#allowedPathPrefixes
+        ? { allowedPathPrefixes: this.#allowedPathPrefixes }
+        : {}),
+      ...(this.#resolveHost ? { resolveHost: this.#resolveHost } : {}),
+      ...(options.timeoutMs ?? this.#timeoutMs
+        ? { timeoutMs: options.timeoutMs ?? this.#timeoutMs }
+        : {}),
+      ...(options.maxBytes ?? this.#maxBytes
+        ? { maxBytes: options.maxBytes ?? this.#maxBytes }
+        : {}),
+      ...(this.#fetch ? { fetchImpl: this.#fetch } : {}),
+      ...(this.#request ? { requestImpl: this.#request } : {}),
+    })
+
+    this.#touch(sessionId)
+    return {
+      sessionId,
+      url: safeUrlForDisplay(targetUrl),
+      finalUrl: safeUrlForDisplay(result.finalUrl),
+      status: result.status,
+      ...(result.contentType ? { contentType: result.contentType } : {}),
+      body: result.body,
+      truncated: result.truncated,
+    }
+  }
+
+  async #loadCookies(sessionId: string): Promise<WebCookie[]> {
+    const row = this.#db
+      .prepare('SELECT * FROM web_sessions WHERE session_id = ?')
+      .get(sessionId) as unknown as WebSessionRow | undefined
+    if (!row) throw new Error('Web session not found')
+    const raw = await this.#vault.get(row.vault_ref)
+    if (!raw) throw new Error('Web session credential is unavailable')
+    const parsed = JSON.parse(raw) as { cookies?: WebCookie[] }
+    const cookies = parsed.cookies ?? []
+    if (cookies.length === 0) throw new Error('Web session has no cookies')
+    return cookies
+  }
+
+  #touch(sessionId: string): void {
+    const now = this.#clock.now()
+    this.#db
+      .prepare('UPDATE web_sessions SET last_used_at = ?, updated_at = ? WHERE session_id = ?')
+      .run(now, now, sessionId)
   }
 }
 

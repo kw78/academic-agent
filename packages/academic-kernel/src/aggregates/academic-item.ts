@@ -100,6 +100,13 @@ export const academicItemHandler: AggregateHandler<AcademicItemState> = {
           updatedAt: event.occurredAt,
           version: event.streamVersion,
         }
+      case EVENT.AcademicItemCourseChanged:
+        return {
+          ...state,
+          courseId: event.payload.to,
+          updatedAt: event.occurredAt,
+          version: event.streamVersion,
+        }
       default:
         throw new Error(`Unexpected academic item event: ${event.type}`)
     }
@@ -173,6 +180,15 @@ export const academicItemHandler: AggregateHandler<AcademicItemState> = {
         return accepted({
           type: EVENT.AcademicItemProgressChanged,
           payload: { progress: next },
+        })
+      }
+
+      case COMMAND.AcademicItemReassignCourse: {
+        if (state.version === 0) return rejected('NOT_FOUND', 'Academic item does not exist')
+        if (state.courseId === command.payload.courseId) return accepted()
+        return accepted({
+          type: EVENT.AcademicItemCourseChanged,
+          payload: { from: state.courseId, to: command.payload.courseId },
         })
       }
 

@@ -5,6 +5,7 @@ import {
   findAssignmentsAreaUrl,
   findContentAreaUrls,
   isLoginPage,
+  normalizeTermId,
   parseAssessmentDetail,
   parseAssignmentDetail,
   parseAssignmentLinks,
@@ -44,6 +45,24 @@ describe('Blackboard HTML parsing', () => {
     const limited = parseCourseLinks(html, { baseUrl: BASE, maxCourses: 1 })
     expect(limited.courses).toHaveLength(1)
     expect(limited.truncated).toBe(true)
+  })
+
+  it('normalizes term codes and accepts either vocabulary in termFilter', () => {
+    expect(normalizeTermId('2026FA')).toBe('2026-fall')
+    expect(normalizeTermId('2026SP')).toBe('2026-spring')
+    expect(normalizeTermId('2025SU')).toBe('2025-summer')
+    expect(normalizeTermId('2027WI')).toBe('2027-winter')
+    expect(normalizeTermId('2026-fall')).toBe('2026-fall')
+    expect(normalizeTermId('2026Fall')).toBe('2026Fall')
+
+    const html = fixture('portal.html')
+    for (const filter of ['2026FA', '2026-fall']) {
+      const filtered = parseCourseLinks(html, { baseUrl: BASE, termFilter: [filter] })
+      expect(filtered.courses.map((course) => course.title)).toEqual(['Data Structures'])
+    }
+    expect(
+      parseCourseLinks(html, { baseUrl: BASE, termFilter: ['2026SP'] }).courses,
+    ).toHaveLength(0)
   })
 
   it('finds the assignments area and deduplicates assignment links', () => {
@@ -234,6 +253,27 @@ describe('Blackboard HTML parsing', () => {
     expect(parseDue('2026-11-02T07:49', 'Asia/Shanghai', 480)).toEqual({
       kind: 'instant',
       utc: '2026-11-01T23:49:00.000Z',
+      zone: 'Asia/Shanghai',
+    })
+    // Blackboard 也可能输出不补零的日期或美式数字日期。
+    expect(parseDue('2026-11-2 7:49', 'Asia/Shanghai', 480)).toEqual({
+      kind: 'instant',
+      utc: '2026-11-01T23:49:00.000Z',
+      zone: 'Asia/Shanghai',
+    })
+    expect(parseDue('2026/11/2 07:49', 'Asia/Shanghai', 480)).toEqual({
+      kind: 'instant',
+      utc: '2026-11-01T23:49:00.000Z',
+      zone: 'Asia/Shanghai',
+    })
+    expect(parseDue('11/2/2026 7:49 AM', 'Asia/Shanghai', 480)).toEqual({
+      kind: 'instant',
+      utc: '2026-11-01T23:49:00.000Z',
+      zone: 'Asia/Shanghai',
+    })
+    expect(parseDue('11/2/2026', 'Asia/Shanghai', 480)).toEqual({
+      kind: 'local-date',
+      date: '2026-11-02',
       zone: 'Asia/Shanghai',
     })
     expect(parseDue('2026年2月30日', 'Asia/Shanghai', 480)).toEqual({

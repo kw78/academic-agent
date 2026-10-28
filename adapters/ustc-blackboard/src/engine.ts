@@ -28,6 +28,7 @@ import {
 import {
   findContentAreaUrls,
   isLoginPage,
+  normalizeTermId,
   parseAssessmentDetail,
   parseAssignmentDetail,
   parseContentPage,
@@ -461,7 +462,8 @@ export function createBlackboardEngine(
       }).courses.map((course) => ({
         sourceId: context.sourceId,
         externalCourseId: course.externalCourseId,
-        termId: course.termId,
+        // Blackboard 的 2026FA 与领域里的 2026-fall 指同一学期，统一后再落库。
+        termId: normalizeTermId(course.termId),
         code: course.code,
         title: course.title,
       }))
@@ -477,6 +479,7 @@ export function createBlackboardEngine(
 }
 
 export {
+  normalizeTermId,
   parseCourseLinks,
   parseContentPage,
   parseAssignmentLinks,

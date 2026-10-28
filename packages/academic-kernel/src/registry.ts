@@ -60,6 +60,7 @@ const HANDLERS_BY_COMMAND: Record<CommandType, RegisteredHandler> = {
   [COMMAND.AcademicItemSetProgress]: academicItem,
   [COMMAND.AcademicItemArchive]: academicItem,
   [COMMAND.AcademicItemRestore]: academicItem,
+  [COMMAND.AcademicItemReassignCourse]: academicItem,
   [COMMAND.StudyTaskCreate]: studyTask,
   [COMMAND.StudyTaskChangeEstimate]: studyTask,
   [COMMAND.StudyTaskChangeDetails]: studyTask,

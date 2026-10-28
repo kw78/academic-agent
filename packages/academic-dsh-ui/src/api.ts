@@ -40,17 +40,31 @@ import type {
   ConnectionIdRequest,
   ConnectionSecretRequest,
   ConnectionsView,
+  CourseMergeView,
   CoursesView,
   CreateConnectionRequest,
   CreateCourseRequest,
   CreateSourceRequest,
   CreateTaskRequest,
   DashboardView,
+  DeleteMaterialRequest,
   HostStatus,
+  ImportMaterialAttachmentsRequest,
+  ImportMaterialFileRequest,
+  ImportMaterialTextRequest,
+  ImportMaterialUrlRequest,
   ItemCard,
   ItemsRequest,
   JobEnabledRequest,
   LockBlockRequest,
+  MaterialAttachmentsView,
+  MaterialImportView,
+  MaterialRebuildView,
+  MaterialSearchRequest,
+  MaterialSearchView,
+  MaterialsView,
+  MaterialSubscriptionRequest,
+  MaterialSubscriptionView,
   NotificationCard,
   NotificationReadRequest,
   PlanCandidate,
@@ -266,6 +280,48 @@ const estimateSchema = z.object({
   estimateMinutes: z.number().int().min(5).max(24 * 60),
 })
 const idSchema = z.object({ id: z.string().min(1) })
+const materialSearchSchema = z.object({
+  query: z.string().min(1).max(200),
+  courseId: z.string().min(1).max(200).optional(),
+  itemId: z.string().min(1).max(200).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+})
+const importMaterialTextSchema = z.object({
+  courseId: z.string().min(1).max(200),
+  itemId: z.string().min(1).max(200).optional(),
+  title: z.string().min(1).max(300),
+  text: z.string().min(1).max(2_000_000),
+})
+const importMaterialFileSchema = z.object({
+  courseId: z.string().min(1).max(200),
+  itemId: z.string().min(1).max(200).optional(),
+  title: z.string().min(1).max(300).optional(),
+  fileName: z.string().min(1).max(300),
+  contentBase64: z.string().min(1).max(112 * 1024 * 1024),
+})
+const importMaterialUrlSchema = z.object({
+  courseId: z.string().min(1).max(200),
+  itemId: z.string().min(1).max(200).optional(),
+  title: z.string().min(1).max(300).optional(),
+  url: z.string().url().max(2_000),
+  sourceId: z.string().min(1).max(200).optional(),
+  sessionId: z.string().min(1).max(200).optional(),
+})
+const deleteMaterialSchema = z.object({
+  materialId: z.string().min(1).max(200),
+})
+const importMaterialAttachmentsSchema = z.object({
+  courseId: z.string().min(1).max(200),
+  sourceId: z.string().min(1).max(200),
+  pageUrl: z.string().url().max(2_000),
+  pathPrefix: z.string().max(500).optional(),
+  maxFiles: z.number().int().min(1).max(30).optional(),
+})
+const materialSubscriptionSchema = z.object({
+  sourceId: z.string().min(1).max(200),
+  courseId: z.string().min(1).max(200),
+  enabled: z.boolean(),
+})
 
 interface ParsedFailure {
   ok: false
@@ -316,6 +372,14 @@ function fromError(error: unknown): UiResult<never> {
     code === 'UNAVAILABLE'
   ) {
     return { ok: false, error: { code, message: safeMessage(error) } }
+  }
+  if (
+    code === 'RATE_LIMITED' ||
+    code === 'SUBSCRIPTION_REQUIRED' ||
+    code === 'UNSUPPORTED' ||
+    code === 'NETWORK'
+  ) {
+    return { ok: false, error: { code: 'UNAVAILABLE', message: safeMessage(error) } }
   }
   return { ok: false, error: { code: 'ERROR', message: safeMessage(error) } }
 }
@@ -1015,6 +1079,20 @@ export interface AcademicUiApi {
   completeTask(request: unknown): Promise<UiResult<CommandReceipt>>
   reopenTask(request: unknown): Promise<UiResult<CommandReceipt>>
   changeTaskEstimate(request: unknown): Promise<UiResult<CommandReceipt>>
+  mergeDuplicateCourses(request: unknown): Promise<UiResult<CourseMergeView>>
+  materials(request: unknown): Promise<UiResult<MaterialsView>>
+  materialSearch(request: unknown): Promise<UiResult<MaterialSearchView>>
+  importMaterialText(request: unknown): Promise<UiResult<MaterialImportView>>
+  importMaterialFile(request: unknown): Promise<UiResult<MaterialImportView>>
+  importMaterialUrl(request: unknown): Promise<UiResult<MaterialImportView>>
+  deleteMaterial(request: unknown): Promise<UiResult<{ deleted: boolean }>>
+  rebuildMaterials(request: unknown): Promise<UiResult<MaterialRebuildView>>
+  importMaterialAttachments(
+    request: unknown,
+  ): Promise<UiResult<MaterialAttachmentsView>>
+  setMaterialSubscription(
+    request: unknown,
+  ): Promise<UiResult<MaterialSubscriptionView>>
 }
 
 export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
@@ -2074,6 +2152,179 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       if (result.ok) previews.clear()
       return result
     },
+
+    async mergeDuplicateCourses() {
+      try {
+        return ok(await app.mergeDuplicateCourses())
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async materials() {
+      const courses = await app.store.queries.listCourses()
+      const visibleCourses = courses.items.filter(
+        (course) => !course.deleted && !course.archived,
+      )
+      const byId = new Map(visibleCourses.map((course) => [course.courseId, course]))
+      const materials = app.materials.list({ limit: 500 }).map((material) => ({
+        material,
+        ...(byId.get(material.courseId) ? { course: byId.get(material.courseId)! } : {}),
+      }))
+      const connections = app.connections.list()
+      const sources = app.sources.list({ includeArchived: true }).map((source) => ({
+        sourceId: source.sourceId,
+        displayName: source.displayName,
+        engine: source.engine,
+        archived: source.archived,
+        hasSession: connections.some(
+          (connection) =>
+            connection.sourceId === source.sourceId && connection.hasCredential,
+        ),
+      }))
+      const view: MaterialsView = {
+        courses: visibleCourses,
+        materials,
+        subscriptions: app.materials.subscriptions(),
+        sources,
+        webSessions: app.webSessions.list(),
+      }
+      return ok(view)
+    },
+
+    async materialSearch(request) {
+      const parsed = parse(materialSearchSchema, request)
+      if (!parsed.ok) return parsed
+      const body: MaterialSearchRequest = parsed.value
+      try {
+        return ok({ result: app.materials.search(body) })
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async importMaterialText(request) {
+      const parsed = parse(importMaterialTextSchema, request)
+      if (!parsed.ok) return parsed
+      const body: ImportMaterialTextRequest = parsed.value
+      try {
+        return ok({
+          result: await app.materials.importText({
+            courseId: body.courseId,
+            ...(body.itemId ? { itemId: body.itemId } : {}),
+            title: body.title,
+            text: body.text,
+            originLabel: 'ui',
+          }),
+        })
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async importMaterialFile(request) {
+      const parsed = parse(importMaterialFileSchema, request)
+      if (!parsed.ok) return parsed
+      const body: ImportMaterialFileRequest = parsed.value
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(body.contentBase64)) {
+        return failure('VALIDATION', '文件内容编码无效')
+      }
+      let bytes: Buffer
+      try {
+        bytes = Buffer.from(body.contentBase64, 'base64')
+      } catch {
+        return failure('VALIDATION', '文件内容编码无效')
+      }
+      if (bytes.byteLength === 0) return failure('VALIDATION', '文件内容为空')
+      if (bytes.byteLength > 80 * 1024 * 1024) {
+        return failure('VALIDATION', '文件超过 80 MB 上限；请压缩后重试')
+      }
+      try {
+        return ok({
+          result: await app.materials.importBytes({
+            courseId: body.courseId,
+            ...(body.itemId ? { itemId: body.itemId } : {}),
+            ...(body.title ? { title: body.title } : {}),
+            fileName: body.fileName,
+            bytes,
+            sourceKind: 'file',
+            originLabel: 'ui',
+          }),
+        })
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async importMaterialUrl(request) {
+      const parsed = parse(importMaterialUrlSchema, request)
+      if (!parsed.ok) return parsed
+      const body: ImportMaterialUrlRequest = parsed.value
+      try {
+        return ok({
+          result: await app.materials.importUrl({
+            courseId: body.courseId,
+            ...(body.itemId ? { itemId: body.itemId } : {}),
+            ...(body.title ? { title: body.title } : {}),
+            url: body.url,
+            ...(body.sourceId ? { sourceId: body.sourceId } : {}),
+            ...(body.sessionId ? { sessionId: body.sessionId } : {}),
+          }),
+        })
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async deleteMaterial(request) {
+      const parsed = parse(deleteMaterialSchema, request)
+      if (!parsed.ok) return parsed
+      const body: DeleteMaterialRequest = parsed.value
+      try {
+        app.materials.delete(body.materialId)
+        return ok({ deleted: true })
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async rebuildMaterials() {
+      try {
+        return ok({ result: app.materials.rebuildIndex() })
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async importMaterialAttachments(request) {
+      const parsed = parse(importMaterialAttachmentsSchema, request)
+      if (!parsed.ok) return parsed
+      const body: ImportMaterialAttachmentsRequest = parsed.value
+      try {
+        return ok({
+          result: await app.materials.importAttachments({
+            courseId: body.courseId,
+            sourceId: body.sourceId,
+            pageUrl: body.pageUrl,
+            ...(body.pathPrefix ? { pathPrefix: body.pathPrefix } : {}),
+            ...(body.maxFiles ? { maxFiles: body.maxFiles } : {}),
+          }),
+        })
+      } catch (error) {
+        return fromError(error)
+      }
+    },
+
+    async setMaterialSubscription(request) {
+      const parsed = parse(materialSubscriptionSchema, request)
+      if (!parsed.ok) return parsed
+      const body: MaterialSubscriptionRequest = parsed.value
+      try {
+        return ok(app.materials.setSubscription(body.sourceId, body.courseId, body.enabled))
+      } catch (error) {
+        return fromError(error)
+      }
+    },
   }
 }
 
@@ -2102,4 +2353,11 @@ export const uiRequestSchemas = {
   syncNow: syncNowSchema,
   estimate: estimateSchema,
   id: idSchema,
+  materialSearch: materialSearchSchema,
+  importMaterialText: importMaterialTextSchema,
+  importMaterialFile: importMaterialFileSchema,
+  importMaterialUrl: importMaterialUrlSchema,
+  deleteMaterial: deleteMaterialSchema,
+  importMaterialAttachments: importMaterialAttachmentsSchema,
+  materialSubscription: materialSubscriptionSchema,
 } as const

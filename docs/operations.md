@@ -109,7 +109,7 @@ find .data -maxdepth 2 -type f \( -name '*.html' -o -name '*.log' -o -name '*.tx
 2. 固定/核对 DSH 版本（当前验证 `0.2.1-rc.3`）。
 3. `npm install` → `npm run typecheck` → `npm test`。
 4. `npm run build:dsh`、`npm run build:ui`；确认 `migrations/` 已复制到插件产物。
-5. 用独立测试数据库运行 `ACADEMIC_AGENT_SELFTEST=1 dsh academic --json "hello"`，确认 19 个工具、只读查询与写入拒绝。
+5. 用独立测试数据库运行 `ACADEMIC_AGENT_SELFTEST=1 dsh academic --json "hello"`，确认 23 个工具、只读查询与写入拒绝。
 6. 桌面端重启后检查“学业”入口、Host 状态、后台作业与最近同步。
 
 ## 11. 已知限制
