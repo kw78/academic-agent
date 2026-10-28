@@ -18,7 +18,7 @@ interface ToolSpec {
   write: boolean
 }
 
-const TOOL_SPECS: ToolSpec[] = [
+export const TOOL_SPECS: ToolSpec[] = [
   {
     name: ACADEMIC_TOOL_NAMES.ListCourses,
     description:
@@ -209,7 +209,6 @@ const TOOL_SPECS: ToolSpec[] = [
       },
       samples: {
         type: 'array',
-        required: false,
         description:
           'Explicit real URL/body samples used for deterministic replay; never synthetic HTML',
         items: {
@@ -252,7 +251,6 @@ const TOOL_SPECS: ToolSpec[] = [
       },
       samples: {
         type: 'array',
-        required: false,
         description:
           'Explicit real URL/body samples used for deterministic replay; never synthetic HTML',
         items: {
@@ -320,8 +318,9 @@ function registerTools(ctx: Context, app: AcademicApp): Array<() => void> {
         }),
       ))
     } catch (error) {
+      // One bad schema must not silently drop every tool after it; report it
+      // and keep registering the rest so diagnostics show the real gap.
       console.error(`[academic-tools] register failed: ${spec.name}`, error)
-      throw error
     }
   }
   return disposers
@@ -337,9 +336,13 @@ export function apply(ctx: Context, config: AcademicToolsConfig = {}): void {
     const disposers = registerTools(ctx, app)
 
     const registered = ctx.tools.get(ACADEMIC_TOOL_NAMES.ListCourses) !== undefined
+    const missing = TOOL_SPECS.filter((spec) => !ctx.tools.get(spec.name)).map(
+      (spec) => spec.name,
+    )
     if (config.logLoad !== false) {
       console.log(
-        `[academic-tools] tools=${app.agentBridge.host.list().length} registered=${registered}`,
+        `[academic-tools] tools=${TOOL_SPECS.length - missing.length} registered=${registered}` +
+          (missing.length > 0 ? ` missing=${missing.join(',')}` : ''),
       )
     }
 

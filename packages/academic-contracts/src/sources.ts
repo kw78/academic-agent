@@ -141,6 +141,20 @@ export interface SourceProbeLink {
   url: string
 }
 
+export interface SourceProbeTable {
+  className?: string
+  id?: string
+  headers: string[]
+  rowCount: number
+  cellCount: number
+}
+
+export interface SourceProbeContainer {
+  tag: string
+  className?: string
+  id?: string
+}
+
 /** Sanitized read-only evidence for onboarding and adapter candidates. */
 export interface SourceProbeEvidence {
   sourceId: string
@@ -156,6 +170,8 @@ export interface SourceProbeEvidence {
   paginationLinks: SourceProbeLink[]
   scripts: SourceProbeLink[]
   endpointCandidates: SourceProbeLink[]
+  tables: SourceProbeTable[]
+  containers: SourceProbeContainer[]
   formCount: number
   tableCount: number
   jsonShape?: string

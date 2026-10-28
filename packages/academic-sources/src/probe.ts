@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto'
 import type {
+  SourceProbeContainer,
   SourceProbeEvidence,
   SourceProbeLink,
+  SourceProbeTable,
 } from '@academic/contracts'
 import {
   safeFetch,
@@ -176,6 +178,62 @@ function endpointLinks(
   return links.slice(0, 20)
 }
 
+function attributeValue(attrs: string, name: string): string | undefined {
+  return new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, 'i').exec(attrs)?.[1]
+}
+
+function tableEvidence(body: string): SourceProbeTable[] {
+  const tables: SourceProbeTable[] = []
+  for (const match of body.matchAll(/<table\b([^>]*)>([\s\S]*?)<\/table>/gi)) {
+    const attrs = match[1] ?? ''
+    const content = match[2] ?? ''
+    const headers: string[] = []
+    for (const header of content.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)) {
+      const text = plainText(header[1] ?? '').slice(0, 80)
+      if (text && !headers.includes(text)) headers.push(text)
+      if (headers.length >= 12) break
+    }
+    const firstRow = /<tr\b[^>]*>([\s\S]*?)<\/tr>/i.exec(content)?.[1] ?? ''
+    tables.push({
+      ...(attributeValue(attrs, 'class')
+        ? { className: attributeValue(attrs, 'class')! }
+        : {}),
+      ...(attributeValue(attrs, 'id')
+        ? { id: attributeValue(attrs, 'id')! }
+        : {}),
+      headers,
+      rowCount: (content.match(/<tr\b/gi) ?? []).length,
+      cellCount: (firstRow.match(/<(?:td|th)\b/gi) ?? []).length,
+    })
+    if (tables.length >= 5) break
+  }
+  return tables
+}
+
+function containerEvidence(body: string): SourceProbeContainer[] {
+  const containers: SourceProbeContainer[] = []
+  const seen = new Set<string>()
+  for (const match of body.matchAll(
+    /<(ul|ol|li|div|span|a|table|tbody|tr|td|th|form|main|section|article)\b([^>]*)>/gi,
+  )) {
+    const tag = (match[1] ?? '').toLowerCase()
+    const attrs = match[2] ?? ''
+    const className = attributeValue(attrs, 'class')
+    const id = attributeValue(attrs, 'id')
+    if (!className && !id) continue
+    const key = `${tag}|${className ?? ''}|${id ?? ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    containers.push({
+      tag,
+      ...(className ? { className } : {}),
+      ...(id ? { id } : {}),
+    })
+    if (containers.length >= 30) break
+  }
+  return containers
+}
+
 function buildEvidence(
   sourceId: string,
   url: string,
@@ -272,6 +330,8 @@ function buildEvidence(
     paginationLinks,
     scripts,
     endpointCandidates,
+    tables: tableEvidence(result.body),
+    containers: containerEvidence(result.body),
     formCount: (result.body.match(/<form\b/gi) ?? []).length,
     tableCount: (result.body.match(/<table\b/gi) ?? []).length,
     ...(contentType?.includes('json') && jsonShapeText

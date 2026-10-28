@@ -2665,9 +2665,9 @@ function SourceCard({
     const ok = askAgent(
       ctx,
       `\u8BF7\u4E3A\u6570\u636E\u6E90 ${source.sourceId}\uFF08${source.displayName}\uFF09\u751F\u6210\u53EF\u9A8C\u8BC1\u7684\u58F0\u660E\u5F0F Adapter\u3002\u6309\u9636\u6BB5\u6267\u884C\uFF0C\u8BC1\u636E\u4E0D\u8DB3\u65F6\u505C\u6B62\u5E76\u8BF4\u660E\uFF0C\u4E0D\u8981\u731C\u6D4B\u3002
-1. \u5148\u8C03\u7528 academic_probe_source \u63A2\u6D4B\u5F53\u524D\u914D\u7F6E\u9875\u9762\uFF0C\u8BB0\u5F55 status/title/headings/links/scripts/endpointCandidates/tableCount/jsonShape/digest\uFF1B\u4E0D\u8981\u8BB0\u5F55 Cookie\u3002
+1. \u5148\u8C03\u7528 academic_probe_source \u63A2\u6D4B\u5F53\u524D\u914D\u7F6E\u9875\u9762\uFF0C\u8BB0\u5F55 status/title/headings/links/scripts/endpointCandidates/tables/containers/jsonShape/digest\uFF1B\u4E0D\u8981\u8BB0\u5F55 Cookie\u3002
 2. \u82E5\u9875\u9762\u662F SPA \u5916\u58F3\uFF08\u6807\u9898/\u5217\u8868/\u8868\u683C/\u94FE\u63A5\u57FA\u672C\u4E3A\u7A7A\uFF0C\u53EA\u6709\u201C\u52A0\u8F7D\u4E2D\u201D\uFF09\uFF0C\u4E0D\u8981\u751F\u6210 selector \u5360\u4F4D\u5019\u9009\uFF1B\u7528 academic_probe_source \u7684\u53EF\u9009 url \u53C2\u6570\u7EE7\u7EED\u63A2\u6D4B\u540C\u7AD9\u811A\u672C\u3001\u5206\u9875/\u5217\u8868\u94FE\u63A5\u548C\u5019\u9009\u63A5\u53E3\uFF0C\u4F18\u5148\u627E\u540C\u6E90 JSON \u63A5\u53E3\u5E76\u8BB0\u5F55\u5B57\u6BB5/\u6570\u7EC4\u5F62\u72B6\u3002\u6BCF\u6B21 URL \u5FC5\u987B\u4ECD\u5C5E\u4E8E\u8BE5\u6765\u6E90\u4E3B\u673A\u3002
-3. \u627E\u5230\u771F\u5B9E\u5217\u8868\u9875\u6216 JSON \u63A5\u53E3\u540E\uFF0C\u7528 academic_probe_source \u7684 capture=true \u6355\u83B7\u54CD\u5E94\uFF0C\u62FF\u5230 sampleId\uFF1B\u539F\u59CB\u9875\u9762\u53EA\u7559\u5728\u5BBF\u4E3B\uFF0C\u4E0D\u8981\u628A\u6574\u9875\u5185\u5BB9\u7C98\u8D34\u5230\u5BF9\u8BDD\u91CC\u3002
+3. \u627E\u5230\u771F\u5B9E\u5217\u8868\u9875\u6216 JSON \u63A5\u53E3\u540E\uFF0C\u5148\u6839\u636E tables[].className/headers\u3001containers[].className \u548C links \u63A8\u65AD\u9009\u62E9\u5668\uFF0C\u518D\u7528 academic_probe_source \u7684 capture=true \u6355\u83B7\u54CD\u5E94\uFF0C\u62FF\u5230 sampleId\uFF1B\u539F\u59CB\u9875\u9762\u53EA\u7559\u5728\u5BBF\u4E3B\uFF0C\u4E0D\u8981\u628A\u6574\u9875\u5185\u5BB9\u7C98\u8D34\u5230\u5BF9\u8BDD\u91CC\u3002
 4. \u53EA\u6709\u62FF\u5230\u771F\u5B9E\u9875\u9762/\u771F\u5B9E JSON \u6837\u672C\u540E\u624D\u751F\u6210\u5B57\u6BB5\u6620\u5C04\uFF1B\u7528 sampleIds\uFF08\u6216\u771F\u5B9E samples\uFF09\u8C03\u7528 academic_validate_adapter_candidate\uFF0C\u6837\u672C\u5FC5\u987B\u8986\u76D6\u6240\u6709\u8BF7\u6C42 URL\u3002\u7981\u6B62\u7528\u5408\u6210 HTML \u8BA9\u9A8C\u8BC1\u53D8\u7EFF\uFF0C\u5931\u8D25\u53EA\u62A5\u544A\u7ED3\u6784\u5316\u539F\u56E0\u3002
 5. \u4E0D\u6CE8\u518C\u3001\u4E0D\u542F\u7528\u3001\u4E0D\u6269\u5927\u57DF\u540D/\u8DEF\u5F84\uFF1B\u9700\u8981\u66F4\u5BBD\u8DEF\u5F84\u65F6\u7ED9\u51FA\u7CBE\u786E URL/\u524D\u7F00\uFF0C\u4EA4\u7531\u6211\u5728\u201C\u8FDE\u63A5\u201D\u9875\u786E\u8BA4\u3002
 6. \u8F93\u51FA\uFF1A\u5DF2\u63A2\u6D4B URL/\u72B6\u6001\u3001\u5C1D\u8BD5\u8FC7\u7684\u811A\u672C/\u63A5\u53E3\u3001\u6355\u83B7\u5230\u7684 sampleId\u3001\u963B\u585E\u70B9\u3001\u9700\u8981\u6211\u63D0\u4F9B\u7684\u552F\u4E00\u4FE1\u606F\u3001\u5019\u9009\u662F\u5426\u5DF2\u4FDD\u5B58/\u9A8C\u8BC1\u3002`
@@ -2881,6 +2881,18 @@ function SourceCard({
         probe.endpointCandidates.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
           "\u5019\u9009\u63A5\u53E3\uFF1A",
           probe.endpointCandidates.slice(0, 8).map((link) => link.text).join(" / ")
+        ] }),
+        probe.tables.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
+          "\u8868\u683C\uFF1A",
+          probe.tables.map(
+            (table) => `${table.className ?? table.id ?? "table"}[${table.headers.join("/")}] ${table.rowCount} \u884C`
+          ).join("\uFF1B")
+        ] }),
+        probe.containers.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
+          "\u5BB9\u5668\uFF1A",
+          probe.containers.slice(0, 8).map(
+            (entry) => `${entry.tag}${entry.className ? `.${entry.className}` : ""}${entry.id ? `#${entry.id}` : ""}`
+          ).join(" / ")
         ] }),
         probe.jsonShape && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "ac-muted", children: [
           "JSON \u7ED3\u6784\uFF1A",

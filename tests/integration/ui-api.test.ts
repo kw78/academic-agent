@@ -259,6 +259,8 @@ describe('academic UI host API', () => {
             '<script src="/static/app.js"></script></head><body>' +
             '<h1>Courses</h1>' +
             '<a href="https://lms.example.edu/course/1?token=should-not-leak">Course 1</a>' +
+            '<table class="course-table"><tr><th>课程</th><th>教师</th></tr><tr><td>A</td><td>B</td></tr></table>' +
+            '<ul class="assignment-list"><li>Work</li></ul>' +
             '<script>window.__routes={courses:"/api/portal/courses?term=2026"}</script>' +
             '</body></html>',
           { status: 200, headers: { 'content-type': 'text/html' } },
@@ -316,6 +318,19 @@ describe('academic UI host API', () => {
     expect(probed.value.scripts).toEqual([
       { text: 'app.js', url: 'https://lms.example.edu/static/app.js' },
     ])
+    expect(probed.value.tables).toEqual([
+      {
+        className: 'course-table',
+        headers: ['课程', '教师'],
+        rowCount: 2,
+        cellCount: 2,
+      },
+    ])
+    expect(probed.value.containers).toEqual(
+      expect.arrayContaining([
+        { tag: 'ul', className: 'assignment-list' },
+      ]),
+    )
     expect(probed.value.endpointCandidates).toEqual([
       { text: '/api/portal/courses', url: 'https://lms.example.edu/api/portal/courses' },
     ])

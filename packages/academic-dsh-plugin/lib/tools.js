@@ -20256,7 +20256,6 @@ var TOOL_SPECS = [
       },
       samples: {
         type: "array",
-        required: false,
         description: "Explicit real URL/body samples used for deterministic replay; never synthetic HTML",
         items: {
           type: "object",
@@ -20296,7 +20295,6 @@ var TOOL_SPECS = [
       },
       samples: {
         type: "array",
-        required: false,
         description: "Explicit real URL/body samples used for deterministic replay; never synthetic HTML",
         items: {
           type: "object",
@@ -20360,7 +20358,6 @@ function registerTools(ctx, app) {
       ));
     } catch (error62) {
       console.error(`[academic-tools] register failed: ${spec.name}`, error62);
-      throw error62;
     }
   }
   return disposers;
@@ -20370,9 +20367,12 @@ function apply(ctx, config2 = {}) {
     const app = await ctx.academicApp.appReady;
     const disposers = registerTools(ctx, app);
     const registered = ctx.tools.get(ACADEMIC_TOOL_NAMES.ListCourses) !== void 0;
+    const missing = TOOL_SPECS.filter((spec) => !ctx.tools.get(spec.name)).map(
+      (spec) => spec.name
+    );
     if (config2.logLoad !== false) {
       console.log(
-        `[academic-tools] tools=${app.agentBridge.host.list().length} registered=${registered}`
+        `[academic-tools] tools=${TOOL_SPECS.length - missing.length} registered=${registered}` + (missing.length > 0 ? ` missing=${missing.join(",")}` : "")
       );
     }
     if (config2.selfTest ?? process.env.ACADEMIC_AGENT_SELFTEST === "1") {
@@ -20407,6 +20407,7 @@ function apply(ctx, config2 = {}) {
 }
 var tools_default = { name, inject, apply };
 export {
+  TOOL_SPECS,
   apply,
   tools_default as default,
   inject,

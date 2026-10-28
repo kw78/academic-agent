@@ -26477,6 +26477,55 @@ function endpointLinks(text2, finalUrl, allowedHosts) {
   }
   return links.slice(0, 20);
 }
+function attributeValue(attrs, name) {
+  return new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, "i").exec(attrs)?.[1];
+}
+function tableEvidence(body) {
+  const tables = [];
+  for (const match of body.matchAll(/<table\b([^>]*)>([\s\S]*?)<\/table>/gi)) {
+    const attrs = match[1] ?? "";
+    const content = match[2] ?? "";
+    const headers = [];
+    for (const header of content.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)) {
+      const text2 = plainText(header[1] ?? "").slice(0, 80);
+      if (text2 && !headers.includes(text2)) headers.push(text2);
+      if (headers.length >= 12) break;
+    }
+    const firstRow = /<tr\b[^>]*>([\s\S]*?)<\/tr>/i.exec(content)?.[1] ?? "";
+    tables.push({
+      ...attributeValue(attrs, "class") ? { className: attributeValue(attrs, "class") } : {},
+      ...attributeValue(attrs, "id") ? { id: attributeValue(attrs, "id") } : {},
+      headers,
+      rowCount: (content.match(/<tr\b/gi) ?? []).length,
+      cellCount: (firstRow.match(/<(?:td|th)\b/gi) ?? []).length
+    });
+    if (tables.length >= 5) break;
+  }
+  return tables;
+}
+function containerEvidence(body) {
+  const containers = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const match of body.matchAll(
+    /<(ul|ol|li|div|span|a|table|tbody|tr|td|th|form|main|section|article)\b([^>]*)>/gi
+  )) {
+    const tag = (match[1] ?? "").toLowerCase();
+    const attrs = match[2] ?? "";
+    const className = attributeValue(attrs, "class");
+    const id = attributeValue(attrs, "id");
+    if (!className && !id) continue;
+    const key2 = `${tag}|${className ?? ""}|${id ?? ""}`;
+    if (seen.has(key2)) continue;
+    seen.add(key2);
+    containers.push({
+      tag,
+      ...className ? { className } : {},
+      ...id ? { id } : {}
+    });
+    if (containers.length >= 30) break;
+  }
+  return containers;
+}
 function buildEvidence(sourceId, url2, result, allowedHosts, patterns, probedAt) {
   const title = plainText(
     /<title[^>]*>([\s\S]*?)<\/title>/i.exec(result.body)?.[1] ?? ""
@@ -26562,6 +26611,8 @@ ${match[2] ?? ""}`;
     paginationLinks,
     scripts,
     endpointCandidates,
+    tables: tableEvidence(result.body),
+    containers: containerEvidence(result.body),
     formCount: (result.body.match(/<form\b/gi) ?? []).length,
     tableCount: (result.body.match(/<table\b/gi) ?? []).length,
     ...contentType?.includes("json") && jsonShapeText ? { jsonShape: jsonShapeText } : {},
