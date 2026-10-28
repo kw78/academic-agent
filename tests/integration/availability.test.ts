@@ -8,6 +8,7 @@ import {
   AvailabilityStore,
   computeUnavailableBlocks,
   PlannerService,
+  PreferenceStore,
   registerPlannerCapability,
   ReplanStore,
 } from '@academic/planner-basic'
@@ -34,6 +35,7 @@ function setup() {
   const clock = fixedClock()
   const store = createTestStore({ clock })
   const availability = new AvailabilityStore(store.database, clock)
+  const preferences = new PreferenceStore(store.database, clock)
   const registry = new CapabilityRegistry()
   const replans = new ReplanStore(store.database, clock)
   const planner = new PlannerService({
@@ -42,12 +44,13 @@ function setup() {
     commands: store.commands,
     replans,
     availability,
+    preferences,
     clock,
     ids: sequentialIds('availability'),
   })
   registerPlannerCapability(registry)
   cleanup.push(() => store.close())
-  return { clock, store, availability, planner }
+  return { clock, store, availability, preferences, planner }
 }
 
 async function addTask(store: ReturnType<typeof createTestStore>) {

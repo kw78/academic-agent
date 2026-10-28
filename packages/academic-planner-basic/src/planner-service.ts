@@ -17,6 +17,7 @@ import {
   AvailabilityStore,
   computeUnavailableBlocks,
 } from './availability.js'
+import { PreferenceStore } from './preferences.js'
 import {
   buildPlan,
   PLANNER_ID,
@@ -33,6 +34,7 @@ export interface PlannerServiceDependencies {
   commands: CommandApi
   replans: ReplanStore
   availability: AvailabilityStore
+  preferences: PreferenceStore
   clock: Clock
   ids: IdGenerator
 }
@@ -92,6 +94,7 @@ export class PlannerService {
   readonly #commands: CommandApi
   readonly #replans: ReplanStore
   readonly #availability: AvailabilityStore
+  readonly #preferences: PreferenceStore
   readonly #clock: Clock
   readonly #ids: IdGenerator
 
@@ -101,6 +104,7 @@ export class PlannerService {
     this.#commands = dependencies.commands
     this.#replans = dependencies.replans
     this.#availability = dependencies.availability
+    this.#preferences = dependencies.preferences
     this.#clock = dependencies.clock
     this.#ids = dependencies.ids
   }
@@ -210,18 +214,28 @@ export class PlannerService {
     const tasks = await this.#queries.listStudyTasks({ status: 'active' })
     const activePlan = await this.#queries.getActiveStudyPlan(options.range)
     const availability = this.#availability.get()
+    const preferences = this.#preferences.get()
     const unavailable = computeUnavailableBlocks(options.range, availability)
-    const itemDue = new Map<string, Due | undefined>()
+    const itemCache = new Map<
+      string,
+      Awaited<ReturnType<QueryApi['getAcademicItem']>>
+    >()
+    const loadItem = async (itemId: string) => {
+      if (!itemCache.has(itemId)) {
+        itemCache.set(itemId, await this.#queries.getAcademicItem(itemId))
+      }
+      return itemCache.get(itemId)
+    }
     const plannerTasks: PlannerTaskInput[] = []
 
     for (const task of tasks.items) {
       let due: Due | undefined
-      if (!task.dueAt && task.itemId) {
-        if (!itemDue.has(task.itemId)) {
-          const item = await this.#queries.getAcademicItem(task.itemId)
-          itemDue.set(task.itemId, item?.due)
-        }
-        due = itemDue.get(task.itemId)
+      let coursePriority: number | undefined
+      if (task.itemId) {
+        const item = await loadItem(task.itemId)
+        if (!task.dueAt) due = item?.due
+        const courseId = item?.courseId
+        if (courseId) coursePriority = preferences.coursePriorities[courseId]
       }
       plannerTasks.push({
         taskId: task.taskId,
@@ -232,6 +246,7 @@ export class PlannerService {
         ...(task.itemId ? { itemId: task.itemId } : {}),
         ...(task.dueAt ? { dueAt: task.dueAt } : {}),
         ...(due ? { due } : {}),
+        ...(coursePriority !== undefined ? { coursePriority } : {}),
       })
     }
 

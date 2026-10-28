@@ -8,6 +8,7 @@ import {
 import {
   AvailabilityStore,
   PlannerService,
+  PreferenceStore,
   registerPlannerCapability,
   ReplanStore,
 } from '@academic/planner-basic'
@@ -56,12 +57,14 @@ function setup() {
   const registry = new CapabilityRegistry()
   const replans = new ReplanStore(store.database, clock)
   const availability = allDayAvailability(store.database, clock)
+  const preferences = new PreferenceStore(store.database, clock)
   const planner = new PlannerService({
     registry,
     queries: store.queries,
     commands: store.commands,
     replans,
     availability,
+    preferences,
     clock,
     ids: sequentialIds('planner'),
   })
@@ -70,7 +73,7 @@ function setup() {
     capability.dispose()
     store.close()
   })
-  return { clock, store, registry, replans, planner, capability }
+  return { clock, store, registry, replans, planner, capability, preferences }
 }
 
 async function createTask(store: ReturnType<typeof createTestStore>) {
@@ -106,6 +109,7 @@ describe('T08 planner capability lifecycle', () => {
       commands: store.commands,
       replans,
       availability: allDayAvailability(store.database, clock),
+      preferences: new PreferenceStore(store.database, clock),
       clock,
       ids: sequentialIds('planner'),
     })

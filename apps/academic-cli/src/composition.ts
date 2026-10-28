@@ -71,6 +71,7 @@ import {
 import {
   AvailabilityStore,
   PlannerService,
+  PreferenceStore,
   ReplanStore,
   registerPlannerCapability as registerPlannerCapabilityInRegistry,
   type AcceptPlanOptions,
@@ -197,6 +198,7 @@ export interface AcademicApp {
   webSessions: WebSessionStore
   replans: ReplanStore
   availability: AvailabilityStore
+  preferences: PreferenceStore
   planner: PlannerService
   notifications: NotificationStore
   agentBridge: {
@@ -286,12 +288,14 @@ export async function createAcademicApp(
   const scheduler = new Scheduler({ db: store.database, clock, ids })
   const replans = new ReplanStore(store.database, clock)
   const availability = new AvailabilityStore(store.database, clock)
+  const preferences = new PreferenceStore(store.database, clock)
   const planner = new PlannerService({
     registry,
     queries: store.queries,
     commands: store.commands,
     replans,
     availability,
+    preferences,
     clock,
     ids,
   })
@@ -695,6 +699,7 @@ export async function createAcademicApp(
     webSessions,
     replans,
     availability,
+    preferences,
     planner,
     notifications,
     agentBridge: { host, registration: agentRegistration },

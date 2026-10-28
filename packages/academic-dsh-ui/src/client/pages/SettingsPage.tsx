@@ -15,6 +15,7 @@ import { viewState } from '../state.js'
 import { formatDateTimeOrDash, fromLocalInputValue } from '../view.js'
 import type {
   AvailabilityView,
+  PreferencesView,
   SettingsView,
   UiResult,
 } from '../../protocol.js'
@@ -66,6 +67,9 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
   const [blockEnd, setBlockEnd] = useState('')
   const [blockTitle, setBlockTitle] = useState('')
   const [interval, setIntervalMinutes] = useState('15')
+  const [coursePriorities, setCoursePriorities] = useState<
+    Record<string, number>
+  >({})
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
@@ -76,6 +80,7 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
     setSlots(data.availability.weeklySlots.map((slot) => ({ ...slot })))
     setBlocks(data.availability.temporaryBlocks.map((block) => ({ ...block })))
     setIntervalMinutes(String(data.sync.intervalMinutes))
+    setCoursePriorities({ ...data.preferences.coursePriorities })
   }, [data])
 
   const saveAvailability = async (): Promise<UiResult<AvailabilityView>> => {
@@ -105,6 +110,11 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
       intervalMinutes: Math.round(minutes),
     })
   }
+
+  const savePreferences = async (): Promise<UiResult<PreferencesView>> =>
+    callApi<PreferencesView>(ctx, 'updatePreferences', {
+      coursePriorities,
+    })
 
   const addTemporary = () => {
     const start = fromLocalInputValue(blockStart)
@@ -358,6 +368,64 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
                 </span>
               </div>
             </form>
+          </Section>
+
+          <Section
+            title="课程优先级"
+            subtitle="用户明确设定；仅在任务自身优先级相同时影响计划排序"
+          >
+            {data.preferences.courses.length === 0 ? (
+              <EmptyState title="还没有课程">添加课程后可设置优先级。</EmptyState>
+            ) : (
+              <form
+                className="ac-form-card"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void action.run(
+                    'preferences',
+                    savePreferences,
+                    '课程优先级已保存',
+                  )
+                }}
+              >
+                {data.preferences.courses.map((course) => (
+                  <div key={course.courseId} className="ac-inline-bar">
+                    <div>
+                      <strong>
+                        {course.code} {course.title}
+                      </strong>
+                      <span className="ac-muted">{course.courseId}</span>
+                    </div>
+                    <select
+                      value={coursePriorities[course.courseId] ?? 0}
+                      onChange={(event) =>
+                        setCoursePriorities((current) => ({
+                          ...current,
+                          [course.courseId]: Number(event.target.value),
+                        }))
+                      }
+                    >
+                      <option value={0}>0 · 普通</option>
+                      <option value={1}>1 · 较高</option>
+                      <option value={2}>2 · 高</option>
+                      <option value={3}>3 · 最高</option>
+                    </select>
+                  </div>
+                ))}
+                <div className="ac-form-actions">
+                  <button
+                    type="submit"
+                    className="ac-button"
+                    disabled={action.pending !== undefined}
+                  >
+                    {action.pending === 'preferences' ? '保存中…' : '保存课程优先级'}
+                  </button>
+                  <span className="ac-muted">
+                    更新于 {formatDateTimeOrDash(data.preferences.updatedAt, data.availability.timeZone)}
+                  </span>
+                </div>
+              </form>
+            )}
           </Section>
 
           <Section title="提醒" subtitle="阈值与未读提醒在自动化页管理">

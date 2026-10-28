@@ -322,8 +322,26 @@ export interface AutomationView {
   generatedAt: string
 }
 
+export interface CoursePriorityView {
+  courseId: string
+  code: string
+  title: string
+  priority: number
+}
+
+export interface PreferencesView {
+  coursePriorities: Record<string, number>
+  courses: CoursePriorityView[]
+  updatedAt: string
+}
+
+export interface UpdatePreferencesRequest {
+  coursePriorities: Record<string, number>
+}
+
 export interface SettingsView {
   availability: AvailabilityView
+  preferences: PreferencesView
   reminders: { enabled: boolean; thresholdsHours: number[]; updatedAt: string }
   sync: {
     jobId: string

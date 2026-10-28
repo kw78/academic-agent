@@ -851,6 +851,35 @@ describe('generic DB-backed source login', () => {
     expect(source?.diagnosis?.suggestion).toMatch(/修复候选/)
   })
 
+  it('persists course priorities and rejects unknown courses', async () => {
+    const { api } = await setup()
+    const before = await api.settings({})
+    expect(before.ok).toBe(true)
+    if (!before.ok) return
+    expect(before.value.preferences.courses).toHaveLength(1)
+    const courseId = before.value.preferences.courses[0]?.courseId
+    expect(courseId).toBeTruthy()
+    if (!courseId) return
+
+    const updated = await api.updatePreferences({
+      coursePriorities: { [courseId]: 3 },
+    })
+    expect(updated.ok).toBe(true)
+    if (!updated.ok) return
+    expect(updated.value.coursePriorities[courseId]).toBe(3)
+
+    const reloaded = await api.settings({})
+    expect(reloaded.ok).toBe(true)
+    if (!reloaded.ok) return
+    expect(reloaded.value.preferences.coursePriorities[courseId]).toBe(3)
+
+    const unknown = await api.updatePreferences({
+      coursePriorities: { 'missing-course': 1 },
+    })
+    expect(unknown.ok).toBe(false)
+    if (!unknown.ok) expect(unknown.error.code).toBe('VALIDATION')
+  })
+
   it('rejects engine, auth and login combinations the engine does not support', async () => {
     const { api } = await setup()
 

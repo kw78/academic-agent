@@ -19,6 +19,7 @@ export interface PlannerTaskInput {
   due?: Due
   dueAt?: string
   priority?: number
+  coursePriority?: number
   status?: 'active' | 'completed'
   itemId?: string
 }
@@ -156,6 +157,7 @@ export function buildPlan(input: PlannerInput): PlanSuggestion {
         (left.deadline ?? Number.POSITIVE_INFINITY) -
           (right.deadline ?? Number.POSITIVE_INFINITY) ||
         (right.priority ?? 0) - (left.priority ?? 0) ||
+        (right.coursePriority ?? 0) - (left.coursePriority ?? 0) ||
         left.taskId.localeCompare(right.taskId),
     )
 

@@ -56,6 +56,7 @@ import type {
   PlanCandidate,
   PlanMutationResult,
   PlanView,
+  PreferencesView,
   PreviewPlanRequest,
   SettingsView,
   SourceIdRequest,
@@ -74,6 +75,7 @@ import type {
   UiResult,
   UnlockBlockRequest,
   UpdateAvailabilityRequest,
+  UpdatePreferencesRequest,
   UpdateReminderSettingsRequest,
   UpdateSourceRequest,
   UpdateSyncScheduleRequest,
@@ -133,6 +135,12 @@ const availabilitySchema = z.object({
   weeklySlots: z.array(weeklySlotSchema).optional(),
   temporaryBlocks: z.array(temporaryBlockSchema).optional(),
   granularityMinutes: z.number().int().min(5).max(60).optional(),
+})
+const updatePreferencesSchema = z.object({
+  coursePriorities: z.record(
+    z.string().min(1).max(200),
+    z.number().int().min(0).max(3),
+  ),
 })
 const createTaskSchema = z.object({
   title: z.string().min(1).max(500),
@@ -442,6 +450,23 @@ function mapRun(run: JobRun): AutomationRun {
     attempt: run.attempt,
     ...(run.errorCode ? { errorCode: run.errorCode } : {}),
     ...(run.errorMessage ? { errorMessage: run.errorMessage } : {}),
+  }
+}
+
+async function buildPreferencesView(app: AcademicApp): Promise<PreferencesView> {
+  const preferences = app.preferences.get()
+  const page = await app.store.queries.listCourses()
+  return {
+    coursePriorities: preferences.coursePriorities,
+    courses: page.items
+      .filter((course) => !course.archived)
+      .map((course) => ({
+        courseId: course.courseId,
+        code: course.code,
+        title: course.title,
+        priority: preferences.coursePriorities[course.courseId] ?? 0,
+      })),
+    updatedAt: preferences.updatedAt,
   }
 }
 
@@ -1080,6 +1105,7 @@ export interface AcademicUiApi {
   markNotificationRead(request: unknown): Promise<UiResult<{ changed: boolean }>>
   markAllNotificationsRead(request: unknown): Promise<UiResult<{ changed: number }>>
   settings(request: unknown): Promise<UiResult<SettingsView>>
+  updatePreferences(request: unknown): Promise<UiResult<PreferencesView>>
   updateReminderSettings(
     request: unknown,
   ): Promise<UiResult<{ enabled: boolean; thresholdsHours: number[]; updatedAt: string }>>
@@ -1944,6 +1970,7 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
       const job = app.scheduler.getJob(FIXTURE_SYNC_JOB_ID)
       return ok({
         availability: mapAvailability(availability),
+        preferences: await buildPreferencesView(app),
         reminders,
         sync: {
           jobId: FIXTURE_SYNC_JOB_ID,
@@ -1954,6 +1981,27 @@ export function createAcademicUiApi(app: AcademicApp): AcademicUiApi {
         plannerAvailable: app.registry.get('academic.planner.basic') !== undefined,
         generatedAt: app.clock.now(),
       })
+    },
+
+    async updatePreferences(request) {
+      const parsed = parse(updatePreferencesSchema, request)
+      if (!parsed.ok) return parsed
+      const body: UpdatePreferencesRequest = parsed.value
+      const courseIds = new Set(
+        (await app.store.queries.listCourses()).items.map(
+          (course) => course.courseId,
+        ),
+      )
+      const unknown = Object.keys(body.coursePriorities).find(
+        (courseId) => !courseIds.has(courseId),
+      )
+      if (unknown) return failure('VALIDATION', `未知课程：${unknown}`)
+      try {
+        app.preferences.update(body)
+        return ok(await buildPreferencesView(app))
+      } catch (error) {
+        return failure('VALIDATION', safeMessage(error))
+      }
     },
 
     async updateReminderSettings(request) {
