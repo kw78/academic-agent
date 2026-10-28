@@ -54,6 +54,29 @@ function toneForDue(tone: DueTone): 'ok' | 'warn' | 'bad' | 'neutral' | 'info' {
   }
 }
 
+function tutorPrompt(
+  card: TaskCard | ItemCard,
+  timeZone: string,
+  now: string,
+): string {
+  const course = card.course
+  const item = 'item' in card ? card.item : undefined
+  const task = 'task' in card ? card.task : undefined
+  const due = 'task' in card ? card.effectiveDue : item?.due
+  const lines = [
+    '请基于已保存的学业数据，帮我理解或拆解下面的内容。',
+    `课程：${course ? `${course.code} ${course.title}` : '未关联课程'}`,
+    task ? `本地任务：${task.title}` : undefined,
+    item
+      ? `来源事项：${item.title}（${kindLabel(item.kind)}，数据源 ${item.source.sourceId}）`
+      : undefined,
+    due ? `本地记录的截止：${formatDue(due, timeZone, now).label}` : '本地没有截止时间',
+    '先用只读工具核对事实（如 academic_get_item、academic_get_study_plan），区分数据库事实与你的建议。',
+    '没有提供或读取到课程材料时，不要声称读过材料；不要修改任何数据。',
+  ].filter((line): line is string => Boolean(line))
+  return lines.join('\n')
+}
+
 function TaskRow({
   card,
   timeZone,
@@ -168,10 +191,12 @@ function ItemRow({
   card,
   timeZone,
   now,
+  onAsk,
 }: {
   card: ItemCard
   timeZone: string
   now: string
+  onAsk: () => void
 }) {
   const due = formatDue(card.item.due, timeZone, now)
   return (
@@ -206,6 +231,9 @@ function ItemRow({
       <div className="ac-item-due">
         <Badge tone={toneForDue(due.tone)}>{due.label}</Badge>
         {due.note && <span className="ac-muted">{due.note}</span>}
+        <button type="button" className="ac-button" onClick={onAsk}>
+          请教 Agent
+        </button>
       </div>
     </li>
   )
@@ -521,7 +549,7 @@ export function TasksPage({ ctx, active }: PageProps) {
                         )
                       }
                       onAsk={() => {
-                        const prompt = `请帮我解释或拆解这个学习任务：${card.task.title}（任务 ID ${card.task.taskId}）。请区分数据库事实与你的建议，不要修改任何数据。`
+                        const prompt = tutorPrompt(card, timeZone, now)
                         if (!askAgent(ctx, prompt)) {
                           action.setNotice({
                             tone: 'info',
@@ -553,6 +581,15 @@ export function TasksPage({ ctx, active }: PageProps) {
                       card={card}
                       timeZone={timeZone}
                       now={now}
+                      onAsk={() => {
+                        const prompt = tutorPrompt(card, timeZone, now)
+                        if (!askAgent(ctx, prompt)) {
+                          action.setNotice({
+                            tone: 'info',
+                            text: 'DSH 聊天入口当前不可用；请从会话页发起提问。',
+                          })
+                        }
+                      }}
                     />
                   ))}
                 </ul>
