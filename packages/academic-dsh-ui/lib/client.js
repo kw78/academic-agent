@@ -4305,6 +4305,7 @@ function CourseListItem({
   onChanged
 }) {
   const [editing, setEditing] = (0, import_react6.useState)(false);
+  const [error, setError] = (0, import_react6.useState)();
   return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
     "li",
     {
@@ -4344,13 +4345,20 @@ function CourseListItem({
             {
               type: "button",
               className: "ac-button ac-button-quiet",
-              onClick: () => void callApi(ctx, "restoreCourse", {
-                id: course.courseId
-              }).then(() => onChanged()),
+              onClick: () => {
+                setError(void 0);
+                void callApi(ctx, "restoreCourse", {
+                  id: course.courseId
+                }).then((result) => {
+                  if (result.ok) void onChanged();
+                  else setError(result.error.message);
+                });
+              },
               children: "\u6062\u590D"
             }
           )
         ] }),
+        error && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-text-bad", children: error }),
         editing && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
           CourseEditor,
           {

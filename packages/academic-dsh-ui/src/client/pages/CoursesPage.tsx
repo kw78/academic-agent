@@ -144,6 +144,7 @@ function CourseListItem({
   onChanged: () => Promise<unknown>
 }) {
   const [editing, setEditing] = useState(false)
+  const [error, setError] = useState<string>()
   return (
     <li
       className={`ac-course-item${selected ? ' ac-course-item-selected' : ''}`}
@@ -177,16 +178,21 @@ function CourseListItem({
           <button
             type="button"
             className="ac-button ac-button-quiet"
-            onClick={() =>
+            onClick={() => {
+              setError(undefined)
               void callApi<CommandReceipt>(ctx, 'restoreCourse', {
                 id: course.courseId,
-              }).then(() => onChanged())
-            }
+              }).then((result) => {
+                if (result.ok) void onChanged()
+                else setError(result.error.message)
+              })
+            }}
           >
             恢复
           </button>
         )}
       </div>
+      {error && <p className="ac-text-bad">{error}</p>}
       {editing && (
         <CourseEditor
           ctx={ctx}
