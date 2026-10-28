@@ -340,7 +340,9 @@ function SourceCard({
             {sourceStageLabel(source.stage)}
           </Badge>
           <Badge tone={source.engineKnown ? 'info' : 'bad'}>引擎：{source.engine}</Badge>
-          {source.syncAvailable && <Badge tone="ok">同步可用</Badge>}
+          <Badge tone={source.syncAvailable ? 'ok' : 'neutral'}>
+            {source.syncAvailable ? '同步源' : '登录源'}
+          </Badge>
           {source.canLogin && <Badge tone="info">登录可用</Badge>}
         </div>
         <p className="ac-muted">{source.detail}</p>

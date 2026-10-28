@@ -493,6 +493,24 @@ export async function createAcademicApp(
     config: {},
   })
 
+  // Older activations reused the manifest name, which made the sync source
+  // indistinguishable from the login source in the UI.
+  for (const entry of manifestRegistry.list()) {
+    if (!entry.active) continue
+    const manifest = manifestRegistry.get(entry.adapterId, entry.active)
+    const source = sources.get(candidateSourceId(entry.adapterId))
+    if (
+      manifest &&
+      source &&
+      !source.archived &&
+      source.displayName === manifest.displayName
+    ) {
+      sources.update(source.sourceId, {
+        displayName: `${manifest.displayName}（同步）`,
+      })
+    }
+  }
+
   const probeSamples = new ProbeSampleStore()
   const probeLimiter = new ProbeRateLimiter({
     ...(options.probeMinIntervalMs !== undefined
@@ -546,6 +564,9 @@ export async function createAcademicApp(
     if (!sourceEngines.get('declarative')) {
       return { warning: 'declarative engine 未加载，无法创建同步数据源' }
     }
+    const syncDisplayName = manifest.displayName.endsWith('（同步）')
+      ? manifest.displayName
+      : `${manifest.displayName}（同步）`
     const base = new URL(manifest.baseUrl)
     const host = base.hostname
     const config = {
@@ -568,7 +589,7 @@ export async function createAcademicApp(
       sources.create({
         sourceId,
         engine: 'declarative',
-        displayName: manifest.displayName,
+        displayName: syncDisplayName,
         authKind: 'token',
         loginMode: 'browser',
         capabilities: ['academic.sync'],
@@ -576,7 +597,7 @@ export async function createAcademicApp(
       })
     } else {
       sources.update(sourceId, {
-        displayName: manifest.displayName,
+        displayName: syncDisplayName,
         authKind: 'token',
         loginMode: 'browser',
         capabilities: ['academic.sync'],
@@ -618,7 +639,7 @@ export async function createAcademicApp(
             .find((connection) => connection.sourceId === sourceId) ??
           connections.create({
             sourceId,
-            displayName: manifest.displayName,
+            displayName: syncDisplayName,
             authKind: 'token',
           })
         await connections.setSecret(target.connectionId, secret)

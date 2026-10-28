@@ -545,6 +545,7 @@ describe('academic UI host API', () => {
       sourceId: 'adapter-auto-demo',
       engine: 'declarative',
       adapterReady: true,
+      displayName: 'Auto Demo（同步）',
     })
     const target = app.sources.get('adapter-auto-demo')
     expect(target?.config).toMatchObject({

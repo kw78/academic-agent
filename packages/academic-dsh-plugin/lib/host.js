@@ -44985,6 +44985,16 @@ async function createAcademicApp(options) {
     capabilities: ["academic.sync", "academic.courses.probe"],
     config: {}
   });
+  for (const entry of manifestRegistry.list()) {
+    if (!entry.active) continue;
+    const manifest = manifestRegistry.get(entry.adapterId, entry.active);
+    const source = sources.get(candidateSourceId(entry.adapterId));
+    if (manifest && source && !source.archived && source.displayName === manifest.displayName) {
+      sources.update(source.sourceId, {
+        displayName: `${manifest.displayName}\uFF08\u540C\u6B65\uFF09`
+      });
+    }
+  }
   const probeSamples = new ProbeSampleStore();
   const probeLimiter = new ProbeRateLimiter({
     ...options.probeMinIntervalMs !== void 0 ? { minIntervalMs: options.probeMinIntervalMs } : {}
@@ -45024,6 +45034,7 @@ async function createAcademicApp(options) {
     if (!sourceEngines.get("declarative")) {
       return { warning: "declarative engine \u672A\u52A0\u8F7D\uFF0C\u65E0\u6CD5\u521B\u5EFA\u540C\u6B65\u6570\u636E\u6E90" };
     }
+    const syncDisplayName = manifest.displayName.endsWith("\uFF08\u540C\u6B65\uFF09") ? manifest.displayName : `${manifest.displayName}\uFF08\u540C\u6B65\uFF09`;
     const base = new URL(manifest.baseUrl);
     const host2 = base.hostname;
     const config2 = {
@@ -45046,7 +45057,7 @@ async function createAcademicApp(options) {
       sources.create({
         sourceId,
         engine: "declarative",
-        displayName: manifest.displayName,
+        displayName: syncDisplayName,
         authKind: "token",
         loginMode: "browser",
         capabilities: ["academic.sync"],
@@ -45054,7 +45065,7 @@ async function createAcademicApp(options) {
       });
     } else {
       sources.update(sourceId, {
-        displayName: manifest.displayName,
+        displayName: syncDisplayName,
         authKind: "token",
         loginMode: "browser",
         capabilities: ["academic.sync"],
@@ -45077,7 +45088,7 @@ async function createAcademicApp(options) {
         const secret = await lease.getSecret();
         const target = connections.list().find((connection) => connection.sourceId === sourceId) ?? connections.create({
           sourceId,
-          displayName: manifest.displayName,
+          displayName: syncDisplayName,
           authKind: "token"
         });
         await connections.setSecret(target.connectionId, secret);

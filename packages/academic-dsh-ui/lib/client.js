@@ -3003,7 +3003,7 @@ function SourceCard({
           "\u5F15\u64CE\uFF1A",
           source.engine
         ] }),
-        source.syncAvailable && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Badge, { tone: "ok", children: "\u540C\u6B65\u53EF\u7528" }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Badge, { tone: source.syncAvailable ? "ok" : "neutral", children: source.syncAvailable ? "\u540C\u6B65\u6E90" : "\u767B\u5F55\u6E90" }),
         source.canLogin && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Badge, { tone: "info", children: "\u767B\u5F55\u53EF\u7528" })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "ac-muted", children: source.detail }),

@@ -58,7 +58,7 @@ ACADEMIC_DB=.data/academic.db npm run demo -- adapter list
 - `samples.json` 是 `[{ "url": "https://...", "body": "..." }]`，必须覆盖 Manifest 会请求的每个 URL。Agent 也可以对真实页面调用 `academic_probe_source` 并传 `capture=true`，宿主把原始响应保存在内存（60 分钟 TTL、按 URL 复用、最多 30 个），只把 `sampleId` 返回给 Agent；随后用 `sampleIds` 调用验证，原始 body 不进入模型上下文。合成 HTML 只能用于开发测试，不能用于验收。
 - 探测限速：每个来源最多 3 次/分钟，按 20 秒间隔执行，不做连续突发；过早请求会立即返回“约 N 秒后再试”，不会把工具调用阻塞到 30 秒超时。429/403/登录页/验证码立即停止，不自动重试；相同 URL 的捕获样本在 TTL 内复用，避免重复抓取。测试环境可通过 `probeMinIntervalMs: 0` 关闭间隔。
 - 新建数据库的内置同步任务默认 60 分钟；已有数据库保持原周期，需在设置页调整。提醒扫描仍是本地确定性操作，不访问外部站点。
-- 候选不会自动进入同步；只有显式启用的 validated 版本会被 `engine=declarative` 使用。UI 或 CLI 启用后会创建/更新 `adapter-<adapterId>` 数据源；若已有同站点浏览器会话，Host 在内部复制会话到新连接，成功响应不包含秘密。启用不需要重启 Host：候选表里的 Manifest 会在激活时重新注册。
+- 候选不会自动进入同步；只有显式启用的 validated 版本会被 `engine=declarative` 使用。UI 或 CLI 启用后会创建/更新 `adapter-<adapterId>` 数据源，名称为 `<Manifest 显示名>（同步）`；原浏览器登录源保留用于重新登录/验证，UI 卡片分别标记“同步源/登录源”。若已有同站点浏览器会话，Host 在内部复制会话到新连接，成功响应不包含秘密。启用不需要重启 Host：候选表里的 Manifest 会在激活时重新注册；旧版本同名同步源会在启动时自动补上“（同步）”后缀。
 - Agent 的 `academic_validate_adapter_candidate`、`academic_probe_source` 只读；`academic_register_adapter_candidate` 只暂存候选，不需要写权限，但不会激活或建源；`academic_activate_adapter_candidate` 默认仍需可信宿主逐次授权。CLI 操作用户或 UI 点击即授权者。
 - **Agent 自动接入**：设置页可开启默认关闭的 `agent_adapter_automation`。开启后 `academic_activate_adapter_candidate` 不再逐次弹窗，并可用 `academic_preview_source_sync`、`academic_sync_source` 预览/同步 **declarative** 源；同步经 Connector → Kernel，模型不接触会话秘密。关闭后恢复逐次审核。该开关不允许未验证候选、非 declarative 源、任务修改或学校平台操作。
 - 同步路径白名单来自 Manifest 的 `allowedPathPrefixes`，不是数据源配置；`probePathPrefixes` 只限制探测。不要把“扩大来源路径”误当成启用候选的前提。
