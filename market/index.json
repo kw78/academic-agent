@@ -1,0 +1,88 @@
+{
+  "format": 1,
+  "title": { "en": "Academic Agent", "zh": "Academic Agent 学业助手" },
+  "description": {
+    "en": "Local-first academic assistant for DSH: courses, assignments, plans, reminders, course materials and read-only-first Agent tools.",
+    "zh": "本地优先的 DSH 学业助手：课程、作业、计划、提醒、课程资料与默认只读的 Agent 工具。"
+  },
+  "metadata": {
+    "categories": {
+      "productivity": { "title": { "en": "Productivity", "zh": "效率" } },
+      "education": { "title": { "en": "Education", "zh": "教育" } }
+    },
+    "labels": {
+      "local-first": { "title": { "en": "Local-first", "zh": "本地优先" } },
+      "event-sourced": { "title": { "en": "Event-sourced", "zh": "事件溯源" } }
+    }
+  },
+  "plugins": [
+    {
+      "name": "@academic/dsh-plugin",
+      "title": { "en": "Academic Agent Host & Tools", "zh": "学业助手 Host 与工具" },
+      "description": {
+        "en": "Event-sourced courses, tasks, plans, reminders, source sync, course materials and 23 DSH tools. Writes require trusted host approval.",
+        "zh": "事件溯源的课程、任务、计划、提醒、数据源同步、课程资料与 23 个 DSH 工具；写入需可信宿主批准。"
+      },
+      "icon": "icon.svg",
+      "author": "kw78",
+      "homepage": "https://github.com/kw78/academic-agent",
+      "repository": {
+        "url": "https://github.com/kw78/academic-agent",
+        "directory": "packages/academic-dsh-plugin"
+      },
+      "metadata": {
+        "category": "productivity",
+        "labels": ["local-first", "event-sourced"],
+        "keywords": ["academic", "study", "planner", "event-sourcing", "sqlite", "dsh"]
+      },
+      "dist-tags": { "latest": "0.1.0" },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793183382,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/kw78/academic-agent",
+            "commit": "03617d34f475b315bc0051d39b7141e7c95dbf06",
+            "path": "packages/academic-dsh-plugin"
+          },
+          "engines": { "dsh": ">=0.2.0-rc.1 <0.3.0-0" }
+        }
+      ]
+    },
+    {
+      "name": "@academic/dsh-ui",
+      "title": { "en": "Academic Agent UI", "zh": "学业助手界面" },
+      "description": {
+        "en": "DSH sidebar and panel for courses, tasks, plans, connections, materials, automation and settings.",
+        "zh": "DSH 侧边栏与面板：课程、任务、计划、连接、资料、自动化与设置。"
+      },
+      "icon": "icon.svg",
+      "author": "kw78",
+      "homepage": "https://github.com/kw78/academic-agent",
+      "repository": {
+        "url": "https://github.com/kw78/academic-agent",
+        "directory": "packages/academic-dsh-ui"
+      },
+      "metadata": {
+        "category": "productivity",
+        "labels": ["local-first"],
+        "keywords": ["academic", "ui", "panel", "dsh"]
+      },
+      "dist-tags": { "latest": "0.1.0" },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793183382,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/kw78/academic-agent",
+            "commit": "03617d34f475b315bc0051d39b7141e7c95dbf06",
+            "path": "packages/academic-dsh-ui"
+          },
+          "engines": { "dsh": ">=0.2.0-rc.1 <0.3.0-0" }
+        }
+      ]
+    }
+  ]
+}
