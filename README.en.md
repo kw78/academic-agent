@@ -16,6 +16,18 @@ Business data stays on your machine by default. Credentials only go into the sys
 - **Add sites without waiting for a release**: log in and connect through site rules; new sites prefer configuration over hard-coded school-specific code.
 - **Your data stays yours**: local SQLite; original material files live beside the database; deleting material does not delete academic records; backup and restore have dedicated commands.
 
+## Self-adapting, self-iterating (direction)
+
+The goal is not one adapter per school, but software that grows with your usage:
+
+- **Find its own way**: give it a logged-in URL; it probes pages, scripts, pagination and endpoints, same-host or cross-host, as long as they are public HTTPS. POST-only lists are supported for read-only probes.
+- **Prove itself with real data**: inferred rules must replay real captured pages/JSON; synthetic fixtures never count, and failures name the stage that broke.
+- **Repair itself when sites change**: when a redesign breaks sync, it traces the failing field/request, re-probes and produces a new rule version; old versions stay available for rollback.
+- **Improve with use**: new sites become Manifests instead of code; validation, activation and failure reasons stay local and feed the next generation; with trusted automation enabled, the Agent can connect without per-step approval.
+- **Always bounded**: no homework submission, no credential access, no out-of-scope hosts; every automatic change can be stopped, rolled back and explained.
+
+Today this covers “probe → candidate → real-sample validation → enable/rollback”; generation and repair still happen through an Agent conversation. The next step is closing the loop from “sync failure → diagnose → re-probe → new version” so the software can genuinely iterate on its own.
+
 ## Quick start
 
 Requires Node.js ≥ 22.12. The credential vault currently uses Windows DPAPI.
