@@ -163,6 +163,8 @@ export interface SourceProbeEvidence {
   warnings: string[]
   probedAt: string
   digest: string
+  /** Present when the caller captured the raw response in the host sample store. */
+  sampleId?: string
 }
 
 export class SourceEngineRegistry implements SourceEngineRegistryApi {

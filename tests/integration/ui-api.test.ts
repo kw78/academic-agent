@@ -225,6 +225,27 @@ describe('academic UI host API', () => {
             headers: { 'content-type': 'application/javascript' },
           })
         }
+        if (String(input).endsWith('/api/portal/courses')) {
+          return new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: 'C1',
+                  code: 'CS101',
+                  title: 'Data Structures',
+                  term: '2026FA',
+                },
+              ],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          )
+        }
+        if (String(input).endsWith('/api/portal/courses/C1/assignments')) {
+          return new Response(JSON.stringify({ data: [] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
         if (mode === 'login') {
           return new Response(
             '<html><head><title>登录</title></head><body></body></html>',
@@ -315,6 +336,77 @@ describe('academic UI host API', () => {
           url: 'https://lms.example.edu/api/assignments',
         },
       ])
+    }
+    const capturedCourses = await app.agentBridge.host.call(
+      'academic_probe_source',
+      {
+        sourceId: 'probe-source',
+        url: 'https://lms.example.edu/api/portal/courses',
+        capture: true,
+      },
+    )
+    expect(capturedCourses.ok).toBe(true)
+    if (!capturedCourses.ok) return
+    const coursesEvidence = (
+      capturedCourses.data as { evidence: { sampleId?: string; jsonShape?: string } }
+    ).evidence
+    expect(coursesEvidence.sampleId).toBeTruthy()
+    expect(coursesEvidence.jsonShape).toContain('data: array(1')
+    expect(JSON.stringify(capturedCourses.data)).not.toContain('Data Structures')
+    const capturedAssignments = await app.agentBridge.host.call(
+      'academic_probe_source',
+      {
+        sourceId: 'probe-source',
+        url: 'https://lms.example.edu/api/portal/courses/C1/assignments',
+        capture: true,
+      },
+    )
+    expect(capturedAssignments.ok).toBe(true)
+    if (!capturedAssignments.ok) return
+    const assignmentsEvidence = (
+      capturedAssignments.data as { evidence: { sampleId?: string } }
+    ).evidence
+    const validated = await app.agentBridge.host.call(
+      'academic_validate_adapter_candidate',
+      {
+        manifest: {
+          schemaVersion: 1,
+          adapterId: 'captured-json',
+          version: '1.0.0',
+          displayName: 'Captured JSON',
+          baseUrl: 'https://lms.example.edu/',
+          allowedOrigins: ['lms.example.edu'],
+          allowedPathPrefixes: ['/api/portal/'],
+          courses: {
+            url: '/api/portal/courses',
+            responseType: 'json',
+            items: 'data',
+            fields: {
+              externalCourseId: { path: 'id' },
+              code: { path: 'code' },
+              title: { path: 'title' },
+              termId: { path: 'term' },
+            },
+          },
+          assignments: {
+            url: '/api/portal/courses/{{course.externalCourseId}}/assignments',
+            responseType: 'json',
+            items: 'data',
+            fields: {
+              externalItemId: { path: 'id' },
+              title: { path: 'title' },
+            },
+          },
+        },
+        sampleIds: [
+          coursesEvidence.sampleId,
+          assignmentsEvidence.sampleId,
+        ],
+      },
+    )
+    expect(validated.ok).toBe(true)
+    if (validated.ok) {
+      expect((validated.data as { report: { ok: boolean } }).report.ok).toBe(true)
     }
     const crossHost = await api.probeSource({
       sourceId: 'probe-source',

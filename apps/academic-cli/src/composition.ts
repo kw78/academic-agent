@@ -36,7 +36,7 @@ import {
   createDefaultCredentialVault,
   type CredentialVault,
 } from '@academic/connections'
-import { SourceConfigStore, probeSourcePage } from '@academic/sources'
+import { SourceConfigStore, ProbeSampleStore, probeSourcePage } from '@academic/sources'
 import {
   WebSessionStore,
   type ResolveHost,
@@ -212,7 +212,11 @@ export interface AcademicApp {
     connectionId: string,
     adapter: AcademicSourceAdapter,
   ): Promise<SyncRunSummary>
-  probeSource(sourceId: string, url?: string): Promise<SourceProbeEvidence>
+  probeSource(
+    sourceId: string,
+    url?: string,
+    options?: { captureSample?: boolean },
+  ): Promise<SourceProbeEvidence>
   previewSourceSync(sourceId: string, connectionId?: string): Promise<SyncPreview>
   syncSource(sourceId: string, connectionId?: string): Promise<SyncRunSummary>
   previewPlan(
@@ -424,9 +428,12 @@ export async function createAcademicApp(
     config: {},
   })
 
+  const probeSamples = new ProbeSampleStore()
+
   const probeSourceById = async (
     sourceId: string,
     url?: string,
+    probeOptions: { captureSample?: boolean } = {},
   ): Promise<SourceProbeEvidence> => {
     const source = sources.get(sourceId)
     if (!source || source.archived) {
@@ -451,6 +458,8 @@ export async function createAcademicApp(
       secret: await credentials.getSecret(),
       probedAt: clock.now(),
       ...(url ? { url } : {}),
+      ...(probeOptions.captureSample ? { captureSample: true } : {}),
+      sampleStore: probeSamples,
       ...(options.probeFetch ? { fetchImpl: options.probeFetch } : {}),
       ...(options.probeResolveHost
         ? { resolveHost: options.probeResolveHost }
@@ -470,6 +479,7 @@ export async function createAcademicApp(
     webSessions,
     adapterCandidates,
     probeSource: probeSourceById,
+    getProbeSample: (sampleId: string) => probeSamples.get(sampleId),
     allowWrites: options.agentWrites ?? false,
     ...(options.authorizeAgentWrite
       ? { authorizeWrite: options.authorizeAgentWrite }

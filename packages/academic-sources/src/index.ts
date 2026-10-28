@@ -346,3 +346,9 @@ export {
   probeUrlFor,
   type ProbeSourcePageInput,
 } from './probe.js'
+export {
+  ProbeSampleStore,
+  type CapturedProbeSample,
+  type ProbeSampleSummary,
+  type ProbeSampleStoreOptions,
+} from './sample-store.js'

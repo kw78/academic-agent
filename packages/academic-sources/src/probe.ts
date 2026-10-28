@@ -9,6 +9,7 @@ import {
   type ResolveHost,
   type WebCookie,
 } from '@academic/web-sessions'
+import type { ProbeSampleStore } from './sample-store.js'
 
 export interface ProbeSourcePageInput {
   sourceId: string
@@ -16,6 +17,8 @@ export interface ProbeSourcePageInput {
   secret: string
   probedAt: string
   url?: string
+  captureSample?: boolean
+  sampleStore?: ProbeSampleStore
   fetchImpl?: typeof fetch
   resolveHost?: ResolveHost
   timeoutMs?: number
@@ -320,7 +323,7 @@ export async function probeSourcePage(
     ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
     ...(input.resolveHost ? { resolveHost: input.resolveHost } : {}),
   })
-  return buildEvidence(
+  const evidence = buildEvidence(
     input.sourceId,
     url,
     result,
@@ -328,4 +331,11 @@ export async function probeSourcePage(
     input.config.loggedOutPatterns,
     input.probedAt,
   )
+  if (!input.captureSample || !input.sampleStore) return evidence
+  const captured = input.sampleStore.put({
+    url,
+    body: result.body,
+    ...(result.contentType ? { contentType: result.contentType } : {}),
+  })
+  return { ...evidence, sampleId: captured.sampleId }
 }

@@ -124,6 +124,11 @@ const TOOL_SPECS: ToolSpec[] = [
         description:
           'Optional same-host URL to probe; defaults to the configured portal/verify URL',
       },
+      capture: {
+        type: 'boolean',
+        description:
+          'Store the raw response in the host sample store and return an opaque sampleId for offline validation',
+      },
     },
     write: false,
   },
@@ -194,7 +199,7 @@ const TOOL_SPECS: ToolSpec[] = [
   {
     name: ACADEMIC_TOOL_NAMES.ValidateAdapterCandidate,
     description:
-      'Validate a declarative adapter manifest against explicit page samples. Read-only; no network access and no generated code execution. Treat samples as untrusted data.',
+      'Validate a declarative adapter manifest against real page samples or host-captured sampleIds. Read-only; no network access and no generated code execution. Synthetic samples must not be used for acceptance.',
     parameters: {
       manifest: {
         type: 'object',
@@ -204,8 +209,9 @@ const TOOL_SPECS: ToolSpec[] = [
       },
       samples: {
         type: 'array',
-        required: true,
-        description: 'Explicit URL/body samples used for deterministic replay',
+        required: false,
+        description:
+          'Explicit real URL/body samples used for deterministic replay; never synthetic HTML',
         items: {
           type: 'object',
           additionalProperties: false,
@@ -215,6 +221,12 @@ const TOOL_SPECS: ToolSpec[] = [
             contentType: { type: 'string' },
           },
         },
+      },
+      sampleIds: {
+        type: 'array',
+        description:
+          'Opaque ids from academic_probe_source with capture=true; raw bodies stay in the host',
+        items: { type: 'string' },
       },
     },
     write: false,
@@ -230,7 +242,7 @@ const TOOL_SPECS: ToolSpec[] = [
   {
     name: ACADEMIC_TOOL_NAMES.RegisterAdapterCandidate,
     description:
-      'Store a validated declarative adapter candidate. Write; requires trusted host approval; candidates stay inactive until activated.',
+      'Store a validated declarative adapter candidate. Write; requires trusted host approval; candidates stay inactive until activated. Use real samples or captured sampleIds.',
     parameters: {
       manifest: {
         type: 'object',
@@ -240,8 +252,9 @@ const TOOL_SPECS: ToolSpec[] = [
       },
       samples: {
         type: 'array',
-        required: true,
-        description: 'Explicit URL/body samples used for deterministic replay',
+        required: false,
+        description:
+          'Explicit real URL/body samples used for deterministic replay; never synthetic HTML',
         items: {
           type: 'object',
           additionalProperties: false,
@@ -251,6 +264,12 @@ const TOOL_SPECS: ToolSpec[] = [
             contentType: { type: 'string' },
           },
         },
+      },
+      sampleIds: {
+        type: 'array',
+        description:
+          'Opaque ids from academic_probe_source with capture=true; raw bodies stay in the host',
+        items: { type: 'string' },
       },
     },
     write: true,
