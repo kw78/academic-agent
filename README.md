@@ -236,7 +236,7 @@ Scheduler ──► Connector ──► Adapter   └──► Planner（确定�
 - **Gate 0/2–6 已完成**：类型检查、180 项测试、构建、DSH selftest、DSH Web UI 独立库同步、真实 BB/JW 平台闭环均已实测；详见 [docs/mvp-verification.md](docs/mvp-verification.md)。
 - **Gate 1**：DSH Web 已验证 UI/Host/同步；用户已在 Desktop 当前构建手工检查基本流程，未报告问题；文件级 HMR/完整生命周期专项仍未验证。
 - 系统凭据库当前为 Windows DPAPI；Credential Manager/其他 OS vault 是后续可替换实现。
-- **接入流程**：给定 HTTPS 网址后可登录、验证、只读探测；探测支持同一来源主机内的额外 URL、同站脚本、候选接口、表格表头/class 与容器 class，`capture=true` 可把真实响应存入 Host 临时样本并返回 `sampleId`，Agent 用 `sampleIds` 直接验证 Manifest，无需你手工导出 DOM/Network。探测按来源限速（每个来源最多 1 次/分钟），429/403/登录页立即停止；相同 URL 样本复用。用户在“连接”页确认启用/回滚。仍未实现任意站点全自动多页发现或任意 JavaScript。
+- **接入流程**：给定 HTTPS 网址后可登录、验证、只读探测；探测支持同一来源主机内的额外 URL、同站脚本、候选接口、表格表头/class 与容器 class，`capture=true` 可把真实响应存入 Host 临时样本并返回 `sampleId`，Agent 用 `sampleIds` 直接验证 Manifest，无需你手工导出 DOM/Network。探测按来源限速（每个来源最多 2 次/分钟，按 30 秒间隔执行），429/403/登录页立即停止；相同 URL 样本复用。用户在“连接”页确认启用/回滚。仍未实现任意站点全自动多页发现或任意 JavaScript。
 - **偏好与复习**：课程优先级、可用时间与任务预计时长已持久化；复习清单只基于已保存事项与任务，不生成成绩趋势或能力评分。
 - 真实 Blackboard 只读同步已接入并验证课程/作业/文件夹；当前账号无测试项样本，考试/测验仍以 fixture 验证。
 - **第二平台**：USTC 综合教务系统用 Manifest 真实同步考试表（1 门课程/1 个考试，重复同步 no-op）；课表、成绩、作业未覆盖，平台无 ICS 订阅，Manifest 暂不支持 XML。
