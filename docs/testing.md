@@ -165,7 +165,7 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 
 ## 统一接入与探测
 
-- `tests/integration/ui-api.test.ts`：已保存会话的 `probeSource` 返回脱敏证据（标题/标题层级/链接/限制），URL 查询串与 Cookie 不返回；登录页识别为 `AUTH_REQUIRED`；探测不写学术事项；`academic_probe_source` 工具返回同样脱敏结果。
+- `tests/integration/ui-api.test.ts`：已保存会话的 `probeSource` 返回脱敏证据（标题/标题层级/链接/脚本/候选接口/限制），URL 查询串与 Cookie 不返回；支持同一主机内的 `url` 覆盖探测，跨主机 URL 被拒绝；登录页识别为 `AUTH_REQUIRED`；探测不写学术事项；`academic_probe_source` 工具同样支持可选 `url` 且脱敏。
 - `createSource`/`createConnection` 对同 engine/名称/配置或同 source 连接返回已有对象，避免双击产生重复数据源。
 - 快速添加、下一步提示、探测结果与候选启用/回滚在真实 UI 中仍需浏览器手工验收；当前自动化覆盖 Host API 与构建。
 
