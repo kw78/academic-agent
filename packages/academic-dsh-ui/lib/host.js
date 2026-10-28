@@ -20224,6 +20224,14 @@ function isValidTimeZone(zone) {
   }
 }
 
+// packages/academic-planner-basic/src/preferences.ts
+var userPreferencesSchema = external_exports.object({
+  coursePriorities: external_exports.record(
+    external_exports.string().min(1).max(200),
+    external_exports.number().int().min(0).max(3)
+  ).default({})
+});
+
 // packages/academic-dsh-ui/src/api.ts
 var MAX_TASKS = 500;
 var MAX_ITEMS = 200;
@@ -20273,6 +20281,12 @@ var availabilitySchema = external_exports.object({
   weeklySlots: external_exports.array(weeklySlotSchema2).optional(),
   temporaryBlocks: external_exports.array(temporaryBlockSchema).optional(),
   granularityMinutes: external_exports.number().int().min(5).max(60).optional()
+});
+var updatePreferencesSchema = external_exports.object({
+  coursePriorities: external_exports.record(
+    external_exports.string().min(1).max(200),
+    external_exports.number().int().min(0).max(3)
+  )
 });
 var createTaskSchema = external_exports.object({
   title: external_exports.string().min(1).max(500),
@@ -20533,6 +20547,20 @@ function mapRun(run) {
     ...run.errorMessage ? { errorMessage: run.errorMessage } : {}
   };
 }
+async function buildPreferencesView(app) {
+  const preferences = app.preferences.get();
+  const page = await app.store.queries.listCourses();
+  return {
+    coursePriorities: preferences.coursePriorities,
+    courses: page.items.filter((course) => !course.archived).map((course) => ({
+      courseId: course.courseId,
+      code: course.code,
+      title: course.title,
+      priority: preferences.coursePriorities[course.courseId] ?? 0
+    })),
+    updatedAt: preferences.updatedAt
+  };
+}
 var SYNC_STALE_AFTER_MS = 24 * 60 * 60 * 1e3;
 function configurationState(config2) {
   if (config2.archived) return "archived";
@@ -20595,6 +20623,133 @@ function sourceState(source) {
   }
   return "configured";
 }
+function sourceStage(source) {
+  if (source.configuration === "archived") return "archived";
+  if (source.configuration === "disabled") return "disabled";
+  if (!source.engineKnown) return "unsupported";
+  if (source.syncHealth === "running") return "syncing";
+  if (source.syncHealth === "auth-required" || source.authentication === "missing" || source.authentication === "expired" || source.authentication === "rejected") {
+    return "login-required";
+  }
+  if (source.authentication === "saved") return "login-saved";
+  if (!source.adapterReady) return "verified";
+  if (source.syncHealth === "failed") return "failed";
+  if (source.syncHealth === "partial") return "degraded";
+  if (source.syncHealth === "never-synced") return "ready";
+  return "enabled";
+}
+function sourceNextStep(source) {
+  if (source.configuration === "archived") {
+    return { action: "none", label: "\u6570\u636E\u6E90\u5DF2\u5F52\u6863\uFF1B\u5386\u53F2\u6570\u636E\u4ECD\u4FDD\u7559" };
+  }
+  if (source.configuration === "disabled") {
+    return { action: "none", label: "\u6570\u636E\u6E90\u5DF2\u505C\u7528\uFF1B\u542F\u7528\u540E\u624D\u80FD\u540C\u6B65" };
+  }
+  if (!source.engineKnown) {
+    return {
+      action: "fix",
+      label: "\u52A0\u8F7D\u6216\u5347\u7EA7\u5BF9\u5E94\u6570\u636E\u6E90\u5F15\u64CE",
+      reason: "\u5F53\u524D\u7248\u672C\u672A\u52A0\u8F7D\u8BE5\u5F15\u64CE"
+    };
+  }
+  if (source.syncHealth === "auth-required" || source.authentication === "missing" || source.authentication === "expired" || source.authentication === "rejected") {
+    if (source.canLogin) {
+      return {
+        action: "login",
+        label: source.authentication === "missing" ? "\u767B\u5F55\u5E73\u53F0" : "\u91CD\u65B0\u767B\u5F55\u5E73\u53F0",
+        ...source.connection?.lastError ? { reason: source.connection.lastError } : {}
+      };
+    }
+    return {
+      action: "fix",
+      label: "\u914D\u7F6E\u8BA4\u8BC1\u4F1A\u8BDD",
+      reason: "\u8BE5\u5F15\u64CE\u6CA1\u6709\u6D4F\u89C8\u5668\u767B\u5F55\u5165\u53E3"
+    };
+  }
+  if (source.authentication === "saved") {
+    return source.canVerify ? { action: "verify", label: "\u9A8C\u8BC1\u8FDE\u63A5\u540E\u540C\u6B65" } : { action: "fix", label: "\u5F53\u524D\u5F15\u64CE\u4E0D\u652F\u6301\u4F1A\u8BDD\u9A8C\u8BC1" };
+  }
+  if (!source.adapterReady) {
+    return {
+      action: "none",
+      label: "\u751F\u6210\u6216\u914D\u7F6E\u540C\u6B65 Adapter",
+      reason: "\u5F53\u524D\u5F15\u64CE\u6CA1\u6709\u53EF\u7528\u7684\u540C\u6B65 Adapter"
+    };
+  }
+  if (source.syncHealth === "running") {
+    return { action: "none", label: "\u540C\u6B65\u8FDB\u884C\u4E2D" };
+  }
+  if (source.syncHealth === "failed") {
+    return {
+      action: "sync",
+      label: "\u67E5\u770B\u5931\u8D25\u539F\u56E0\u540E\u91CD\u8BD5\u540C\u6B65",
+      ...source.connection?.lastError ? { reason: source.connection.lastError } : {}
+    };
+  }
+  if (source.syncHealth === "partial") {
+    return { action: "sync", label: "\u91CD\u65B0\u540C\u6B65\uFF08\u4E0A\u6B21\u4E3A\u90E8\u5206\u7ED3\u679C\uFF09" };
+  }
+  if (source.syncHealth === "never-synced") {
+    return { action: "sync", label: "\u9884\u89C8\u5E76\u540C\u6B65" };
+  }
+  return { action: "sync", label: "\u7ACB\u5373\u540C\u6B65" };
+}
+function sourceDiagnosis(source) {
+  const run = source.lastSync;
+  const message = [run?.errorMessage, source.connection?.lastError].filter((entry) => Boolean(entry)).join("\n");
+  const haystack = `${message}
+${(run?.warnings ?? []).join("\n")}`;
+  if (run?.status === "auth-required" || run?.errorCode === "AUTH_REQUIRED" || source.authentication === "expired" || source.authentication === "rejected" || /会话.*(失效|过期)|重新登录|登录已失效/i.test(haystack)) {
+    return {
+      category: "auth",
+      summary: "\u767B\u5F55\u4F1A\u8BDD\u5DF2\u5931\u6548\u6216\u5C1A\u672A\u9A8C\u8BC1",
+      suggestion: "\u91CD\u65B0\u767B\u5F55\u5E76\u9A8C\u8BC1\u8FDE\u63A5\uFF1B\u5DF2\u540C\u6B65\u7684\u5B66\u4E1A\u6570\u636E\u4F1A\u4FDD\u7559"
+    };
+  }
+  if (/分页|maxPages|最大页|达到上限|下一页/i.test(haystack)) {
+    return {
+      category: "schema",
+      summary: "\u5206\u9875\u8FBE\u5230\u4E0A\u9650\u6216\u5206\u9875\u94FE\u63A5\u5F02\u5E38",
+      suggestion: "\u68C0\u67E5\u5206\u9875\u89C4\u5219\u548C maxPages\uFF1B\u786E\u8BA4 partial \u7ED3\u679C\u7B26\u5408\u9884\u671F"
+    };
+  }
+  if (/未授权|UNSAFE_|allowedOrigins|allowedPathPrefixes|主机|路径/i.test(haystack)) {
+    return {
+      category: "permission",
+      summary: "\u8BF7\u6C42\u8D85\u51FA\u5DF2\u6388\u6743\u7684\u4E3B\u673A\u6216\u8DEF\u5F84\u8303\u56F4",
+      suggestion: "\u6838\u5BF9 Manifest \u8BBF\u95EE\u8303\u56F4\uFF1B\u4E0D\u8981\u4E3A\u7ED5\u8FC7\u9519\u8BEF\u800C\u6269\u5927\u6743\u9650"
+    };
+  }
+  if (/页面结构|缺少必需字段|选择器|正则|解析|JSON|schema|模板/i.test(haystack)) {
+    return {
+      category: "schema",
+      summary: "\u9875\u9762\u7ED3\u6784\u6216\u5B57\u6BB5\u6620\u5C04\u53EF\u80FD\u5DF2\u53D8\u5316",
+      suggestion: "\u8BA9 Agent \u7528\u65B0\u6837\u672C\u751F\u6210\u4FEE\u590D\u5019\u9009\uFF1B\u9A8C\u8BC1\u4E0E\u9884\u89C8\u901A\u8FC7\u540E\u518D\u542F\u7528"
+    };
+  }
+  if (run?.errorCode === "TRANSIENT" || /超时|timeout|429|限流|rate limit|HTTP 5\d\d|5xx/i.test(haystack)) {
+    return {
+      category: "network",
+      summary: "\u7F51\u7EDC\u8D85\u65F6\u3001\u9650\u6D41\u6216\u5E73\u53F0\u6682\u65F6\u4E0D\u53EF\u7528",
+      suggestion: "\u7A0D\u540E\u91CD\u8BD5\uFF1B\u68C0\u67E5\u7F51\u7EDC\u548C\u5E73\u53F0\u72B6\u6001\uFF0C\u65E7\u6570\u636E\u5DF2\u4FDD\u7559"
+    };
+  }
+  if (run?.status === "partial") {
+    return {
+      category: "quality",
+      summary: "\u90E8\u5206\u6570\u636E\u672A\u80FD\u6293\u53D6",
+      suggestion: "\u67E5\u770B\u540C\u6B65\u8B66\u544A\u5E76\u91CD\u8BD5\uFF1B\u65E7\u6570\u636E\u5DF2\u4FDD\u7559"
+    };
+  }
+  if (run?.status === "failed") {
+    return {
+      category: "unknown",
+      summary: "\u540C\u6B65\u5931\u8D25",
+      suggestion: "\u67E5\u770B\u9519\u8BEF\u4FE1\u606F\u540E\u91CD\u8BD5\uFF1B\u5FC5\u8981\u65F6\u8BA9 Agent \u68C0\u67E5\u9002\u914D\u89C4\u5219"
+    };
+  }
+  return void 0;
+}
 function sourceDetail(source) {
   if (!source.engineKnown) return "\u5F53\u524D\u7248\u672C\u672A\u52A0\u8F7D\u8BE5\u6570\u636E\u6E90\u5F15\u64CE";
   if (source.configuration === "archived") return "\u6570\u636E\u6E90\u5DF2\u5F52\u6863";
@@ -20651,6 +20806,8 @@ function buildSources(app, connections, syncRuns) {
       authentication: config2.authKind === "none" ? "not-required" : "missing",
       syncHealth: "never-synced",
       state: "unconfigured",
+      stage: "login-required",
+      nextStep: { action: "none", label: "\u6B63\u5728\u68C0\u67E5\u6570\u636E\u6E90\u72B6\u6001" },
       ...engine?.descriptor.description ? { detail: engine.descriptor.description } : {}
     });
   }
@@ -20678,6 +20835,12 @@ function buildSources(app, connections, syncRuns) {
         authentication: "missing",
         syncHealth: "never-synced",
         state: "unavailable",
+        stage: "unsupported",
+        nextStep: {
+          action: "fix",
+          label: "\u52A0\u8F7D\u6216\u5347\u7EA7\u5BF9\u5E94\u6570\u636E\u6E90\u5F15\u64CE",
+          reason: "\u5F53\u524D\u7248\u672C\u672A\u52A0\u8F7D\u8BE5\u5F15\u64CE"
+        },
         connection
       });
     }
@@ -20689,6 +20852,10 @@ function buildSources(app, connections, syncRuns) {
     source.authentication = authenticationState(source);
     source.syncHealth = syncHealthState(source.lastSync, now);
     source.state = sourceState(source);
+    source.stage = sourceStage(source);
+    source.nextStep = sourceNextStep(source);
+    const diagnosis = sourceDiagnosis(source);
+    if (diagnosis) source.diagnosis = diagnosis;
     const detail = sourceDetail(source);
     if (detail) source.detail = detail;
   }
@@ -21618,6 +21785,7 @@ function createAcademicUiApi(app) {
       const job = app.scheduler.getJob(FIXTURE_SYNC_JOB_ID);
       return ok({
         availability: mapAvailability(availability),
+        preferences: await buildPreferencesView(app),
         reminders,
         sync: {
           jobId: FIXTURE_SYNC_JOB_ID,
@@ -21628,6 +21796,26 @@ function createAcademicUiApi(app) {
         plannerAvailable: app.registry.get("academic.planner.basic") !== void 0,
         generatedAt: app.clock.now()
       });
+    },
+    async updatePreferences(request) {
+      const parsed = parse3(updatePreferencesSchema, request);
+      if (!parsed.ok) return parsed;
+      const body = parsed.value;
+      const courseIds = new Set(
+        (await app.store.queries.listCourses()).items.map(
+          (course) => course.courseId
+        )
+      );
+      const unknown2 = Object.keys(body.coursePriorities).find(
+        (courseId) => !courseIds.has(courseId)
+      );
+      if (unknown2) return failure2("VALIDATION", `\u672A\u77E5\u8BFE\u7A0B\uFF1A${unknown2}`);
+      try {
+        app.preferences.update(body);
+        return ok(await buildPreferencesView(app));
+      } catch (error62) {
+        return failure2("VALIDATION", safeMessage(error62));
+      }
     },
     async updateReminderSettings(request) {
       const parsed = parse3(reminderSchema, request);

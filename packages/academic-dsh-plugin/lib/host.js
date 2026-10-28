@@ -5195,7 +5195,7 @@ import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { Service } from "@deepseek-ai/cordis";
 
 // apps/academic-cli/src/composition.ts
-import { createHash as createHash8, randomUUID as randomUUID3 } from "node:crypto";
+import { createHash as createHash9, randomUUID as randomUUID3 } from "node:crypto";
 import { mkdirSync as mkdirSync3 } from "node:fs";
 import { dirname as dirname2 } from "node:path";
 
@@ -25740,6 +25740,9 @@ var ConnectionManager = class {
   }
 };
 
+// packages/academic-sources/src/probe.ts
+import { createHash as createHash3 } from "node:crypto";
+
 // packages/academic-web-sessions/src/index.ts
 import { chromium } from "playwright-core";
 
@@ -26479,7 +26482,8 @@ ${text2}`);
     ...contentType?.includes("json") && jsonShapeText ? { jsonShape: jsonShapeText } : {},
     loginLike: loginLikePage(result.finalUrl, result.body, patterns),
     warnings: result.truncated ? ["\u54CD\u5E94\u8D85\u8FC7\u5927\u5C0F\u4E0A\u9650\uFF0C\u4EC5\u5206\u6790\u524D 512KB"] : [],
-    probedAt
+    probedAt,
+    digest: createHash3("sha256").update(result.body).digest("hex")
   };
 }
 async function probeSourcePage(input2) {
@@ -26950,7 +26954,7 @@ function createBrowserSessionEngine(options = {}) {
 }
 
 // adapters/fixture-lms/src/index.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 import { readFileSync as readFileSync2 } from "node:fs";
 import { fileURLToPath } from "node:url";
 var fixtureCourseSchema = external_exports.object({
@@ -27015,7 +27019,7 @@ function contentHashForItem(sourceId, item) {
     sourceUrl: item.sourceUrl ?? null,
     sourceUpdatedAt: item.sourceUpdatedAt ?? null
   });
-  return createHash3("sha256").update(JSON.stringify(content)).digest("hex");
+  return createHash4("sha256").update(JSON.stringify(content)).digest("hex");
 }
 function normalizeFixtureSnapshot(snapshot) {
   const items = snapshot.items.map((item) => ({
@@ -27094,7 +27098,7 @@ function createFixtureSourceEngine() {
 import { chromium as chromium3 } from "playwright-core";
 
 // adapters/ustc-blackboard/src/parse.ts
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 var NAMED_ENTITIES = {
   amp: "&",
   lt: "<",
@@ -27441,7 +27445,7 @@ function parseAssignmentDetail(html, url2, courseExternalId, fallbackTitle, opti
   const instructions = /<li[^>]*id=["']instructions["'][^>]*>([\s\S]*?)<\/li>/i.exec(html)?.[1] ?? "";
   const description = stripHtml(instructions).slice(0, 4e3);
   const kind = /考试|exam/i.test(title) ? "exam" : /测验|quiz|test/i.test(title) ? "quiz" : "assignment";
-  const contentHash = createHash4("sha256").update(
+  const contentHash = createHash5("sha256").update(
     JSON.stringify({
       title,
       description,
@@ -27481,7 +27485,7 @@ function parseAssessmentDetail(html, url2, courseExternalId, fallbackTitle, fall
   )?.[1] ?? "";
   const description = stripHtml(instructions).slice(0, 4e3);
   const kind = /考试|exam/i.test(`${title} ${fallbackKind}`) ? "exam" : "quiz";
-  const contentHash = createHash4("sha256").update(JSON.stringify({ title, description, due, courseExternalId, kind })).digest("hex");
+  const contentHash = createHash5("sha256").update(JSON.stringify({ title, description, due, courseExternalId, kind })).digest("hex");
   return {
     externalItemId: `bb:${courseExternalId}:assessment:${contentId}`,
     courseExternalId,
@@ -27875,7 +27879,10 @@ var extractorSchema = external_exports.object({
   attribute: external_exports.string().min(1).max(100).optional(),
   regex: external_exports.string().min(1).max(500).optional(),
   group: external_exports.number().int().min(0).max(20).optional(),
-  trim: external_exports.boolean().optional()
+  trim: external_exports.boolean().optional(),
+  type: external_exports.enum(["string", "number", "boolean"]).optional(),
+  default: external_exports.union([external_exports.string(), external_exports.number(), external_exports.boolean()]).optional(),
+  required: external_exports.boolean().optional()
 }).refine(
   (value) => [value.selector, value.path, value.constant, value.template].filter(
     (entry) => entry !== void 0
@@ -27883,15 +27890,30 @@ var extractorSchema = external_exports.object({
   {
     message: "Each field needs exactly one of selector, path, constant or template"
   }
-);
+).refine((value) => !value.attribute || Boolean(value.selector), {
+  message: "attribute can only be used together with selector"
+});
 var requestSchema = external_exports.object({
   url: external_exports.string().min(1).max(2e3),
   responseType: external_exports.enum(["html", "json"]).default("html"),
   items: external_exports.string().min(1).max(500),
   fields: external_exports.record(external_exports.string(), extractorSchema),
   next: external_exports.string().min(1).max(500).optional(),
-  maxPages: external_exports.number().int().min(1).max(50).optional()
-});
+  maxPages: external_exports.number().int().min(1).max(50).optional(),
+  pageParam: external_exports.string().regex(/^[A-Za-z0-9_.-]{1,80}$/, "Expected a query parameter name").optional(),
+  pageStart: external_exports.number().int().min(0).max(1e4).optional(),
+  pageStep: external_exports.number().int().min(1).max(100).optional(),
+  offsetParam: external_exports.string().regex(/^[A-Za-z0-9_.-]{1,80}$/, "Expected a query parameter name").optional(),
+  offsetStart: external_exports.number().int().min(0).max(1e6).optional(),
+  offsetStep: external_exports.number().int().min(1).max(1e4).optional()
+}).refine(
+  (value) => [value.next, value.pageParam, value.offsetParam].filter(
+    (entry) => entry !== void 0
+  ).length <= 1,
+  {
+    message: "Use at most one pagination strategy: next, pageParam or offsetParam"
+  }
+);
 var adapterManifestSchema = external_exports.object({
   schemaVersion: external_exports.literal(1),
   adapterId: external_exports.string().min(1).max(200),
@@ -27909,6 +27931,14 @@ var adapterManifestSchema = external_exports.object({
   detail: requestSchema.optional()
 });
 function parseManifest(value) {
+  if (value && typeof value === "object" && "schemaVersion" in value) {
+    const version2 = value.schemaVersion;
+    if (version2 !== 1) {
+      throw new Error(
+        `\u4E0D\u652F\u6301\u7684 Manifest schemaVersion\uFF1A${String(version2)}\uFF1B\u5F53\u524D\u53EA\u652F\u6301 1`
+      );
+    }
+  }
   return adapterManifestSchema.parse(value);
 }
 var ManifestRegistry = class {
@@ -38606,20 +38636,51 @@ function applyRegex(value, extractor, budget) {
 }
 function extractHtmlField(row, extractor, budget) {
   if (!extractor.selector) return void 0;
-  const element = row.querySelector(extractor.selector);
+  let element;
+  try {
+    element = row.querySelector(extractor.selector);
+  } catch {
+    throw new Error(`\u65E0\u6548\u7684\u5B57\u6BB5\u9009\u62E9\u5668\uFF1A${extractor.selector}`);
+  }
   if (!element) return void 0;
   const raw = extractor.attribute ? element.getAttribute(extractor.attribute) ?? "" : element.textContent ?? "";
-  const matched = applyRegex(raw, extractor, budget);
-  if (matched === void 0) return void 0;
-  return extractor.trim === false ? matched : matched.trim();
+  return applyRegex(raw, extractor, budget);
 }
 function extractJsonField(row, extractor, budget) {
   if (!extractor.path) return void 0;
   const value = readJsonPath(row, extractor.path);
   if (typeof value !== "string") return value;
-  const matched = applyRegex(value, extractor, budget);
-  if (matched === void 0) return void 0;
-  return extractor.trim === false ? matched : matched.trim();
+  return applyRegex(value, extractor, budget);
+}
+function coerceValue(value, extractor) {
+  let raw = value;
+  if (raw === void 0 || raw === null) {
+    if (extractor.default === void 0) return {};
+    raw = extractor.default;
+  }
+  if (typeof raw === "string") {
+    const trimmed = extractor.trim === false ? raw : raw.trim();
+    if (trimmed === "") return {};
+    raw = trimmed;
+  }
+  if (extractor.type === "number") {
+    const number4 = typeof raw === "number" ? raw : Number(raw);
+    return Number.isFinite(number4) ? { value: number4 } : { invalid: true };
+  }
+  if (extractor.type === "boolean") {
+    if (typeof raw === "boolean") return { value: raw };
+    const normalized2 = String(raw).trim().toLowerCase();
+    if (["true", "1", "yes", "y"].includes(normalized2)) return { value: true };
+    if (["false", "0", "no", "n"].includes(normalized2)) return { value: false };
+    return { invalid: true };
+  }
+  if (extractor.type === "string") return { value: String(raw) };
+  return { value: raw };
+}
+function bump(stats, field, key2) {
+  const stat = stats.get(field) ?? { missing: 0, invalid: 0 };
+  stat[key2] += 1;
+  stats.set(field, stat);
 }
 function scalarText(value) {
   if (typeof value === "string") return value;
@@ -38631,7 +38692,19 @@ function renderFieldTemplate(template, record2) {
     return scalarText(readJsonPath(record2, path)) ?? "";
   });
 }
-function extractRecord(row, request, html, budget) {
+function assignField(record2, extractor, raw, name, stats) {
+  const coerced = coerceValue(raw, extractor);
+  if (coerced.invalid) {
+    bump(stats, name, "invalid");
+    return;
+  }
+  if (coerced.value === void 0) {
+    bump(stats, name, "missing");
+    return;
+  }
+  record2[name] = coerced.value;
+}
+function extractRecord(row, request, html, budget, stats) {
   const record2 = {};
   const entries2 = Object.entries(request.fields);
   for (const [name, extractor] of entries2) {
@@ -38640,18 +38713,26 @@ function extractRecord(row, request, html, budget) {
   for (const [name, extractor] of entries2) {
     if (extractor.constant !== void 0 || extractor.template !== void 0) continue;
     const value = html ? extractHtmlField(row, extractor, budget) : extractJsonField(row, extractor, budget);
-    if (value !== void 0) record2[name] = value;
+    assignField(record2, extractor, value, name, stats);
   }
   for (const [name, extractor] of entries2) {
     if (!extractor.template) continue;
-    const raw = renderFieldTemplate(extractor.template, record2);
-    const value = extractor.trim === false ? raw : raw.trim();
-    if (value) record2[name] = value;
+    assignField(
+      record2,
+      extractor,
+      renderFieldTemplate(extractor.template, record2),
+      name,
+      stats
+    );
   }
   return record2;
 }
+function diagnosticsOf(stats) {
+  return [...stats.entries()].filter(([, stat]) => stat.missing > 0 || stat.invalid > 0).map(([field, stat]) => ({ field, ...stat }));
+}
 function extractPage(payload, request) {
   const budget = { remainingMs: REGEX_BUDGET_MS };
+  const stats = /* @__PURE__ */ new Map();
   if (request.responseType === "json") {
     let parsed;
     try {
@@ -38663,9 +38744,11 @@ function extractPage(payload, request) {
     const allRows2 = Array.isArray(rawRows) ? rawRows : rawRows !== void 0 && rawRows !== null ? [rawRows] : [];
     const rows2 = allRows2.slice(0, MAX_ROWS_PER_PAGE);
     const result2 = {
-      rows: rows2.map((row) => extractRecord(row, request, false, budget)),
+      rows: rows2.map((row) => extractRecord(row, request, false, budget, stats)),
+      diagnostics: [],
       ...allRows2.length > rows2.length ? { truncated: true } : {}
     };
+    result2.diagnostics = diagnosticsOf(stats);
     if (request.next) {
       const next = readJsonPath(parsed, request.next);
       if (typeof next === "string" && next.trim()) result2.next = next.trim();
@@ -38673,24 +38756,34 @@ function extractPage(payload, request) {
     return result2;
   }
   const { document: document2 } = parseHTML(payload);
-  const allRows = Array.from(
-    document2.querySelectorAll(request.items)
-  );
+  let allRows;
+  try {
+    allRows = Array.from(document2.querySelectorAll(request.items));
+  } catch {
+    throw new Error(`\u65E0\u6548\u7684\u6761\u76EE\u9009\u62E9\u5668\uFF1A${request.items}`);
+  }
   const rows = allRows.slice(0, MAX_ROWS_PER_PAGE);
   const result = {
-    rows: rows.map((row) => extractRecord(row, request, true, budget)),
+    rows: rows.map((row) => extractRecord(row, request, true, budget, stats)),
+    diagnostics: [],
     ...allRows.length > rows.length ? { truncated: true } : {}
   };
   if (request.next) {
-    const next = document2.querySelector(request.next);
+    let next;
+    try {
+      next = document2.querySelector(request.next);
+    } catch {
+      throw new Error(`\u65E0\u6548\u7684\u5206\u9875\u9009\u62E9\u5668\uFF1A${request.next}`);
+    }
     const href = next?.getAttribute("href");
     if (href) result.next = href;
   }
+  result.diagnostics = diagnosticsOf(stats);
   return result;
 }
 
 // packages/academic-adapter-runtime/src/runtime.ts
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 var MAX_TOTAL_ROWS = 5e3;
 var declarativeConfigSchema = browserConfigSchema.extend({
   manifestId: external_exports.string().min(1).max(200),
@@ -38702,7 +38795,8 @@ var declarativeConfigSchema = browserConfigSchema.extend({
   maxAssignments: external_exports.number().int().min(1).max(500).optional(),
   delayMs: external_exports.number().int().min(0).max(5e3).optional(),
   maxRequests: external_exports.number().int().min(1).max(500).optional(),
-  maxDurationMs: external_exports.number().int().min(1e3).max(10 * 6e4).optional()
+  maxDurationMs: external_exports.number().int().min(1e3).max(10 * 6e4).optional(),
+  maxBytes: external_exports.number().int().min(1e4).max(50 * 1024 * 1024).optional()
 });
 function text(value) {
   if (typeof value === "string") return value.trim() || void 0;
@@ -38724,8 +38818,35 @@ function renderTemplate(template, vars) {
 function absoluteUrl2(value, baseUrl) {
   return new URL(value, baseUrl).toString();
 }
+function withQuery(url2, param, value) {
+  const parsed = new URL(url2);
+  parsed.searchParams.set(param, String(value));
+  return parsed.toString();
+}
 function renderManifestUrl(template, vars, baseUrl) {
   return absoluteUrl2(renderTemplate(template, vars), baseUrl);
+}
+var STRUCTURAL_REQUIRED_FIELDS = /* @__PURE__ */ new Set([
+  "externalCourseId",
+  "externalItemId",
+  "title"
+]);
+function diagnosticWarnings(label, request, diagnostics, rowCount) {
+  const warnings = [];
+  for (const diagnostic of diagnostics) {
+    const required2 = request.fields[diagnostic.field]?.required === true || STRUCTURAL_REQUIRED_FIELDS.has(diagnostic.field);
+    if (diagnostic.invalid > 0) {
+      warnings.push(
+        `${label}\u6709 ${diagnostic.invalid} \u884C\u5B57\u6BB5\u300C${diagnostic.field}\u300D\u7C7B\u578B\u8F6C\u6362\u5931\u8D25`
+      );
+    }
+    if (diagnostic.missing > 0 && required2) {
+      warnings.push(
+        diagnostic.missing === rowCount ? `${label}\u7684\u6240\u6709\u884C\u90FD\u7F3A\u5C11\u5FC5\u9700\u5B57\u6BB5\u300C${diagnostic.field}\u300D\uFF1B\u9875\u9762\u7ED3\u6784\u53EF\u80FD\u5DF2\u53D8\u5316` : `${label}\u6709 ${diagnostic.missing} \u884C\u7F3A\u5C11\u5FC5\u9700\u5B57\u6BB5\u300C${diagnostic.field}\u300D`
+      );
+    }
+  }
+  return warnings;
 }
 function parseDue2(value, zone, utcOffsetMinutes) {
   if (value && typeof value === "object") {
@@ -38786,6 +38907,7 @@ var ManifestClient = class {
   #ports;
   #startedAt = Date.now();
   #requests = 0;
+  #bytes = 0;
   constructor(manifest, config2, cookies, options) {
     this.#manifest = manifest;
     this.#config = config2;
@@ -38811,7 +38933,12 @@ var ManifestClient = class {
     let lastError;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        return await this.#getOnce(url2);
+        const body = await this.#getOnce(url2);
+        this.#bytes += Buffer.byteLength(body, "utf8");
+        if (this.#bytes > (this.#config.maxBytes ?? 5 * 1024 * 1024)) {
+          throw new Error("\u58F0\u660E\u5F0F\u6293\u53D6\u54CD\u5E94\u603B\u5927\u5C0F\u8D85\u8FC7\u4E0A\u9650");
+        }
+        return body;
       } catch (error62) {
         lastError = error62;
         if (!(error62 instanceof AdapterTransientError) || attempt >= 2) {
@@ -38875,24 +39002,71 @@ ${result.body.slice(0, 4e3)}`);
     }
   }
   async loadRows(request, vars) {
-    const maxPages = request.maxPages ?? 1;
+    const paginated = Boolean(request.pageParam || request.offsetParam);
+    const maxPages = request.maxPages ?? (paginated ? 20 : 1);
     const rows = [];
-    let currentUrl = renderManifestUrl(request.url, vars, this.#baseUrl);
+    const diagnostics = /* @__PURE__ */ new Map();
+    const collect = (page) => {
+      for (const entry of page) {
+        const existing = diagnostics.get(entry.field);
+        if (existing) {
+          existing.missing += entry.missing;
+          existing.invalid += entry.invalid;
+        } else {
+          diagnostics.set(entry.field, { ...entry });
+        }
+      }
+    };
+    const result = (complete) => ({
+      rows,
+      complete,
+      diagnostics: [...diagnostics.values()]
+    });
+    const firstUrl = renderManifestUrl(request.url, vars, this.#baseUrl);
+    const pageStart = request.pageStart ?? 1;
+    const pageStep = request.pageStep ?? 1;
+    let offset = request.offsetStart ?? 0;
+    let nextUrl;
     for (let page = 0; page < maxPages; page += 1) {
+      let currentUrl;
+      if (page === 0) {
+        currentUrl = firstUrl;
+      } else if (request.pageParam) {
+        currentUrl = withQuery(
+          firstUrl,
+          request.pageParam,
+          pageStart + page * pageStep
+        );
+      } else if (request.offsetParam) {
+        currentUrl = withQuery(firstUrl, request.offsetParam, offset);
+      } else if (nextUrl) {
+        currentUrl = nextUrl;
+      } else {
+        return result(true);
+      }
       const body = await this.get(currentUrl);
       const extracted = extractPage(body, request);
+      collect(extracted.diagnostics);
       const remaining = MAX_TOTAL_ROWS - rows.length;
       if (extracted.rows.length > remaining) {
         rows.push(...extracted.rows.slice(0, Math.max(0, remaining)));
-        return { rows, complete: false };
+        return result(false);
       }
       rows.push(...extracted.rows);
-      if (extracted.truncated) return { rows, complete: false };
-      if (!extracted.next) return { rows, complete: true };
-      if (page + 1 >= maxPages) return { rows, complete: false };
-      currentUrl = absoluteUrl2(extracted.next, currentUrl);
+      if (extracted.truncated) return result(false);
+      if (request.pageParam || request.offsetParam) {
+        if (extracted.rows.length === 0) return result(true);
+        if (page + 1 >= maxPages) return result(false);
+        if (request.offsetParam) {
+          offset += request.offsetStep ?? extracted.rows.length;
+        }
+        continue;
+      }
+      if (!extracted.next) return result(true);
+      if (page + 1 >= maxPages) return result(false);
+      nextUrl = absoluteUrl2(extracted.next, currentUrl);
     }
-    return { rows, complete: true };
+    return result(true);
   }
   async delay() {
     const delay = this.#config.delayMs ?? 100;
@@ -38931,6 +39105,14 @@ var ManifestAdapter = class {
     const warnings = [];
     const loaded = await client.loadRows(this.#manifest.courses, {});
     if (!loaded.complete) warnings.push("\u8BFE\u7A0B\u5217\u8868\u8FBE\u5230\u5206\u9875\u4E0A\u9650");
+    warnings.push(
+      ...diagnosticWarnings(
+        "\u8BFE\u7A0B\u5217\u8868",
+        this.#manifest.courses,
+        loaded.diagnostics,
+        loaded.rows.length
+      )
+    );
     const terms = this.#config.termFilter?.map((term) => term.toUpperCase());
     const filters2 = this.#config.courseFilter?.map((value) => value.toLowerCase());
     const courses = [];
@@ -38996,6 +39178,14 @@ var ManifestAdapter = class {
         warnings.push(`\u8BFE\u7A0B\u300C${course2.title}\u300D\u4F5C\u4E1A\u5206\u9875\u8FBE\u5230\u4E0A\u9650`);
         partial2 = true;
       }
+      warnings.push(
+        ...diagnosticWarnings(
+          `\u8BFE\u7A0B\u300C${course2.title}\u300D\u4F5C\u4E1A\u5217\u8868`,
+          this.#manifest.assignments,
+          assignments.diagnostics,
+          assignments.rows.length
+        )
+      );
       for (const assignment of assignments.rows) {
         if (items.length >= maxAssignments) {
           truncatedAssignments = true;
@@ -39020,6 +39210,15 @@ var ManifestAdapter = class {
             if (!loaded.rows[0]) {
               warnings.push(`\u4F5C\u4E1A\u300C${title}\u300D\u8BE6\u60C5\u4E3A\u7A7A`);
               partial2 = true;
+            } else {
+              warnings.push(
+                ...diagnosticWarnings(
+                  `\u4F5C\u4E1A\u300C${title}\u300D\u8BE6\u60C5`,
+                  this.#manifest.detail,
+                  loaded.diagnostics,
+                  loaded.rows.length
+                )
+              );
             }
           } catch (error62) {
             if (error62 instanceof AdapterAuthError) throw error62;
@@ -39043,7 +39242,7 @@ var ManifestAdapter = class {
           ...description ? { description } : {},
           due,
           ...sourceUrl ? { sourceUrl } : {},
-          contentHash: createHash5("sha256").update(
+          contentHash: createHash6("sha256").update(
             JSON.stringify({
               title: requiredText(merged, "title") ?? title,
               description,
@@ -39134,19 +39333,22 @@ function pathAllowed2(pathname, prefixes) {
 }
 function validateManifestStatic(manifest) {
   const errors = [];
+  const fail = (stage, message) => {
+    errors.push({ stage, message });
+  };
   const allowHttp = manifest.allowHttp === true;
   let basePort = 443;
   try {
     const base = new URL(manifest.baseUrl);
     if (!allowHttp && base.protocol !== "https:") {
-      errors.push("baseUrl \u5FC5\u987B\u4F7F\u7528 HTTPS\uFF0CHTTP \u9700\u8981\u663E\u5F0F allowHttp");
+      fail("permissions", "baseUrl \u5FC5\u987B\u4F7F\u7528 HTTPS\uFF0CHTTP \u9700\u8981\u663E\u5F0F allowHttp");
     }
     basePort = base.port ? Number(base.port) : base.protocol === "https:" ? 443 : 80;
     if (!hostAllowed2(base.hostname, manifest.allowedOrigins)) {
-      errors.push(`baseUrl \u4E3B\u673A\u4E0D\u5728 allowedOrigins\uFF1A${base.hostname}`);
+      fail("permissions", `baseUrl \u4E3B\u673A\u4E0D\u5728 allowedOrigins\uFF1A${base.hostname}`);
     }
   } catch {
-    errors.push("baseUrl \u65E0\u6548");
+    fail("permissions", "baseUrl \u65E0\u6548");
   }
   const requests = [
     { name: "courses", request: manifest.courses, vars: [] },
@@ -39157,42 +39359,46 @@ function validateManifestStatic(manifest) {
     for (const match of request.url.matchAll(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g)) {
       const root = match[1]?.split(".")[0];
       if (!root || !vars.includes(root)) {
-        errors.push(`${name} URL \u4F7F\u7528\u4E86\u4E0D\u5141\u8BB8\u7684\u6A21\u677F\u53D8\u91CF\uFF1A${match[1]}`);
+        fail("contract", `${name} URL \u4F7F\u7528\u4E86\u4E0D\u5141\u8BB8\u7684\u6A21\u677F\u53D8\u91CF\uFF1A${match[1]}`);
       }
     }
     try {
       const resolved = new URL(request.url, manifest.baseUrl);
       if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
-        errors.push(`${name} URL \u53EA\u5141\u8BB8 http(s)`);
+        fail("permissions", `${name} URL \u53EA\u5141\u8BB8 http(s)`);
       } else if (!allowHttp && resolved.protocol !== "https:") {
-        errors.push(`${name} URL \u5FC5\u987B\u4F7F\u7528 HTTPS`);
+        fail("permissions", `${name} URL \u5FC5\u987B\u4F7F\u7528 HTTPS`);
       } else if (!allowHostInManifest(resolved.hostname, manifest)) {
-        errors.push(`${name} URL \u4E3B\u673A\u4E0D\u5728 allowedOrigins\uFF1A${resolved.hostname}`);
+        fail(
+          "permissions",
+          `${name} URL \u4E3B\u673A\u4E0D\u5728 allowedOrigins\uFF1A${resolved.hostname}`
+        );
       } else {
         const port = resolved.port ? Number(resolved.port) : resolved.protocol === "https:" ? 443 : 80;
         if (port !== basePort) {
-          errors.push(`${name} URL \u7AEF\u53E3\u5FC5\u987B\u4E0E baseUrl \u4E00\u81F4\uFF1A${port}`);
+          fail("permissions", `${name} URL \u7AEF\u53E3\u5FC5\u987B\u4E0E baseUrl \u4E00\u81F4\uFF1A${port}`);
         }
         if (!pathAllowed2(resolved.pathname, manifest.allowedPathPrefixes)) {
-          errors.push(
+          fail(
+            "permissions",
             `${name} URL \u8DEF\u5F84\u4E0D\u5728 allowedPathPrefixes\uFF1A${resolved.pathname}`
           );
         }
       }
     } catch {
-      errors.push(`${name} URL \u65E0\u6548`);
+      fail("contract", `${name} URL \u65E0\u6548`);
     }
     for (const [field, extractor] of Object.entries(request.fields)) {
       const derived2 = extractor.constant !== void 0 || extractor.template !== void 0;
       if (request.responseType === "html" && !derived2 && !extractor.selector) {
-        errors.push(`${name}.${field} \u9700\u8981 selector`);
+        fail("contract", `${name}.${field} \u9700\u8981 selector`);
       }
       if (request.responseType === "json" && !derived2 && !extractor.path) {
-        errors.push(`${name}.${field} \u9700\u8981 path`);
+        fail("contract", `${name}.${field} \u9700\u8981 path`);
       }
       if (extractor.regex) {
         const regexError = regexSafetyError(extractor.regex);
-        if (regexError) errors.push(`${name}.${field} \u6B63\u5219\u4E0D\u5B89\u5168\uFF1A${regexError}`);
+        if (regexError) fail("contract", `${name}.${field} \u6B63\u5219\u4E0D\u5B89\u5168\uFF1A${regexError}`);
       }
       if (extractor.template) {
         for (const match of extractor.template.matchAll(
@@ -39200,9 +39406,9 @@ function validateManifestStatic(manifest) {
         )) {
           const reference = match[1];
           if (!reference || !request.fields[reference]) {
-            errors.push(`${name}.${field} \u6A21\u677F\u5F15\u7528\u4E86\u672A\u77E5\u5B57\u6BB5\uFF1A${reference ?? ""}`);
+            fail("contract", `${name}.${field} \u6A21\u677F\u5F15\u7528\u4E86\u672A\u77E5\u5B57\u6BB5\uFF1A${reference ?? ""}`);
           } else if (request.fields[reference]?.template) {
-            errors.push(`${name}.${field} \u6A21\u677F\u4E0D\u80FD\u5F15\u7528\u53E6\u4E00\u4E2A\u6A21\u677F\u5B57\u6BB5`);
+            fail("contract", `${name}.${field} \u6A21\u677F\u4E0D\u80FD\u5F15\u7528\u53E6\u4E00\u4E2A\u6A21\u677F\u5B57\u6BB5`);
           }
         }
       }
@@ -39224,22 +39430,39 @@ function formatCandidateError(error62) {
 }
 async function replayManifest(input2, samples, options = {}) {
   const testedAt = options.now?.() ?? (/* @__PURE__ */ new Date()).toISOString();
+  const checks = [];
   let manifest;
   try {
     manifest = parseManifest(input2);
+    checks.push({ stage: "schema", ok: true });
   } catch (error62) {
+    const message = formatCandidateError(error62);
     return {
       ok: false,
-      errors: [formatCandidateError(error62)],
+      errors: [message],
       warnings: [],
+      checks: [{ stage: "schema", ok: false, detail: message }],
       courses: [],
       items: [],
       testedAt
     };
   }
-  const errors = validateManifestStatic(manifest);
+  const issues = validateManifestStatic(manifest);
+  const contractIssues = issues.filter((issue2) => issue2.stage === "contract");
+  const permissionIssues = issues.filter((issue2) => issue2.stage === "permissions");
+  checks.push({
+    stage: "contract",
+    ok: contractIssues.length === 0,
+    ...contractIssues[0] ? { detail: contractIssues[0].message } : {}
+  });
+  checks.push({
+    stage: "permissions",
+    ok: permissionIssues.length === 0,
+    ...permissionIssues[0] ? { detail: permissionIssues[0].message } : {}
+  });
+  const errors = issues.map((issue2) => issue2.message);
   if (errors.length > 0) {
-    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt };
+    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt, checks };
   }
   const sampleMap = /* @__PURE__ */ new Map();
   for (const sample of samples) {
@@ -39250,7 +39473,8 @@ async function replayManifest(input2, samples, options = {}) {
     }
   }
   if (errors.length > 0) {
-    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt };
+    checks.push({ stage: "sample-replay", ok: false, detail: errors[0] });
+    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt, checks };
   }
   const fetchImpl = async (request) => {
     const key2 = new URL(String(request)).toString();
@@ -39287,8 +39511,14 @@ async function replayManifest(input2, samples, options = {}) {
     if (result.completeness !== "full") {
       errors.push("\u6837\u672C\u56DE\u653E\u672A\u5B8C\u6574\u8986\u76D6\u6240\u6709\u8BF7\u6C42\uFF1B\u8BF7\u8865\u5145\u6837\u672C");
     }
+    const replayOk = errors.length === 0;
+    checks.push({
+      stage: "sample-replay",
+      ok: replayOk,
+      ...replayOk ? {} : { detail: errors[0] }
+    });
     return {
-      ok: errors.length === 0,
+      ok: replayOk,
       errors,
       warnings: result.warnings,
       courses,
@@ -39299,11 +39529,21 @@ async function replayManifest(input2, samples, options = {}) {
         due: item.due,
         ...item.sourceUrl ? { sourceUrl: item.sourceUrl } : {}
       })),
-      testedAt
+      testedAt,
+      checks
     };
   } catch (error62) {
     errors.push(`\u6837\u672C\u56DE\u653E\u5931\u8D25\uFF1A${formatCandidateError(error62)}`);
-    return { ok: false, errors, warnings: [], courses: [], items: [], testedAt };
+    checks.push({ stage: "sample-replay", ok: false, detail: errors[0] });
+    return {
+      ok: false,
+      errors,
+      warnings: [],
+      courses: [],
+      items: [],
+      testedAt,
+      checks
+    };
   }
 }
 
@@ -39412,13 +39652,29 @@ var ManifestStore = class {
 
 // packages/academic-adapter-runtime/src/candidate.ts
 function summary(stored) {
+  const manifest = stored.manifest;
+  const dataTypes = [
+    "courses",
+    "assignments"
+  ];
+  if (manifest.detail) dataTypes.push("detail");
   return {
-    adapterId: stored.manifest.adapterId,
-    version: stored.manifest.version,
-    displayName: stored.manifest.displayName,
+    adapterId: manifest.adapterId,
+    version: manifest.version,
+    displayName: manifest.displayName,
     status: stored.status,
     createdAt: stored.createdAt,
-    updatedAt: stored.updatedAt
+    updatedAt: stored.updatedAt,
+    scope: {
+      allowedOrigins: [...manifest.allowedOrigins],
+      allowedPathPrefixes: [...manifest.allowedPathPrefixes],
+      dataTypes,
+      fields: {
+        courses: Object.keys(manifest.courses.fields),
+        assignments: Object.keys(manifest.assignments.fields),
+        ...manifest.detail ? { detail: Object.keys(manifest.detail.fields) } : {}
+      }
+    }
   };
 }
 var AdapterCandidateService = class {
@@ -40841,7 +41097,7 @@ async function registerNotificationReaction(options) {
 }
 
 // packages/academic-notifications/src/deadline-reminders.ts
-import { createHash as createHash6 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 var DEADLINE_REMINDER_CONSUMER_ID = "academic.notifications.deadline.v1";
 function zoneOffsetMs(zone, instant) {
   const truncated = new Date(Math.floor(instant.getTime() / 1e3) * 1e3);
@@ -40902,7 +41158,7 @@ function describeDue2(due) {
   }
 }
 function hash2(value) {
-  return createHash6("sha256").update(value).digest("hex").slice(0, 32);
+  return createHash7("sha256").update(value).digest("hex").slice(0, 32);
 }
 async function scanDeadlineReminders(dependencies) {
   const consumerId = dependencies.consumerId ?? DEADLINE_REMINDER_CONSUMER_ID;
@@ -41098,9 +41354,9 @@ var AvailabilityStore = class {
   get() {
     const row = this.#db.prepare("SELECT * FROM user_availability WHERE availability_id = ?").get(AVAILABILITY_ID);
     if (row) return this.#toSettings(row);
-    const defaults = defaultSettings(this.#clock);
-    this.#write(defaults);
-    return defaults;
+    const defaults2 = defaultSettings(this.#clock);
+    this.#write(defaults2);
+    return defaults2;
   }
   update(update2) {
     const current = this.get();
@@ -41269,6 +41525,68 @@ function splitTime(value) {
   return [hour ?? 0, minute ?? 0];
 }
 
+// packages/academic-planner-basic/src/preferences.ts
+var PREFERENCES_ID = "default";
+var userPreferencesSchema = external_exports.object({
+  coursePriorities: external_exports.record(
+    external_exports.string().min(1).max(200),
+    external_exports.number().int().min(0).max(3)
+  ).default({})
+});
+function defaults(clock) {
+  return { coursePriorities: {}, updatedAt: clock.now() };
+}
+var PreferenceStore = class {
+  #db;
+  #clock;
+  constructor(db, clock) {
+    this.#db = db;
+    this.#clock = clock;
+  }
+  get() {
+    const row = this.#db.prepare("SELECT * FROM user_preferences WHERE preference_id = ?").get(PREFERENCES_ID);
+    if (row) {
+      return {
+        coursePriorities: JSON.parse(
+          String(row.course_priorities_json)
+        ),
+        updatedAt: String(row.updated_at)
+      };
+    }
+    const initial = defaults(this.#clock);
+    this.#write(initial);
+    return initial;
+  }
+  update(update2) {
+    const current = this.get();
+    const next = userPreferencesSchema.parse({
+      coursePriorities: update2.coursePriorities ?? current.coursePriorities
+    });
+    const settings = {
+      ...next,
+      updatedAt: this.#clock.now()
+    };
+    this.#write(settings);
+    return settings;
+  }
+  #write(settings) {
+    inTransaction2(this.#db, () => {
+      this.#db.prepare(
+        `INSERT INTO user_preferences (
+             preference_id, course_priorities_json, updated_at
+           ) VALUES (?, ?, ?)
+           ON CONFLICT(preference_id) DO UPDATE SET
+             course_priorities_json = excluded.course_priorities_json,
+             updated_at = excluded.updated_at`
+      ).run(
+        PREFERENCES_ID,
+        JSON.stringify(settings.coursePriorities),
+        settings.updatedAt
+      );
+    });
+  }
+};
+
 // packages/academic-planner-basic/src/planner.ts
 var PLANNER_ID = PLANNER_CAPABILITY_ID;
 var PLANNER_VERSION = "1.0.0";
@@ -41331,7 +41649,7 @@ function buildPlan(input2) {
   let scheduledMinutes = 0;
   let unscheduledMinutes = 0;
   const tasks = input2.tasks.filter((task) => task.status !== "completed").map((task) => ({ ...task, deadline: taskDeadline(task, timeZone, warnings) })).sort(
-    (left, right) => (left.deadline ?? Number.POSITIVE_INFINITY) - (right.deadline ?? Number.POSITIVE_INFINITY) || (right.priority ?? 0) - (left.priority ?? 0) || left.taskId.localeCompare(right.taskId)
+    (left, right) => (left.deadline ?? Number.POSITIVE_INFINITY) - (right.deadline ?? Number.POSITIVE_INFINITY) || (right.priority ?? 0) - (left.priority ?? 0) || (right.coursePriority ?? 0) - (left.coursePriority ?? 0) || left.taskId.localeCompare(right.taskId)
   );
   for (const task of tasks) {
     const estimate = Math.trunc(task.estimateMinutes);
@@ -41413,7 +41731,7 @@ function buildPlan(input2) {
 }
 
 // packages/academic-planner-basic/src/replan-store.ts
-import { createHash as createHash7, randomUUID } from "node:crypto";
+import { createHash as createHash8, randomUUID } from "node:crypto";
 function parseJson(value) {
   return JSON.parse(String(value));
 }
@@ -41440,7 +41758,7 @@ var ReplanStore = class {
            ORDER BY created_at DESC, rowid DESC LIMIT 1`
       ).get(input2.reason, rangeJson);
       if (pending) return this.#toRequest(pending);
-      const replanRequestId = input2.replanRequestId ?? `replan-${createHash7("sha256").update(input2.sourceKey ?? randomUUID()).digest("hex").slice(0, 32)}`;
+      const replanRequestId = input2.replanRequestId ?? `replan-${createHash8("sha256").update(input2.sourceKey ?? randomUUID()).digest("hex").slice(0, 32)}`;
       const now = this.#clock.now();
       this.#db.prepare(
         `INSERT OR IGNORE INTO replan_requests (
@@ -41552,6 +41870,7 @@ var PlannerService = class {
   #commands;
   #replans;
   #availability;
+  #preferences;
   #clock;
   #ids;
   constructor(dependencies) {
@@ -41560,6 +41879,7 @@ var PlannerService = class {
     this.#commands = dependencies.commands;
     this.#replans = dependencies.replans;
     this.#availability = dependencies.availability;
+    this.#preferences = dependencies.preferences;
     this.#clock = dependencies.clock;
     this.#ids = dependencies.ids;
   }
@@ -41651,17 +41971,24 @@ var PlannerService = class {
     const tasks = await this.#queries.listStudyTasks({ status: "active" });
     const activePlan = await this.#queries.getActiveStudyPlan(options.range);
     const availability = this.#availability.get();
+    const preferences = this.#preferences.get();
     const unavailable = computeUnavailableBlocks(options.range, availability);
-    const itemDue = /* @__PURE__ */ new Map();
+    const itemCache = /* @__PURE__ */ new Map();
+    const loadItem = async (itemId) => {
+      if (!itemCache.has(itemId)) {
+        itemCache.set(itemId, await this.#queries.getAcademicItem(itemId));
+      }
+      return itemCache.get(itemId);
+    };
     const plannerTasks = [];
     for (const task of tasks.items) {
       let due;
-      if (!task.dueAt && task.itemId) {
-        if (!itemDue.has(task.itemId)) {
-          const item = await this.#queries.getAcademicItem(task.itemId);
-          itemDue.set(task.itemId, item?.due);
-        }
-        due = itemDue.get(task.itemId);
+      let coursePriority;
+      if (task.itemId) {
+        const item = await loadItem(task.itemId);
+        if (!task.dueAt) due = item?.due;
+        const courseId = item?.courseId;
+        if (courseId) coursePriority = preferences.coursePriorities[courseId];
       }
       plannerTasks.push({
         taskId: task.taskId,
@@ -41671,7 +41998,8 @@ var PlannerService = class {
         status: task.status,
         ...task.itemId ? { itemId: task.itemId } : {},
         ...task.dueAt ? { dueAt: task.dueAt } : {},
-        ...due ? { due } : {}
+        ...due ? { due } : {},
+        ...coursePriority !== void 0 ? { coursePriority } : {}
       });
     }
     const lockedById = /* @__PURE__ */ new Map();
@@ -43681,12 +44009,14 @@ async function createAcademicApp(options) {
   const scheduler = new Scheduler({ db: store.database, clock, ids });
   const replans = new ReplanStore(store.database, clock);
   const availability = new AvailabilityStore(store.database, clock);
+  const preferences = new PreferenceStore(store.database, clock);
   const planner = new PlannerService({
     registry: registry2,
     queries: store.queries,
     commands: store.commands,
     replans,
     availability,
+    preferences,
     clock,
     ids
   });
@@ -43896,7 +44226,7 @@ async function createAcademicApp(options) {
       async handler(event) {
         if (event.type !== EVENT.AcademicItemDiscovered) return;
         const itemId = event.streamId.slice(event.streamId.indexOf("/") + 1);
-        const taskId = `task-default-${createHash8("sha256").update(itemId).digest("hex").slice(0, 32)}`;
+        const taskId = `task-default-${createHash9("sha256").update(itemId).digest("hex").slice(0, 32)}`;
         const result = await store.commands.execute(
           parseCommand({
             commandId: `default-task:${event.eventId}`,
@@ -44035,6 +44365,7 @@ async function createAcademicApp(options) {
     webSessions,
     replans,
     availability,
+    preferences,
     planner,
     notifications,
     agentBridge: { host, registration: agentRegistration },
