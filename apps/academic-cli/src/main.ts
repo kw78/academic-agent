@@ -13,6 +13,7 @@ import {
 import type { WeeklySlot } from '@academic/planner-basic'
 import { loginWebSession, safeUrlForDisplay } from '@academic/web-sessions'
 import { createAcademicApp, type AcademicApp } from './composition.js'
+import { restoreDatabase } from './backup.js'
 
 const DATABASE_PATH = process.env.ACADEMIC_DB ?? '.data/academic.db'
 
@@ -965,7 +966,8 @@ function printHelp(): void {
   web fetch <id> <url> [--out file]  带会话请求，不打印 Cookie
   web delete <id>
   notifications [--read ID | --read-all]
-  backup                    生成一致性数据库备份
+  backup [target.db]        生成一致性数据库备份
+  restore <backup.db> <target.db>  恢复到新数据库并校验完整性、投影
   help                      显示帮助
 
 环境变量：
@@ -1099,9 +1101,37 @@ async function main(): Promise<void> {
 
       case 'backup': {
         const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-        const target = `.data/backups/academic-${stamp}.db`
+        const target = rest[0] ?? `.data/backups/academic-${stamp}.db`
         app.backup(target)
         console.log(`备份完成：${target}`)
+        break
+      }
+
+      case 'restore': {
+        const [backupPath, targetPath] = rest
+        if (!backupPath || !targetPath) {
+          throw new Error('用法：restore <backup.db> <target.db>')
+        }
+        restoreDatabase(backupPath, targetPath)
+        const restored = await createAcademicApp({ databasePath: targetPath })
+        try {
+          const integrity = restored.store.database
+            .prepare('PRAGMA integrity_check')
+            .get() as { integrity_check?: string } | undefined
+          const health = restored.store.health()
+          const integrityResult = integrity?.integrity_check ?? 'unknown'
+          console.log(
+            `恢复完成：${targetPath} · integrity=${integrityResult} · events=${health.eventPosition} · projection=${health.projectionPosition} · consistent=${health.consistent}`,
+          )
+          if (integrityResult !== 'ok') {
+            throw new Error(`恢复数据库完整性检查失败：${integrityResult}`)
+          }
+          if (!health.consistent) {
+            throw new Error('恢复后投影与事件位置不一致')
+          }
+        } finally {
+          restored.close()
+        }
         break
       }
 

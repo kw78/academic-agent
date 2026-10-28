@@ -26,8 +26,10 @@ Blackboard 的配置示例、限制和真实页面结构见 [real-sources.md](re
 
 ## 3. 备份、恢复与迁移
 
-- 备份：`ACADEMIC_DB=.data/academic.db npm run demo -- backup`，使用 SQLite `VACUUM INTO` 生成一致性快照。
-- 恢复：停止 Host（桌面端退出，或确保没有第二个 Host 使用同一 DB）→ 备份当前 DB → 恢复快照 → 重新启动；启动时会校验事件位置并可重建投影。
+- 备份：`ACADEMIC_DB=.data/academic.db npm run demo -- backup [target.db]`，使用 SQLite `VACUUM INTO` 生成一致性快照。
+- 恢复：`npm run demo -- restore <backup.db> <target.db>`。目标文件必须不存在；命令复制快照后打开新数据库，执行 `PRAGMA integrity_check`，校验事件位置与投影位置一致，任一失败即报错退出。
+- 恢复演练（2026-10-28，本机）：fixture 数据源生成 2 个事项/2 个任务/2 条提醒后备份，恢复到独立文件 `.data/drill-restored-20261028.db`，结果 `integrity=ok · events=6 · projection=6 · consistent=true`；用 `list` 重新读取到相同事项、任务与提醒。
+- 恢复后先确认没有第二个 Host 使用目标数据库，再用目标路径启动；桌面端同时只能有一个 Host 使用默认数据库。
 - 迁移：`migrations/*.sql` 按编号执行；`0010_adapter_candidates.sql` 增加 Adapter 候选/激活表。升级前先备份，迁移后运行 `npm run typecheck` 与 `npm test`。
 - 不要在活跃写入时直接复制 SQLite 文件；不要同时启动两个使用同一 DB 的 Academic Host。
 
@@ -67,16 +69,14 @@ ACADEMIC_DB=.data/academic.db npm run demo -- adapter list
 
 ## 7. 性能基线
 
-本机 Node `v22.23.2`、内存 SQLite、关闭 WAL 以外的额外调优，1000 个事项、单课程、完整快照：
+`npm run benchmark` 在本机 Node `v24.18.0`、内存 SQLite、单课程、完整快照上执行；数字用于发现数量级回归，不是发布 SLA。2026-10-28 实测：
 
-| 操作 | 结果 |
-|---|---|
-| 首次同步（创建 1000 项） | 225 ms |
-| 相同快照重复同步（no-op） | 220 ms |
-| 查询 500 项（实际单页上限 200） | 1 ms |
-| 重建核心投影 | 39 ms |
+| 事项数 | 首次同步 | 重复同步（no-op） | 查询单页 200 | 分页读取全部 | 重建核心投影 |
+|---|---|---|---|---|---|
+| 1,000 | 210 ms | 217 ms | 1 ms | 6 ms | 41 ms |
+| 10,000 | 1,927 ms | 2,080 ms | 6 ms | 197 ms | 446 ms |
 
-数字用于发现数量级回归，不是发布 SLA；真实平台耗时主要受页面数量和 `delayMs` 限制。长分页由 `maxContentPages` / `maxAssignments` 截断并标记 `partial`。
+首次同步会为每个事项写入事件与默认任务；重复同步是 no-op。真实平台耗时主要受页面数量和 `delayMs` 限制；长分页由 `maxContentPages` / `maxAssignments` 截断并标记 `partial`。当前查询单页上限为 200，读取全量需要按 `nextCursor` 翻页。
 
 ## 8. 诊断文件与保留策略
 
@@ -111,8 +111,8 @@ find .data -maxdepth 2 -type f \( -name '*.html' -o -name '*.log' -o -name '*.tx
 
 - DNS 解析结果已固定到实际连接；仍不支持显式 HTTP（需 `allowHttp`）与跨域 SSO 的细粒度域名授权。
 - Blackboard 覆盖课程、作业、考试/测验与文件夹分页；当前账号没有真实测试项样本，考试/测验仍以 fixture 验证；附件、成绩、提交历史未覆盖。
-- 声明式 Runtime 只支持 GET、CSS/JSON path 与 regex/trim；XPath、复杂字段转换与任意脚本沙箱未实现。
-- 候选生成由 DSH Agent 完成，Host 不直接调用模型；样本需显式提供，未实现多页自动采样。
+- 声明式 Runtime 只支持 GET、CSS/JSON path、常量/模板、类型转换与默认值、`next`/页码/offset 分页；XPath、XML、POST/登录交互与任意脚本沙箱未实现。每次分页都会重新校验主机/协议/端口/路径，并受总请求数、总行数、总字节与总时长限制。
+- 候选生成由 DSH Agent 完成，Host 不直接调用模型；样本需显式提供，未实现多页自动采样。候选验证按 schema、字段契约、访问范围、样本回放分阶段报告；真实数据预检仍需用户执行预览。
 - 第二个平台（USTC 教务）目前只覆盖考试表；课表/选课接口为内嵌 XML 或需额外参数，Manifest 不支持 XML，成绩与作业未接入。
 - DSH 候选审批在“连接”页完成；Agent 的注册/启用工具仍需要可信宿主逐次授权，没有通用审批弹窗或文件级 HMR 验收。
 - 本机 Desktop 占用默认数据库时，不应再启动使用同一数据库的第二个 Host。
