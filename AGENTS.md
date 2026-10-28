@@ -150,19 +150,19 @@ docs/adr/                      # 架构决策记录
 | M3 | Agent Tools、自然语言查询、零 LLM 自动化验证 | 已完成：宿主无关工具、DSH 工具绑定、DeepSeek 模型自然语言工具调用均通过 |
 | M4 | 生命周期、故障注入、备份恢复、迁移与性能 | 部分完成（生命周期/故障/备份/Upcaster/重启/调度与消费恢复/提醒补偿已测；性能与迁移演练待做） |
 
-上表是首个 MVP 的里程碑编号；`doc/ROADMAP.md`（v2）另行定义后续阶段，两者状态以各自表格为准：
+上表是历史 MVP 里程碑编号。当前以 `doc/ACADEMIC_AGENT_ROADMAP_MVP_FIRST.md`（MVP First）为执行基线，状态见下表与 [docs/mvp-verification.md](docs/mvp-verification.md)：
 
-| 阶段 | 内容 | 状态 |
+| Gate | 内容 | 状态 |
 |---|---|---|
-| M0 | 基线核对与文档统一 | 已完成：typecheck、155 项测试/31 文件、`build:dsh`/`build:ui` 实测通过 |
-| M1 | 抓取安全与凭据加固 | 进行中：DNS 固定解析、访问策略、正则与秘密防护 |
-| M2 | Blackboard 垂直闭环 | 已完成：课程/作业/考试/测验解析、文件夹分页、差异预览与真实只读同步；真实账号暂无测试项样本 |
-| M3 | 统一数据源接入流程 | 已完成：快速添加、登录、验证、探测、预览、同步、候选审批均在 UI；高级配置默认收起 |
-| M4 | AI 候选工作流集成 | 已完成（Agent 生成 + 确定性验证 + UI 审批）；未实现 Host 直连模型、多页自动采样与代码沙箱 |
-| M5 | 恢复能力与发布验收 | 已完成：备份恢复、迁移、同步错误/重试、性能基线、候选回滚、运维/删除文档；真实 DSH Session 与文件级 HMR 仍需桌面手工验收 |
-| M6 | 第二平台扩展 | 已完成考试切片：USTC 综合教务系统 `jw.ustc.edu.cn` 用 Manifest 真实同步 1 门课程/1 个考试；课表/成绩/作业未覆盖 |
+| Gate 0 | 真实基线 | 已完成：typecheck、156 项测试/31 文件、两个构建、DSH selftest；桌面干净启动待复核 |
+| Gate 1 | 桌面端可启动、可操作 | 部分完成：此前已验证 Desktop UI/Host 加载与插件禁用/启用；本轮未重复桌面手工验收 |
+| Gate 2 | 真实平台登录与会话 | 已完成：BB 与 USTC 教务真实登录/验证；正式同步新增“连接必须已验证”闸门；删除凭据不删学业数据 |
+| Gate 3 | 一个平台的数据同步闭环 | 已完成：BB 真实课程/作业/文件夹；考试/测验 fixture 验证并标注；JW 考试真实同步 |
+| Gate 4 | 学业任务与基本规划 | 已完成：任务/截止/计划/提醒/查询均有测试与 UI；常规路径零 LLM |
+| Gate 5 | 最小 Agent 适配流程 | 已完成：探测证据、Manifest 候选、离线回放、UI 审批、启用/回滚；生成仍需 DSH 对话，UI 已说明 |
+| Gate 6 | 发布前最小回归 | 已完成自动化与真实临时库回归；DSH Desktop 手工路径仍待复核 |
 
-仍有限制：DNS rebinding 固定解析、Blackboard 考试/附件/成绩、声明式 XPath/复杂转换、任意脚本沙箱、DSH 审批 UI 未完成。
+仍有限制：DSH Desktop 文件级 HMR/真实 Session 手工复验、Blackboard 真实测试项样本、Manifest XML/复杂转换、任意脚本沙箱未完成。
 
 首个真实平台只读 Adapter 已落地在 `adapters/ustc-blackboard`：读取课程、作业、考试与测验，支持文件夹/下一页遍历，不提交作业、不读取附件与成绩；`engine=blackboard` 复用通用浏览器登录/会话。真实会话已验证 13 门 `2026FA` 课程中的 5 门内容区、9 个含文件夹作业与截止时间；当前账号没有暴露测试项，考试/测验仍以脱敏 fixture 验证，不得声称测试模块已完整真实验收。
 
@@ -193,7 +193,7 @@ docs/adr/                      # 架构决策记录
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（155 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（156 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
 用户控制已验证：课程添加/归档、任务创建/完成/重开/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 

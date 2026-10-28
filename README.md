@@ -7,6 +7,8 @@ GitHub: <https://github.com/kw78/academic-agent>
 - 方向基线：[doc/Academic_Agent_Intent_v1.0.md](doc/Academic_Agent_Intent_v1.0.md)
 - 架构规范：[doc/Academic_Agent_Architecture_Spec_v0.1-1.md](doc/Academic_Agent_Architecture_Spec_v0.1-1.md)
 - 工程准则与状态：[AGENTS.md](AGENTS.md)
+- 当前执行路线：[doc/ACADEMIC_AGENT_ROADMAP_MVP_FIRST.md](doc/ACADEMIC_AGENT_ROADMAP_MVP_FIRST.md)
+- MVP 验收清单：[docs/mvp-verification.md](docs/mvp-verification.md)
 - 架构决策：[docs/adr](docs/adr)
 - 测试与验收矩阵：[docs/testing.md](docs/testing.md)
 - 前端验证记录：[docs/frontend-verification.md](docs/frontend-verification.md)
@@ -242,4 +244,4 @@ npm test
 npm run build:dsh
 ```
 
-共 155 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态、Blackboard 只读解析/同步、声明式 Adapter、AI 候选校验/启用、同步重试/并发与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。
+共 156 项自动化测试，覆盖 T01–T20 的宿主无关部分、用户控制闭环、P0 可靠性修复、真实 Cordis 插件生命周期、凭据连接、会话抓取安全、数据源状态、Blackboard 只读解析/同步、声明式 Adapter、AI 候选校验/启用、同步重试/并发与前端 UI/Host API；另有本机 DSH `0.2.1-rc.3` 的真实 ToolRegistry、Web 客户端加载/卸载与页面交互验证。详见 [docs/testing.md](docs/testing.md)。

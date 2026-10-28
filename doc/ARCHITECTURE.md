@@ -4,7 +4,7 @@
 > 规划日期：2026-10-28\
 > 审查基准：`kw78/academic-agent` `main` 分支，提交
 > `03c062e`；2026-10-28 按路线图 v2 校准。若代码已变化，请在合并前对照当前实现校准。\
-> 配套路线图：[`ROADMAP.md`](./ROADMAP.md)
+> 配套路线图：[`ACADEMIC_AGENT_ROADMAP_MVP_FIRST.md`](./ACADEMIC_AGENT_ROADMAP_MVP_FIRST.md)
 
 ## 1. 概述
 
