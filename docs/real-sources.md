@@ -89,6 +89,13 @@ ACADEMIC_DB=.data/academic.db npm run demo -- source sync ustc-blackboard
 
 结论：现阶段继续使用已授权 HTTP/会话 + 受限页面解析；平台差异停留在 Manifest/Adapter，不进入 Kernel、Connector 或 UI。
 
+## 平台扩展成本（F-05）
+
+- **Blackboard**：需要专属只读 Adapter（登录复用通用会话），代码涉及课程/内容区发现、文件夹与分页、截止时间解析；需 fixture、集成测试和真实账号验收。适合页面结构复杂、需要多页遍历的平台。
+- **USTC 综合教务考试切片**：只新增 1 个 Manifest、2 个 fixture 与 1 组集成测试，没有修改 Kernel、Connector、UI 或新增 engine；用户只需完成一次应用内登录。证明平台差异可停留在声明式契约。
+- 新平台准入：有真实用户需求、合法访问方式、可复用已登录会话、明确的数据类型与访问范围；先评估官方 API/ICS/OAuth，再写 Manifest，只有 Manifest 无法表达时才增加 Adapter 代码。
+- 当前不为每个平台建立独立 UI 或 Connector；平台只声明真实验证过的数据类型，未覆盖项在文档与 UI 中明确标注。
+
 ## 可行接入路径
 
 按 Intent/Architecture 的优先级：

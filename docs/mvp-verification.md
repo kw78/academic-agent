@@ -8,7 +8,7 @@
 | 检查 | 命令 | 结果 |
 |---|---|---|
 | 类型检查 | `npm run typecheck` | 通过 |
-| 全量测试 | `npm test` | 通过：33 个文件、169 项 |
+| 全量测试 | `npm test` | 通过：33 个文件、170 项 |
 | DSH 构建 | `npm run build:dsh` | 通过 |
 | UI 构建 | `npm run build:ui` | 通过 |
 | DSH 自测 | `ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=.data/dsh-academic.db dsh academic --json "hello"` | 通过：host/planner/tools 加载，`tools=17 registered=true`，只读查询成功，未授权写入 `FORBIDDEN` |
@@ -19,7 +19,7 @@
 - **SEC-002 Manifest 授权范围**：Manifest 必须声明 `allowedPathPrefixes`；主机按精确匹配（不做隐式子域）；协议/端口来自 baseUrl；`safeFetch` 对初始、模板、分页、详情和重定向统一执行路径/主机策略。越权路径与子域在候选验证阶段被拒绝。
 - **SEC-003 正则执行**：静态拒绝嵌套量词、含分支组的量词、环视、过大重复与连续无限通配；实际执行放入受限 `vm` 上下文，单次 100ms 超时、每页 500ms 预算；超时返回受控错误。
 - **SEC-004 会话/Cookie 范围**：Web Session、browser-session、Blackboard 与 Manifest 均按精确主机校验；不再隐式把父域 Cookie 用于子域；Cookie 的 Domain/Path/Secure/Expiry 规则保留。
-- 验证：`npm run typecheck`、169 项测试通过；新增越权路径/子域、敏感 JSON、恶意正则、子域 Cookie 回归样本。
+- 验证：`npm run typecheck`、170 项测试通过；新增越权路径/子域、敏感 JSON、恶意正则、子域 Cookie 回归样本。
 
 ## Gate 1 — 桌面端可启动、可操作
 
@@ -89,8 +89,9 @@ USTC 教务（第二平台，Manifest）：
 - Manifest：未知 `schemaVersion` 明确拒绝；字段类型转换/默认值/必需字段与结构退化诊断；`next`/页码/offset 分页与总字节上限；候选验证分阶段报告；候选访问范围/数据类型/字段在 UI 展示。
 - 接入与诊断：Host 返回统一 `stage` 与唯一 `nextStep`；同步失败分类为认证/网络/权限/结构/质量并给出建议；探测证据包含 SHA-256 摘要。
 - 偏好与复习：课程优先级持久化并作为计划第二排序依据；任务页按课程展示复习清单与带上下文 Agent 入口。
+- 真实计划案例（Blackboard 临时库快照）：9 个任务中 3 个按时段安排、5 个截止已过被明确标为 `deadline-passed`、1 个未知截止无截止安排；date-only 考试按 Asia/Shanghai 日终处理。可用总时长与实际容量不足分开提示，截止已过不再误报为“时间不足”。
 - 运维：恢复命令在独立目录执行 `integrity_check` 与投影一致性校验；1k/10k 事项基准已记录；旧库升级测试验证数据保留与新迁移生效；`sync_runs` 记录 Adapter ID/版本。
-- 验证：`npm run typecheck`、`npm test`（32 文件/169 项）、`npm run build:dsh`、`npm run build:ui` 通过。新 UI 面板（阶段/诊断、候选范围、课程优先级、复习清单）只完成类型检查、构建与 Host API 测试，未重新做浏览器点验。
+- 验证：`npm run typecheck`、`npm test`（33 文件/170 项）、`npm run build:dsh`、`npm run build:ui` 通过。新 UI 面板（阶段/诊断、候选范围、课程优先级、复习清单）只完成类型检查、构建与 Host API 测试，未重新做浏览器点验。
 
 ## 仍未完成/未验证
 
@@ -98,4 +99,4 @@ USTC 教务（第二平台，Manifest）：
 - Blackboard 真实考试/测验样本。
 - Manifest XML、完整课表/成绩/作业、附件与提交历史。
 - 通用 Agent 写审批弹窗、文件级 HMR 手工验收。
-- 多页自动采样（G-03）与资料索引（H-05）保持 PARKED；H-02/H-03/H-04 仍为 PARTIAL。
+- 多页自动采样（G-03）与资料索引（H-05）保持 PARKED；H-03/H-04 仍为 PARTIAL（无持久化反馈与真实模型讲解验收），H-02 已完成真实案例评估。
