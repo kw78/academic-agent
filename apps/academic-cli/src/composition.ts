@@ -43,6 +43,10 @@ import {
 } from '@academic/adapter-fixture-lms'
 import { createBlackboardEngine } from '@academic/adapter-ustc-blackboard'
 import {
+  ManifestRegistry,
+  createDeclarativeEngine,
+} from '@academic/adapter-runtime'
+import {
   InMemoryToolHost,
   registerAcademicTools,
   type AcademicToolRegistration,
@@ -107,6 +111,7 @@ export interface AcademicAppOptions {
   defaultTaskEstimates?: Partial<Record<'assignment' | 'exam' | 'quiz', number>>
   /** Additional vendor-neutral engines (tests or reviewed extensions). */
   sourceEngines?: SourceEngine[]
+  manifestRegistry?: ManifestRegistry
 }
 
 export interface AutomationStatus {
@@ -155,6 +160,7 @@ export interface AcademicApp {
   adapter: FixtureLmsAdapter
   sources: SourceConfigStore
   sourceEngines: SourceEngineRegistry
+  manifestRegistry: ManifestRegistry
   connections: ConnectionManager
   webSessions: WebSessionStore
   replans: ReplanStore
@@ -321,6 +327,7 @@ export async function createAcademicApp(
     config: {},
   })
   const sourceEngines = new SourceEngineRegistry()
+  const manifestRegistry = options.manifestRegistry ?? new ManifestRegistry()
   const configuredEngines = options.sourceEngines ?? []
   const configuredIds = new Set(
     configuredEngines.map((engine) => engine.descriptor.id),
@@ -339,6 +346,11 @@ export async function createAcademicApp(
   if (!configuredIds.has('blackboard')) {
     sourceEngineRegistrations.push(
       sourceEngines.register(createBlackboardEngine()),
+    )
+  }
+  if (!configuredIds.has('declarative')) {
+    sourceEngineRegistrations.push(
+      sourceEngines.register(createDeclarativeEngine(manifestRegistry)),
     )
   }
   for (const engine of configuredEngines) {
@@ -578,6 +590,7 @@ export async function createAcademicApp(
     adapter,
     sources,
     sourceEngines,
+    manifestRegistry,
     connections,
     webSessions,
     replans,

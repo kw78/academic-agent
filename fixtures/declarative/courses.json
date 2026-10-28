@@ -1,0 +1,6 @@
+{
+  "data": [
+    { "id": "C1", "code": "CS101", "title": "Data Structures", "term": "2026FA" },
+    { "id": "C2", "code": "MATH101", "title": "Calculus", "term": "2025FA" }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "data": [
+    { "id": "C1", "code": "CS101", "title": "Data Structures", "term": "2026FA" }
+  ],
+  "next": "/api/courses?page=2"
+}

@@ -1,0 +1,7 @@
+{
+  "data": [
+    { "id": "A1", "title": "Problem Set 1", "url": "https://lms.example.edu/assignment/A1.html" },
+    { "id": "A2", "title": "Problem Set 2", "url": "https://lms.example.edu/assignment/A2.html" }
+  ],
+  "next": "/api/courses/C1/assignments?page=2"
+}
