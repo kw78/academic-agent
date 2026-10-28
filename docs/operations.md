@@ -3,7 +3,7 @@
 ## 1. 数据源接入流程
 
 1. 在“连接”页“快速添加平台”填写 HTTPS 首页并选择类型（Blackboard 或通用网站）；engine 与 JSON 收在“高级”中。
-2. 需要登录的 engine 选择 `browser` 登录方式；用户在 Edge/Chrome 中完成 SSO/验证码后，宿主把会话写入 DPAPI。
+2. 需要登录的 engine 选择 `browser` 登录方式；用户在 Edge/Chrome 中完成 SSO/验证码后，宿主把会话写入 DPAPI。若打开的是门户首页且该 URL 本身已匹配“已认证”规则（如 `i.ustc.edu.cn`），登录窗口不会自动关闭：完成登录后点击右上角“已完成登录，保存会话”，宿主校验通过后才保存。
 3. 点击“验证连接”，再点击“探测页面”查看脱敏证据与下一步提示。
 4. 对 Blackboard 直接“预览同步”；对通用网站先在 DSH 对话中让 Agent 用 `academic_probe_source` 生成 Manifest 候选，再到“Adapter 候选”面板验证、启用。
 5. 点击“预览同步”，确认新增/更新/未变/未返回/跳过数量和警告。

@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**170 项测试通过**（33 个测试文件）。
+当前基线：**171 项测试通过**（33 个测试文件）。
 
 ## 分层
 
@@ -111,7 +111,7 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 - 回环、私网、链路本地、云元数据地址和解析到私网的域名被阻断；
 - 流式响应字节上限、请求超时；登录 URL 查询参数不进入存储/列表，错误中的 URL 被脱敏。
 
-`tests/integration/source-browser.test.ts` 覆盖 browser-session 验证复用同一套安全抓取：按路径发送 Cookie、识别登录页跳转，旧格式未分域会话直接失败并要求重新登录。
+`tests/integration/source-browser.test.ts` 覆盖 browser-session 验证复用同一套安全抓取：按路径发送 Cookie、识别登录页跳转，旧格式未分域会话直接失败并要求重新登录；当起始页本身已匹配“已认证 URL”时必须等待手动确认，避免登录前提前关闭窗口。
 
 已知边界：DNS 在请求前解析并校验，但尚未通过自定义 dispatcher 固定解析结果，DNS rebinding 仍是后续加固项。
 

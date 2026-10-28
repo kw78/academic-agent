@@ -933,7 +933,7 @@ SaaS、分布式微服务、插件市场，以及没有数据依据的学习能�
 - **I-03/I-04/I-05 DONE**：`restore <backup> <target>` 在独立目录执行完整性与投影校验；1k/10k 事项性能基线由 `npm run benchmark` 记录；`sync_runs` 记录 Adapter ID/版本；0010→当前迁移升级测试验证数据保留。I-01/I-02/I-06 仍为 PARTIAL：事件本身未写 Adapter 版本、文件级 HMR/真实 DSH Session 生命周期与 profile 升级演练未完成。
 - **K-01/K-02 PARTIAL，K-03 DONE**：当前能力注册、停用与设置页只读能力/权限展示已有实现；未建设插件市场或额外抽象。J 组保持独立决策，未启动。
 
-验证：`npm run typecheck`、`npm test`（33 文件/170 项）、`npm run build:dsh`、`npm run build:ui` 通过。仍需真实环境确认的边界：Desktop 文件级 HMR/完整生命周期、Blackboard 真实考试/测验样本、JW 会话过期后的重新登录 E2E，以及新 UI 面板的真实浏览器点验。
+验证：`npm run typecheck`、`npm test`（33 文件/171 项）、`npm run build:dsh`、`npm run build:ui` 通过。仍需真实环境确认的边界：Desktop 文件级 HMR/完整生命周期、Blackboard 真实考试/测验样本、JW 会话过期后的重新登录 E2E，以及新 UI 面板的真实浏览器点验。
 
 ## 19. 当前唯一正确的推进策略
 
