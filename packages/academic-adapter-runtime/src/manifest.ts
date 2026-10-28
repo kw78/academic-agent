@@ -27,14 +27,37 @@ const extractorSchema = z
     message: 'attribute can only be used together with selector',
   })
 
-const requestSchema = z.object({
-  url: z.string().min(1).max(2000),
-  responseType: z.enum(['html', 'json']).default('html'),
-  items: z.string().min(1).max(500),
-  fields: z.record(z.string(), extractorSchema),
-  next: z.string().min(1).max(500).optional(),
-  maxPages: z.number().int().min(1).max(50).optional(),
-})
+const requestSchema = z
+  .object({
+    url: z.string().min(1).max(2000),
+    responseType: z.enum(['html', 'json']).default('html'),
+    items: z.string().min(1).max(500),
+    fields: z.record(z.string(), extractorSchema),
+    next: z.string().min(1).max(500).optional(),
+    maxPages: z.number().int().min(1).max(50).optional(),
+    pageParam: z
+      .string()
+      .regex(/^[A-Za-z0-9_.-]{1,80}$/, 'Expected a query parameter name')
+      .optional(),
+    pageStart: z.number().int().min(0).max(10_000).optional(),
+    pageStep: z.number().int().min(1).max(100).optional(),
+    offsetParam: z
+      .string()
+      .regex(/^[A-Za-z0-9_.-]{1,80}$/, 'Expected a query parameter name')
+      .optional(),
+    offsetStart: z.number().int().min(0).max(1_000_000).optional(),
+    offsetStep: z.number().int().min(1).max(10_000).optional(),
+  })
+  .refine(
+    (value) =>
+      [value.next, value.pageParam, value.offsetParam].filter(
+        (entry) => entry !== undefined,
+      ).length <= 1,
+    {
+      message:
+        'Use at most one pagination strategy: next, pageParam or offsetParam',
+    },
+  )
 
 export const adapterManifestSchema = z.object({
   schemaVersion: z.literal(1),

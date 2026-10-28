@@ -57,6 +57,7 @@ export const declarativeConfigSchema = browserConfigSchema.extend({
   delayMs: z.number().int().min(0).max(5_000).optional(),
   maxRequests: z.number().int().min(1).max(500).optional(),
   maxDurationMs: z.number().int().min(1_000).max(10 * 60_000).optional(),
+  maxBytes: z.number().int().min(10_000).max(50 * 1024 * 1024).optional(),
 })
 
 export type DeclarativeConfig = z.infer<typeof declarativeConfigSchema>
@@ -96,6 +97,12 @@ function renderTemplate(template: string, vars: Row): string {
 
 function absoluteUrl(value: string, baseUrl: string): string {
   return new URL(value, baseUrl).toString()
+}
+
+function withQuery(url: string, param: string, value: number): string {
+  const parsed = new URL(url)
+  parsed.searchParams.set(param, String(value))
+  return parsed.toString()
 }
 
 export function renderManifestUrl(
@@ -205,6 +212,7 @@ class ManifestClient {
   readonly #ports: number[]
   readonly #startedAt = Date.now()
   #requests = 0
+  #bytes = 0
 
   constructor(
     manifest: AdapterManifest,
@@ -242,7 +250,12 @@ class ManifestClient {
     let lastError: unknown
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        return await this.#getOnce(url)
+        const body = await this.#getOnce(url)
+        this.#bytes += Buffer.byteLength(body, 'utf8')
+        if (this.#bytes > (this.#config.maxBytes ?? 5 * 1024 * 1024)) {
+          throw new Error('声明式抓取响应总大小超过上限')
+        }
+        return body
       } catch (error) {
         lastError = error
         if (!(error instanceof AdapterTransientError) || attempt >= 2) {
@@ -317,7 +330,8 @@ class ManifestClient {
     complete: boolean
     diagnostics: FieldDiagnostic[]
   }> {
-    const maxPages = request.maxPages ?? 1
+    const paginated = Boolean(request.pageParam || request.offsetParam)
+    const maxPages = request.maxPages ?? (paginated ? 20 : 1)
     const rows: Row[] = []
     const diagnostics = new Map<string, FieldDiagnostic>()
     const collect = (page: FieldDiagnostic[]): void => {
@@ -336,8 +350,28 @@ class ManifestClient {
       complete,
       diagnostics: [...diagnostics.values()],
     })
-    let currentUrl = renderManifestUrl(request.url, vars, this.#baseUrl)
+    const firstUrl = renderManifestUrl(request.url, vars, this.#baseUrl)
+    const pageStart = request.pageStart ?? 1
+    const pageStep = request.pageStep ?? 1
+    let offset = request.offsetStart ?? 0
+    let nextUrl: string | undefined
     for (let page = 0; page < maxPages; page += 1) {
+      let currentUrl: string
+      if (page === 0) {
+        currentUrl = firstUrl
+      } else if (request.pageParam) {
+        currentUrl = withQuery(
+          firstUrl,
+          request.pageParam,
+          pageStart + page * pageStep,
+        )
+      } else if (request.offsetParam) {
+        currentUrl = withQuery(firstUrl, request.offsetParam, offset)
+      } else if (nextUrl) {
+        currentUrl = nextUrl
+      } else {
+        return result(true)
+      }
       const body = await this.get(currentUrl)
       const extracted = extractPage(body, request)
       collect(extracted.diagnostics)
@@ -348,9 +382,17 @@ class ManifestClient {
       }
       rows.push(...extracted.rows)
       if (extracted.truncated) return result(false)
+      if (request.pageParam || request.offsetParam) {
+        if (extracted.rows.length === 0) return result(true)
+        if (page + 1 >= maxPages) return result(false)
+        if (request.offsetParam) {
+          offset += request.offsetStep ?? extracted.rows.length
+        }
+        continue
+      }
       if (!extracted.next) return result(true)
       if (page + 1 >= maxPages) return result(false)
-      currentUrl = absoluteUrl(extracted.next, currentUrl)
+      nextUrl = absoluteUrl(extracted.next, currentUrl)
     }
     return result(true)
   }

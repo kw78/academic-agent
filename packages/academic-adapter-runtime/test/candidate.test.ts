@@ -134,6 +134,56 @@ describe('adapter candidate replay and registry', () => {
     expect(report.warnings.join(' ')).toMatch(/页面结构可能已变化/)
   })
 
+  it('follows page and offset pagination and reports truncation', async () => {
+    const pageManifest = {
+      ...manifest,
+      adapterId: 'page-json',
+      courses: {
+        ...manifest.courses,
+        pageParam: 'page',
+        pageStart: 1,
+        pageStep: 1,
+        maxPages: 5,
+      },
+    }
+    const pageReport = await replayManifest(pageManifest, [
+      ...samples(),
+      {
+        url: 'https://lms.example.edu/api/courses?page=2',
+        body: JSON.stringify({ data: [] }),
+      },
+    ])
+    expect(pageReport.ok).toBe(true)
+    expect(pageReport.courses).toHaveLength(1)
+
+    const offsetManifest = {
+      ...manifest,
+      adapterId: 'offset-json',
+      courses: {
+        ...manifest.courses,
+        offsetParam: 'offset',
+        offsetStart: 0,
+        maxPages: 5,
+      },
+    }
+    const offsetReport = await replayManifest(offsetManifest, [
+      ...samples(),
+      {
+        url: 'https://lms.example.edu/api/courses?offset=1',
+        body: JSON.stringify({ data: [] }),
+      },
+    ])
+    expect(offsetReport.ok).toBe(true)
+    expect(offsetReport.courses).toHaveLength(1)
+
+    const cappedReport = await replayManifest(
+      { ...pageManifest, courses: { ...pageManifest.courses, maxPages: 1 } },
+      samples(),
+    )
+    expect(cappedReport.ok).toBe(false)
+    expect(cappedReport.errors.join(' ')).toMatch(/未完整/)
+  })
+
   it('rejects unsafe regex and HTTP manifests before any replay', async () => {
     const unsafeRegex = {
       ...manifest,

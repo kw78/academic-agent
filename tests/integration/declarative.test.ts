@@ -303,6 +303,21 @@ describe('declarative adapter runtime', () => {
     expect(result.items[0]?.sourceUrl).toBe('https://lms.example.edu/assignment/A1.html')
   })
 
+  it('stops when total response size exceeds the configured limit', async () => {
+    const registry = new ManifestRegistry()
+    registry.register(jsonManifest)
+    const engine = createDeclarativeEngine(registry, {
+      fetchImpl: async () =>
+        new Response(`${fixture('courses-one.json')}${' '.repeat(11_000)}`),
+      resolveHost: publicResolver,
+    })
+    const context = {
+      sourceId: 'decl',
+      config: { ...configFor('demo-json'), maxBytes: 10_000 },
+    }
+    await expect(engine.listCourses!(context)).rejects.toThrow(/总大小/)
+  })
+
   it('reads HTML rows through selectors and resolves relative source URLs', async () => {
     const state = router()
     const engine = engineFor(htmlManifest, state)
