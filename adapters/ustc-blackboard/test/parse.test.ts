@@ -198,6 +198,24 @@ describe('Blackboard HTML parsing', () => {
       utc: '2026-11-09T23:49:00.000Z',
       zone: 'Asia/Shanghai',
     })
+
+    const titleMentionsDue =
+      '<html><head><title>复查提交历史记录: 第一周的作业（截止日期9月10日） – 模拟与数字电路A</title></head>' +
+      '<body><h1>第一周的作业（截止日期9月10日）</h1>' +
+      '<div>作业详细信息 名称 第一周的作业（截止日期9月10日） 截止日期 2026年9月10日 下午11:59 成绩 10 / 10</div>' +
+      '</body></html>'
+    const fromBody = parseAssignmentDetail(
+      titleMentionsDue,
+      'https://bb.example.edu/webapps/assignment/uploadAssignment?content_id=_191012_1&course_id=_37671_1',
+      '_37671_1',
+      '第一周的作业',
+      { zone: 'Asia/Shanghai', utcOffsetMinutes: 480 },
+    )
+    expect(fromBody.due).toEqual({
+      kind: 'instant',
+      utc: '2026-09-10T15:59:00.000Z',
+      zone: 'Asia/Shanghai',
+    })
   })
 
   it('parses Chinese, English and ISO due dates without inventing values', () => {

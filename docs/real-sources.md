@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-**首个真实平台只读切片已完成**：`adapters/ustc-blackboard` 提供 Blackboard Learn 的课程/作业读取 Adapter，可在已登录会话下预览并同步到 Kernel。通用“任意平台自动适配”仍未完成。
+**首个真实平台只读切片已完成**：`adapters/ustc-blackboard` 提供 Blackboard Learn 的课程、作业、考试与测验读取 Adapter，可在已登录会话下预览并同步到 Kernel。通用“任意平台自动适配”仍未完成。
 
 凭据连接 MVP 已具备：可创建连接、隐藏输入凭据、DPAPI 加密保存、验证/断开/删除凭据，并由 Connector 在认证失败时停止同步、保留旧数据。通用 `browser-session` engine 负责登录/验证；Blackboard Adapter 复用同一会话契约读取数据。
 
@@ -35,7 +35,7 @@ ACADEMIC_DB=.data/source.db npm run demo -- source sync my-lms
 
 ## 首个真实平台：Blackboard Learn（只读）
 
-`engine=blackboard` 复用浏览器登录/验证，读取课程与作业，不提交作业、不修改平台数据。推荐配置：
+`engine=blackboard` 复用浏览器登录/验证，读取课程、作业、考试与测验，不提交作业、不修改平台数据。推荐配置：
 
 ```text
 source_id = ustc-blackboard
@@ -44,8 +44,8 @@ auth_kind = token
 login_mode = browser
 config_json = {
   loginUrl, authenticatedUrlPatterns, cookieDomains, verifyUrl, loggedOutPatterns,
-  portalUrl, termFilter, maxCourses, maxAssignments, delayMs,
-  timeZone, utcOffsetMinutes
+  portalUrl, termFilter, maxCourses, maxAssignments, maxContentPages, delayMs,
+  timeZone, utcOffsetMinutes, allowHttp?
 }
 ```
 
@@ -57,11 +57,15 @@ ACADEMIC_DB=.data/academic.db npm run demo -- source preview ustc-blackboard
 ACADEMIC_DB=.data/academic.db npm run demo -- source sync ustc-blackboard
 ```
 
-已用真实会话在临时库验证：`termFilter=2026FA`、`maxCourses=2` 时同步到 2 门课程和 7 个作业，重复同步为 no-op；HW4 页面本身没有截止日期，保留为 `unknown`，不猜测。当前限制：
+已用真实会话在临时库验证（2026-10-28）：
 
-- 只读取课程页的“作业区”直接列出的 `uploadAssignment` 项；文件夹分页、考试/测验、附件下载、成绩尚未覆盖。
-- `maxCourses` / `maxAssignments` 触顶时标记 `partial`，不清理旧数据。
-- 页面改版、会话过期、网络失败分别落到解析警告/`auth-required`/同步失败，不伪造成功。
+- `termFilter=2026FA` 共 13 门课程，其中 5 门有作业/内容区；图论 7 个作业，模拟与数字电路A 含 2 个文件夹、共 9 个作业，文件夹遍历后为 `full` 且未重复。
+- 作业截止时间从详情页解析：中文日期（含“上午/下午”）、英文日期、ISO 均可；标题里出现“截止日期9月10日”时不会误用无年份文本，继续读取正文中的完整日期。
+- 重复同步为 no-op；`maxCourses` / `maxAssignments` / `maxContentPages` 触顶时标记 `partial`，不清理旧数据。
+- 考试/测验解析已用脱敏 fixture 覆盖（内容区、文件夹、下一页、中英文截止时间、未知截止时间）；当前账号的 2026FA 课程没有暴露测试项，因此“真实考试同步”尚未取得真实样本，不能声称已完整验收 Blackboard 测试模块。
+- 附件、成绩、提交历史不读取；不提交作业、不修改平台数据。页面改版、会话过期、网络失败分别落到解析警告/`auth-required`/同步失败，不伪造成功。
+
+授权与数据边界：只使用用户本人已完成登录的会话，只读访问课程页与作业/测试详情；不保存页面原始 HTML 到数据库，不下载附件；会话 Cookie 只存 DPAPI，删除会话不会删除已同步的学业事件。测试与真实验证均使用临时数据库，不写入桌面端默认库。
 
 ## 可行接入路径
 

@@ -243,7 +243,8 @@ export function parseCourseLinks(html: string, options: CourseFilter): ParsedCou
   return { courses, truncated }
 }
 
-const CONTENT_AREA_LABEL = /作业|assignment|测试|测验|考试|test|quiz|exam/i
+const CONTENT_AREA_LABEL =
+  /作业|assignment|测试|测验|考试|test|quiz|exam|课程内容|教学内容|学习材料/i
 const NEXT_PAGE_LABEL = /下一页|下页|next\s*page|next/i
 
 export function findContentAreaUrls(courseHtml: string, baseUrl: string): string[] {
@@ -479,6 +480,33 @@ export function parseDue(
   return { kind: 'unknown' }
 }
 
+function firstKnownDue(
+  candidates: string[],
+  zone: string,
+  utcOffsetMinutes: number,
+): Due {
+  for (const candidate of candidates) {
+    if (!candidate.trim()) continue
+    const due = parseDue(candidate, zone, utcOffsetMinutes)
+    if (due.kind !== 'unknown') return due
+  }
+  return { kind: 'unknown' }
+}
+
+function dueCandidatesFromText(pageText: string): string[] {
+  const result: string[] = []
+  const patterns = [
+    /(?:截止日期|到期日期|结束日期)\s*[:：]?\s*([\s\S]{0,160})/gi,
+    /(?:Due Date|Due)\s*[:：]?\s*([A-Z][a-z]{2}\s+\d{1,2},?\s+\d{4}[\s\S]{0,40})/gi,
+  ]
+  for (const pattern of patterns) {
+    for (const match of pageText.matchAll(pattern)) {
+      if (match[1]) result.push(match[1])
+    }
+  }
+  return result
+}
+
 export function parseAssignmentDetail(
   html: string,
   url: string,
@@ -503,8 +531,11 @@ export function parseAssignmentDetail(
     )?.[1] ??
     /截止日期\s*([\s\S]{0,160})/i.exec(pageText)?.[1] ??
     ''
-  const due = parseDue(
-    stripHtml(dueHtml),
+  const due = firstKnownDue(
+    [
+      ...(dueHtml ? [stripHtml(dueHtml)] : []),
+      ...dueCandidatesFromText(pageText),
+    ],
     options.zone,
     options.utcOffsetMinutes,
   )
@@ -557,13 +588,11 @@ export function parseAssessmentDetail(
     )
   const title = (titleMatch?.[1] ?? fallbackTitle).trim() || fallbackTitle
   const pageText = stripHtml(html)
-  const dueText =
-    /(?:截止日期|到期日期|结束日期)\s*[:：]?\s*([\s\S]{0,160})/i.exec(pageText)?.[1] ??
-    /(?:Due Date|Due)\s*[:：]?\s*([A-Z][a-z]{2}\s+\d{1,2},?\s+\d{4}[\s\S]{0,40})/i.exec(
-      pageText,
-    )?.[1] ??
-    ''
-  const due = parseDue(dueText, options.zone, options.utcOffsetMinutes)
+  const due = firstKnownDue(
+    dueCandidatesFromText(pageText),
+    options.zone,
+    options.utcOffsetMinutes,
+  )
   const instructions =
     /<li[^>]*id=["']instructions["'][^>]*>([\s\S]*?)<\/li>/i.exec(html)?.[1] ??
     /<div[^>]*class=["'][^"']*vtbegenerated[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(

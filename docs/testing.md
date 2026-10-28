@@ -139,11 +139,12 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 - `tests/integration/adapter-candidate-tools.test.ts`：Agent 校验只读；注册/启用无授权被拒；可信授权后注册并启用。
 - `tests/integration/declarative.test.ts`：候选注册 → 启用 → declarative source 同步 3 条事项。
 
-## Blackboard 只读切片
+## Blackboard 只读闭环
 
-- `adapters/ustc-blackboard/test/parse.test.ts`：课程链接/学期过滤、作业区定位、作业链接去重、中英文/ISO 截止时间、登录页识别、内容 hash 稳定性。
-- `tests/integration/blackboard.test.ts`：课程/作业标准化、会话过期映射为 `AdapterAuthError`、单页失败保留 `partial`、预览不写库、Connector/Kernel 同步与重复同步 no-op。
-- 真实会话手工验证：在临时库用 `termFilter=2026FA`、`maxCourses=2` 同步到 2 门课程、7 个作业；HW4 页面无截止日期，保留 `unknown`。
+- `adapters/ustc-blackboard/test/parse.test.ts`：课程链接/学期过滤、内容区发现、文件夹与下一页、作业/考试/测验链接、中英文/ISO 截止时间、标题含“截止日期”时读取正文日期、登录页识别、内容 hash 稳定性。
+- `tests/integration/blackboard.test.ts`：6 个作业/考试/测验事项标准化、文件夹与分页遍历、会话过期映射为 `AdapterAuthError`、单页失败保留 `partial`、预览不写库、Connector/Kernel 同步与重复同步 no-op。
+- 真实会话只读验证（2026-10-28）：`termFilter=2026FA` 13 门课程，5 门有内容区；图论 7 个作业，模拟与数字电路A 2 个文件夹共 9 个作业，`full` 且截止时间全部解析。当前账号无测试项样本，考试/测验仅 fixture 验证。
+- 附件、成绩、提交历史不读取；不提交作业。
 
 ## DSH Desktop
 

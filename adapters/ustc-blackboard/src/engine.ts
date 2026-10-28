@@ -256,11 +256,7 @@ class BlackboardReadOnlyAdapter implements AcademicSourceAdapter {
       }
 
       const areaUrls = findContentAreaUrls(courseHtml, course.url)
-      if (areaUrls.length === 0) {
-        warnings.push(`课程「${course.title}」未找到作业/考试区`)
-        partial = true
-        continue
-      }
+      if (areaUrls.length === 0) continue
       coursesWithContentArea += 1
 
       const refs = new Map<string, ParsedContentItemRef>()
@@ -395,8 +391,13 @@ function messageOf(error: unknown): string {
 function contentPageKey(url: string): string {
   try {
     const parsed = new URL(url)
-    parsed.searchParams.delete('mode')
     parsed.hash = ''
+    if (/listContent\.jsp/i.test(parsed.pathname)) {
+      const courseId = parsed.searchParams.get('course_id') ?? ''
+      const contentId = parsed.searchParams.get('content_id') ?? ''
+      const start = parsed.searchParams.get('startIndex') ?? ''
+      return `${parsed.origin}${parsed.pathname}?course_id=${courseId}&content_id=${contentId}&startIndex=${start}`
+    }
     return parsed.toString()
   } catch {
     return url
@@ -412,7 +413,7 @@ export function createBlackboardEngine(
       id: 'blackboard',
       displayName: 'Blackboard Learn',
       description:
-        'Blackboard Learn 只读同步：复用浏览器会话，读取课程、作业、考试与测验；不提交作业。',
+        'Blackboard Learn 只读同步：复用浏览器会话，读取课程、作业、考试与测验；不提交作业，不读取附件与成绩。',
       supportsSync: true,
       supportsLogin: true,
       supportsVerify: true,

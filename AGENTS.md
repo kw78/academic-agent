@@ -156,7 +156,7 @@ docs/adr/                      # 架构决策记录
 |---|---|---|
 | M0 | 基线核对与文档统一 | 已完成：typecheck、145 项测试/31 文件、`build:dsh`/`build:ui` 实测通过 |
 | M1 | 抓取安全与凭据加固 | 进行中：DNS 固定解析、访问策略、正则与秘密防护 |
-| M2 | Blackboard 垂直闭环 | 部分完成：课程/作业只读同步；考试、测验、文件夹分页待补 |
+| M2 | Blackboard 垂直闭环 | 已完成：课程/作业/考试/测验解析、文件夹分页、差异预览与真实只读同步；真实账号暂无测试项样本 |
 | M3 | 统一数据源接入流程 | 部分完成：创建/登录/验证/预览/同步已可用；探测与生成未接入统一 UI |
 | M4 | AI 候选工作流集成 | 部分完成：校验、回放、保存、启用、回滚已实现；自动探测与审批 UI 待补 |
 | M5 | 恢复能力与发布验收 | 部分完成：备份恢复/重启/并发已有测试；Session/HMR/迁移演练待做 |
@@ -164,7 +164,7 @@ docs/adr/                      # 架构决策记录
 
 仍有限制：DNS rebinding 固定解析、Blackboard 考试/附件/成绩、声明式 XPath/复杂转换、任意脚本沙箱、DSH 审批 UI 未完成。
 
-首个真实平台只读 Adapter 已落地在 `adapters/ustc-blackboard`：只读取课程和作业，不提交作业；`engine=blackboard` 复用通用浏览器登录/会话，解析器有脱敏 fixture 与真实页面验证。考试/测验、文件夹分页、附件与成绩尚未覆盖，不得声称已完整同步 Blackboard。
+首个真实平台只读 Adapter 已落地在 `adapters/ustc-blackboard`：读取课程、作业、考试与测验，支持文件夹/下一页遍历，不提交作业、不读取附件与成绩；`engine=blackboard` 复用通用浏览器登录/会话。真实会话已验证 13 门 `2026FA` 课程中的 5 门内容区、9 个含文件夹作业与截止时间；当前账号没有暴露测试项，考试/测验仍以脱敏 fixture 验证，不得声称测试模块已完整真实验收。
 
 声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、分页、字段映射、允许域名、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选流水线已实现：Agent 可生成 Manifest、用显式样本做离线回放；候选保存与启用分开，只有 validated 版本可启用，且启用/注册需要可信授权；CLI `adapter validate/register/activate/rollback` 提供用户操作入口。尚未实现任意 JavaScript 生成与沙箱执行。
 
