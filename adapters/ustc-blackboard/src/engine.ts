@@ -26,17 +26,20 @@ import {
   type WebCookie,
 } from '@academic/web-sessions'
 import {
-  findAssignmentsAreaUrl,
+  findContentAreaUrls,
   isLoginPage,
+  parseAssessmentDetail,
   parseAssignmentDetail,
-  parseAssignmentLinks,
+  parseContentPage,
   parseCourseLinks,
+  type ParsedContentItemRef,
 } from './parse.js'
 
 export const blackboardConfigSchema = browserConfigSchema.extend({
   portalUrl: z.string().url().optional(),
   maxCourses: z.number().int().min(1).max(200).optional(),
   maxAssignments: z.number().int().min(1).max(500).optional(),
+  maxContentPages: z.number().int().min(1).max(100).optional(),
   termFilter: z.array(z.string().min(1)).max(20).optional(),
   courseFilter: z.array(z.string().min(1)).max(50).optional(),
   delayMs: z.number().int().min(0).max(5_000).optional(),
@@ -222,9 +225,11 @@ class BlackboardReadOnlyAdapter implements AcademicSourceAdapter {
     const warnings: string[] = []
     const items: NormalizedAcademicItem[] = []
     let partial = parsedCourses.truncated
-    let truncatedAssignments = false
-    let coursesWithAssignmentsArea = 0
-    const maxAssignments = this.#config.maxAssignments ?? 100
+    let truncatedItems = false
+    let hitItemCap = false
+    let coursesWithContentArea = 0
+    const maxItems = this.#config.maxAssignments ?? 100
+    const maxContentPages = this.#config.maxContentPages ?? 20
     const zone = this.#config.timeZone ?? 'Asia/Shanghai'
     const utcOffsetMinutes = this.#config.utcOffsetMinutes ?? 480
 
@@ -238,7 +243,7 @@ class BlackboardReadOnlyAdapter implements AcademicSourceAdapter {
     }
 
     for (const course of parsedCourses.courses) {
-      if (truncatedAssignments) break
+      if (truncatedItems) break
       await client.delay()
       let courseHtml: string
       try {
@@ -250,60 +255,123 @@ class BlackboardReadOnlyAdapter implements AcademicSourceAdapter {
         continue
       }
 
-      const areaUrl = findAssignmentsAreaUrl(courseHtml, course.url)
-      if (!areaUrl) continue
-      coursesWithAssignmentsArea += 1
-
-      await client.delay()
-      let assignmentsHtml: string
-      try {
-        assignmentsHtml = (await client.get(areaUrl)).html
-      } catch (error) {
-        if (error instanceof AdapterAuthError) throw error
-        warnings.push(`课程「${course.title}」作业区读取失败：${messageOf(error)}`)
+      const areaUrls = findContentAreaUrls(courseHtml, course.url)
+      if (areaUrls.length === 0) {
+        warnings.push(`课程「${course.title}」未找到作业/考试区`)
         partial = true
         continue
       }
+      coursesWithContentArea += 1
 
-      const assignments = parseAssignmentLinks(
-        assignmentsHtml,
-        areaUrl,
-        course.externalCourseId,
-      ).assignments
+      const refs = new Map<string, ParsedContentItemRef>()
+      let pagesRead = 0
+      let truncatedContent = false
+      for (const areaUrl of areaUrls) {
+        const queue = [areaUrl]
+        const visited = new Set<string>()
+        while (queue.length > 0) {
+          if (pagesRead >= maxContentPages || refs.size >= maxItems) {
+            truncatedContent = true
+            break
+          }
+          const pageUrl = queue.shift()!
+          const pageKey = contentPageKey(pageUrl)
+          if (visited.has(pageKey)) continue
+          visited.add(pageKey)
+          pagesRead += 1
+          await client.delay()
+          let pageHtml: string
+          try {
+            pageHtml = (await client.get(pageUrl)).html
+          } catch (error) {
+            if (error instanceof AdapterAuthError) throw error
+            warnings.push(
+              `课程「${course.title}」内容页读取失败：${messageOf(error)}`,
+            )
+            partial = true
+            continue
+          }
+          const page = parseContentPage(
+            pageHtml,
+            pageUrl,
+            course.externalCourseId,
+          )
+          for (const ref of page.items) {
+            if (refs.has(ref.externalItemId)) continue
+            refs.set(ref.externalItemId, ref)
+            if (refs.size >= maxItems) {
+              truncatedContent = true
+              hitItemCap = true
+              break
+            }
+          }
+          for (const folder of page.folders) {
+            if (!visited.has(contentPageKey(folder))) queue.push(folder)
+          }
+          if (page.nextPage && !visited.has(contentPageKey(page.nextPage))) {
+            queue.push(page.nextPage)
+          }
+        }
+        if (truncatedContent) break
+      }
 
-      for (const assignment of assignments) {
-        if (items.length >= maxAssignments) {
+      if (truncatedContent) {
+        partial = true
+        truncatedItems = truncatedItems || hitItemCap
+        if (!hitItemCap) {
+          warnings.push(
+            `课程「${course.title}」内容页数量达到上限 ${maxContentPages}，本次标记为部分同步`,
+          )
+        }
+      }
+
+      for (const ref of refs.values()) {
+        if (truncatedItems) break
+        if (items.length >= maxItems) {
           partial = true
-          truncatedAssignments = true
+          truncatedItems = true
+          hitItemCap = true
           break
         }
         await client.delay()
         try {
-          const detail = await client.get(assignment.url)
-          const parsed = parseAssignmentDetail(
-            detail.html,
-            assignment.url,
-            course.externalCourseId,
-            assignment.title,
-            { zone, utcOffsetMinutes },
-          )
+          const detail = await client.get(ref.url)
+          const parsed =
+            ref.kind === 'assignment'
+              ? parseAssignmentDetail(
+                  detail.html,
+                  ref.url,
+                  course.externalCourseId,
+                  ref.title,
+                  { zone, utcOffsetMinutes },
+                )
+              : parseAssessmentDetail(
+                  detail.html,
+                  ref.url,
+                  course.externalCourseId,
+                  ref.title,
+                  ref.kind === 'exam' ? 'exam' : 'quiz',
+                  { zone, utcOffsetMinutes },
+                )
           items.push({ sourceId: this.sourceId, ...parsed })
         } catch (error) {
           if (error instanceof AdapterAuthError) throw error
           warnings.push(
-            `课程「${course.title}」作业「${assignment.title}」读取失败：${messageOf(error)}`,
+            `课程「${course.title}」${
+              ref.kind === 'assignment' ? '作业' : '考试/测验'
+            }「${ref.title}」读取失败：${messageOf(error)}`,
           )
           partial = true
         }
       }
     }
 
-    if (coursesWithAssignmentsArea === 0) {
-      warnings.push('未找到作业区；保留上一次有效数据')
+    if (coursesWithContentArea === 0) {
+      warnings.push('未找到作业/考试区；保留上一次有效数据')
       partial = true
     }
-    if (truncatedAssignments) {
-      warnings.push(`作业数量达到上限 ${maxAssignments}，本次标记为部分同步`)
+    if (hitItemCap) {
+      warnings.push(`事项数量达到上限 ${maxItems}，本次标记为部分同步`)
     }
     if (parsedCourses.truncated) {
       warnings.push(
@@ -324,6 +392,17 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function contentPageKey(url: string): string {
+  try {
+    const parsed = new URL(url)
+    parsed.searchParams.delete('mode')
+    parsed.hash = ''
+    return parsed.toString()
+  } catch {
+    return url
+  }
+}
+
 export function createBlackboardEngine(
   options: BlackboardEngineOptions = {},
 ): SourceEngine {
@@ -333,7 +412,7 @@ export function createBlackboardEngine(
       id: 'blackboard',
       displayName: 'Blackboard Learn',
       description:
-        'Blackboard Learn 只读同步：复用浏览器会话，读取课程与作业；不提交作业。',
+        'Blackboard Learn 只读同步：复用浏览器会话，读取课程、作业、考试与测验；不提交作业。',
       supportsSync: true,
       supportsLogin: true,
       supportsVerify: true,
@@ -394,4 +473,11 @@ export function createBlackboardEngine(
   }
 }
 
-export { parseCourseLinks, parseAssignmentLinks, parseAssignmentDetail } from './parse.js'
+export {
+  parseCourseLinks,
+  parseContentPage,
+  parseAssignmentLinks,
+  parseAssignmentDetail,
+  parseAssessmentDetail,
+  findContentAreaUrls,
+} from './parse.js'

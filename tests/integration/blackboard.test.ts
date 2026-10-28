@@ -62,6 +62,24 @@ function router(): Router {
           headers: { 'content-type': 'text/html' },
         })
       }
+      if (url.includes('content_id=_8003_1')) {
+        return new Response(fixture('test-8003.html'))
+      }
+      if (url.includes('content_id=_8002_1')) {
+        return new Response(fixture('test-8002.html'))
+      }
+      if (url.includes('content_id=_8001_1')) {
+        return new Response(fixture('test-8001.html'))
+      }
+      if (url.includes('content_id=_7003_1')) {
+        return new Response(fixture('assignment-7003.html'))
+      }
+      if (url.includes('content_id=_7002_1')) {
+        return new Response(fixture('assignment-7002.html'))
+      }
+      if (url.includes('content_id=_7001_1')) {
+        return new Response(fixture('assignment-7001.html'))
+      }
       if (url.includes('listContent.jsp')) {
         if (state.assignments === 'failed') {
           return new Response('server error', { status: 500 })
@@ -70,13 +88,19 @@ function router(): Router {
           state.assignments = 'ok'
           return new Response('temporarily unavailable', { status: 503 })
         }
+        if (url.includes('content_id=_5002_1') && url.includes('startIndex=2')) {
+          return new Response(fixture('tests-1001-page2.html'))
+        }
+        if (url.includes('content_id=_5002_1')) {
+          return new Response(fixture('tests-1001.html'))
+        }
+        if (url.includes('content_id=_5101_1')) {
+          return new Response(fixture('assignment-folder-1001.html'))
+        }
+        if (url.includes('content_id=_5102_1')) {
+          return new Response(fixture('test-folder-1001.html'))
+        }
         return new Response(fixture('assignments-1001.html'))
-      }
-      if (url.includes('content_id=_7002_1')) {
-        return new Response(fixture('assignment-7002.html'))
-      }
-      if (url.includes('content_id=_7001_1')) {
-        return new Response(fixture('assignment-7001.html'))
       }
       if (url.includes('launcher?type=Course')) {
         return new Response(fixture('course-1001.html'))
@@ -115,7 +139,7 @@ describe('Blackboard read-only engine', () => {
     const result = await adapter.fetch({ credentials })
     expect(result.completeness).toBe('full')
     expect(result.warnings).toEqual([])
-    expect(result.items).toHaveLength(2)
+    expect(result.items).toHaveLength(6)
     expect(result.fetchedAt).toBe('2026-10-28T00:00:00.000Z')
     expect(result.items[0]).toMatchObject({
       sourceId: 'bb',
@@ -127,6 +151,32 @@ describe('Blackboard read-only engine', () => {
     expect(result.items[1]?.due).toEqual({
       kind: 'instant',
       utc: '2026-11-01T23:49:00.000Z',
+      zone: 'Asia/Shanghai',
+    })
+    expect(result.items.map((item) => item.title)).toEqual([
+      'HW1',
+      'HW2',
+      'HW3',
+      'Quiz 1',
+      'Final Exam',
+      'Quiz 2',
+    ])
+    expect(result.items.map((item) => item.kind)).toEqual([
+      'assignment',
+      'assignment',
+      'assignment',
+      'quiz',
+      'exam',
+      'quiz',
+    ])
+    expect(result.items.find((item) => item.title === 'Quiz 1')?.due).toEqual({
+      kind: 'instant',
+      utc: '2026-11-05T06:00:00.000Z',
+      zone: 'Asia/Shanghai',
+    })
+    expect(result.items.find((item) => item.title === 'Quiz 2')?.due).toEqual({
+      kind: 'instant',
+      utc: '2026-11-12T01:00:00.000Z',
       zone: 'Asia/Shanghai',
     })
 
@@ -159,7 +209,7 @@ describe('Blackboard read-only engine', () => {
     })
     expect(result.completeness).toBe('partial')
     expect(result.items).toHaveLength(0)
-    expect(result.warnings.join(' ')).toContain('作业区读取失败')
+    expect(result.warnings.join(' ')).toContain('内容页读取失败')
   })
 
   it('syncs through Connector/Kernel and is idempotent', async () => {
@@ -187,26 +237,40 @@ describe('Blackboard read-only engine', () => {
     await app.connections.setSecret(connection.connectionId, await credentials.getSecret())
 
     const preview = await app.previewSourceSync('bb', connection.connectionId)
-    expect(preview.counts).toEqual({ create: 2, update: 0, unchanged: 0, skip: 0 })
+    expect(preview.counts).toEqual({
+      create: 6,
+      update: 0,
+      unchanged: 0,
+      skip: 0,
+      missing: 0,
+    })
     expect(preview.completeness).toBe('full')
     expect((await app.store.queries.listAcademicItems()).items).toHaveLength(0)
 
     const first = await app.syncSource('bb', connection.connectionId)
     expect(first.status).toBe('success')
-    expect(first.created).toBe(2)
+    expect(first.created).toBe(6)
 
     const repeatedPreview = await app.previewSourceSync('bb', connection.connectionId)
     expect(repeatedPreview.counts).toEqual({
       create: 0,
       update: 0,
-      unchanged: 2,
+      unchanged: 6,
       skip: 0,
+      missing: 0,
     })
 
     const courses = await app.store.queries.listCourses()
     expect(courses.items.map((course) => course.code)).toContain('CS101.01')
     const items = await app.store.queries.listAcademicItems()
-    expect(items.items.map((item) => item.title).sort()).toEqual(['HW1', 'HW2'])
+    expect(items.items.map((item) => item.title).sort()).toEqual([
+      'Final Exam',
+      'HW1',
+      'HW2',
+      'HW3',
+      'Quiz 1',
+      'Quiz 2',
+    ])
 
     const second = await app.syncSource('bb', connection.connectionId)
     expect(second.status).toBe('success')

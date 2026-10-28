@@ -29,7 +29,12 @@ export interface AcademicSourceAdapter {
   fetch(context?: AdapterFetchContext): Promise<AdapterResult>
 }
 
-export type SyncPreviewAction = 'create' | 'update' | 'unchanged' | 'skip'
+export type SyncPreviewAction =
+  | 'create'
+  | 'update'
+  | 'unchanged'
+  | 'skip'
+  | 'missing'
 
 export interface SyncPreviewItem {
   externalItemId?: string
@@ -50,6 +55,7 @@ export interface SyncPreview {
     update: number
     unchanged: number
     skip: number
+    missing: number
   }
   items: SyncPreviewItem[]
 }

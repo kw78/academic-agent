@@ -4,6 +4,7 @@ import {
   AdapterTransientError,
   COMMAND,
   parseCommand,
+  type AcademicItemView,
   type AcademicSourceAdapter,
   type AdapterResult,
   type CommandApi,
@@ -121,7 +122,7 @@ export class ConnectorService {
       )
     }
     const result = await adapter.fetch(credentials ? { credentials } : undefined)
-    const counts = { create: 0, update: 0, unchanged: 0, skip: 0 }
+    const counts = { create: 0, update: 0, unchanged: 0, skip: 0, missing: 0 }
     const items: SyncPreviewItem[] = []
     for (const item of result.items) {
       let action: SyncPreviewItem['action'] = 'create'
@@ -154,6 +155,26 @@ export class ConnectorService {
         action,
         ...(reason ? { reason } : {}),
       })
+    }
+
+    if (result.completeness === 'full') {
+      const seen = new Set(
+        result.items
+          .map((item) => item.externalItemId)
+          .filter((value): value is string => Boolean(value)),
+      )
+      for (const item of await this.#listActiveItems(adapter.sourceId)) {
+        const externalItemId = item.source.externalItemId
+        if (!externalItemId || seen.has(externalItemId)) continue
+        counts.missing += 1
+        items.push({
+          externalItemId,
+          title: item.title,
+          kind: item.kind,
+          action: 'missing',
+          reason: '本次完整同步未返回；保留本地数据',
+        })
+      }
     }
     return {
       sourceId: adapter.sourceId,
@@ -292,6 +313,19 @@ export class ConnectorService {
         else if (outcome.kind === 'failed') warnings.push(outcome.message)
       }
 
+      if (adapterResult.completeness === 'full' && !options.archiveMissing) {
+        const missing = (await this.#listActiveItems(adapter.sourceId)).filter(
+          (item) =>
+            !item.source.externalItemId ||
+            !seenExternalIds.has(item.source.externalItemId),
+        )
+        if (missing.length > 0) {
+          warnings.push(
+            `${missing.length} 个已同步事项未出现在本次完整结果中；已保留本地数据`,
+          )
+        }
+      }
+
       if (options.archiveMissing && adapterResult.completeness === 'full') {
         updated += await this.#archiveMissing(
           adapter.sourceId,
@@ -402,6 +436,22 @@ export class ConnectorService {
     }
     if (!result.ok) return { kind: 'failed', message: `Item ${itemId}: ${result.message}` }
     return { kind: result.eventIds.length > 0 ? 'updated' : 'noop' }
+  }
+
+  async #listActiveItems(sourceId: string): Promise<AcademicItemView[]> {
+    const items: AcademicItemView[] = []
+    let cursor: string | undefined
+    do {
+      const page = await this.#queries.listAcademicItems({
+        sourceId,
+        status: 'active',
+        limit: 200,
+        ...(cursor ? { cursor } : {}),
+      })
+      items.push(...page.items)
+      cursor = page.nextCursor
+    } while (cursor)
+    return items
   }
 
   async #archiveMissing(

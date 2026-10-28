@@ -206,7 +206,8 @@ function SourceCard({
           <div className="ac-secret-form">
             <p className="ac-muted">
               预览：新增 {preview.counts.create} · 更新 {preview.counts.update} · 未变{' '}
-              {preview.counts.unchanged} · 跳过 {preview.counts.skip}
+              {preview.counts.unchanged} · 跳过 {preview.counts.skip} · 未返回{' '}
+              {preview.counts.missing}
               {preview.completeness === 'partial' ? '（部分同步，旧数据保留）' : ''}
             </p>
             {preview.warnings.length > 0 && (

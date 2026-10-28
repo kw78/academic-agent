@@ -131,9 +131,19 @@ describe('T06 partial and empty snapshots preserve data', () => {
         }),
       ),
     )
-    expect(fullEmpty).toMatchObject({ status: 'success', itemsSeen: 0 })
+    expect(fullEmpty).toMatchObject({ status: 'partial', itemsSeen: 0 })
+    expect(fullEmpty.warnings.join(' ')).toContain('未出现在本次完整结果中')
     expect((await store.queries.listAcademicItems()).items).toHaveLength(2)
     expect(countRows(store, 'domain_events')).toBe(eventCount)
+
+    const preview = await connector.preview(
+      createFixtureAdapter(
+        snapshot({ fetchedAt: clock.now(), completeness: 'full' }),
+      ),
+    )
+    expect(preview.counts.missing).toBe(2)
+    expect(preview.items.filter((item) => item.action === 'missing')).toHaveLength(2)
+    expect((await store.queries.listAcademicItems()).items).toHaveLength(2)
   })
 
   it('archives missing items only when explicitly opted in for a full snapshot', async () => {
@@ -199,7 +209,8 @@ describe('T07 changed deadline through the connector', () => {
         }),
       ),
     )
-    expect(changed).toMatchObject({ status: 'success', itemsSeen: 1, updated: 1 })
+    expect(changed).toMatchObject({ status: 'partial', itemsSeen: 1, updated: 1 })
+    expect(changed.warnings.join(' ')).toContain('未出现在本次完整结果中')
 
     expect(await findItem(store, 'assignment-1')).toMatchObject({
       title: 'Problem Set 1 (extended)',

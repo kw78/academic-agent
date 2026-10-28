@@ -27,6 +27,20 @@ export interface ParsedAssignment {
   contentHash: string
 }
 
+export interface ParsedContentItemRef {
+  kind: 'assignment' | 'exam' | 'quiz'
+  externalItemId: string
+  courseExternalId: string
+  title: string
+  url: string
+}
+
+export interface ParsedContentPage {
+  items: ParsedContentItemRef[]
+  folders: string[]
+  nextPage?: string
+}
+
 export interface CourseFilter {
   baseUrl: string
   termFilter?: string[]
@@ -229,16 +243,91 @@ export function parseCourseLinks(html: string, options: CourseFilter): ParsedCou
   return { courses, truncated }
 }
 
+const CONTENT_AREA_LABEL = /作业|assignment|测试|测验|考试|test|quiz|exam/i
+const NEXT_PAGE_LABEL = /下一页|下页|next\s*page|next/i
+
+export function findContentAreaUrls(courseHtml: string, baseUrl: string): string[] {
+  const seen = new Set<string>()
+  const urls: string[] = []
+  for (const anchor of anchors(courseHtml, baseUrl)) {
+    if (!/listContent\.jsp\?/i.test(anchor.href)) continue
+    const label = `${anchor.text} ${anchor.title ?? ''}`
+    if (!CONTENT_AREA_LABEL.test(label)) continue
+    if (seen.has(anchor.href)) continue
+    seen.add(anchor.href)
+    urls.push(anchor.href)
+  }
+  return urls
+}
+
+/** @deprecated Use findContentAreaUrls; kept for assignment-only callers. */
 export function findAssignmentsAreaUrl(
   courseHtml: string,
   baseUrl: string,
 ): string | undefined {
-  const candidate = anchors(courseHtml, baseUrl).find((anchor) => {
-    if (!/listContent\.jsp\?/i.test(anchor.href)) return false
+  return findContentAreaUrls(courseHtml, baseUrl)[0]
+}
+
+function itemKindFromLabel(
+  label: string,
+  kind: ParsedContentItemRef['kind'],
+): ParsedContentItemRef['kind'] {
+  if (/考试|exam/i.test(label)) return 'exam'
+  if (/测验|quiz|test/i.test(label)) return 'quiz'
+  return kind
+}
+
+export function parseContentPage(
+  html: string,
+  baseUrl: string,
+  courseExternalId: string,
+): ParsedContentPage {
+  const items: ParsedContentItemRef[] = []
+  const folders: string[] = []
+  const seenItems = new Set<string>()
+  const seenFolders = new Set<string>()
+  let nextPage: string | undefined
+
+  for (const anchor of anchors(html, baseUrl)) {
     const label = `${anchor.text} ${anchor.title ?? ''}`
-    return /作业|assignment/i.test(label)
-  })
-  return candidate?.href
+    const courseId = searchParam(anchor.href, ['course_id']) ?? courseExternalId
+    const contentId = searchParam(anchor.href, ['content_id'])
+    if (/listContent\.jsp\?/i.test(anchor.href) && contentId) {
+      if (NEXT_PAGE_LABEL.test(label) && /startIndex|page/i.test(anchor.href)) {
+        nextPage = anchor.href
+        continue
+      }
+      if (!seenFolders.has(anchor.href)) {
+        seenFolders.add(anchor.href)
+        folders.push(anchor.href)
+      }
+      continue
+    }
+
+    let kind: ParsedContentItemRef['kind'] | undefined
+    if (/\/webapps\/assignment\//i.test(anchor.href)) {
+      kind = 'assignment'
+    } else if (/\/webapps\/assessment\//i.test(anchor.href)) {
+      kind = itemKindFromLabel(label, 'quiz')
+    } else {
+      continue
+    }
+    if (!contentId) continue
+    const externalItemId =
+      kind === 'assignment'
+        ? `bb:${courseId}:${contentId}`
+        : `bb:${courseId}:assessment:${contentId}`
+    if (seenItems.has(externalItemId)) continue
+    seenItems.add(externalItemId)
+    items.push({
+      kind,
+      externalItemId,
+      courseExternalId: courseId,
+      title: (anchor.text || anchor.title || contentId).slice(0, 300),
+      url: anchor.href,
+    })
+  }
+  return { items, folders, ...(nextPage ? { nextPage } : {}) }
 }
 
 export function parseAssignmentLinks(
@@ -246,24 +335,17 @@ export function parseAssignmentLinks(
   baseUrl: string,
   courseExternalId: string,
 ): ParsedAssignmentList {
-  const seen = new Set<string>()
-  const assignments: ParsedAssignmentRef[] = []
-  for (const anchor of anchors(assignmentsHtml, baseUrl)) {
-    if (!/\/webapps\/assignment\//i.test(anchor.href)) continue
-    const contentId = searchParam(anchor.href, ['content_id'])
-    if (!contentId) continue
-    const courseId = searchParam(anchor.href, ['course_id']) ?? courseExternalId
-    const externalItemId = `bb:${courseId}:${contentId}`
-    if (seen.has(externalItemId)) continue
-    seen.add(externalItemId)
-    assignments.push({
-      externalItemId,
-      courseExternalId: courseId,
-      title: anchor.text || anchor.title || contentId,
-      url: anchor.href,
-    })
+  const page = parseContentPage(assignmentsHtml, baseUrl, courseExternalId)
+  return {
+    assignments: page.items
+      .filter((item) => item.kind === 'assignment')
+      .map((item) => ({
+        externalItemId: item.externalItemId,
+        courseExternalId: item.courseExternalId,
+        title: item.title,
+        url: item.url,
+      })),
   }
-  return { assignments }
 }
 
 export function isLoginPage(
@@ -446,6 +528,57 @@ export function parseAssignmentDetail(
     .digest('hex')
   return {
     externalItemId: `bb:${courseExternalId}:${contentId}`,
+    courseExternalId,
+    kind,
+    title,
+    ...(description ? { description } : {}),
+    due,
+    sourceUrl: url,
+    contentHash,
+  }
+}
+
+export function parseAssessmentDetail(
+  html: string,
+  url: string,
+  courseExternalId: string,
+  fallbackTitle: string,
+  fallbackKind: 'exam' | 'quiz',
+  options: { zone: string; utcOffsetMinutes: number },
+): ParsedAssignment {
+  const contentId = searchParam(url, ['content_id'])
+  if (!contentId) throw new Error('Assessment URL has no content_id')
+  const pageTitle = decodeEntities(
+    /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? '',
+  )
+  const titleMatch =
+    /^(?:考试|测验|测试|Exam|Test|Quiz)\s*[:：]\s*(.+?)(?:\s+[–-]\s+.*)?$/i.exec(
+      stripHtml(pageTitle),
+    )
+  const title = (titleMatch?.[1] ?? fallbackTitle).trim() || fallbackTitle
+  const pageText = stripHtml(html)
+  const dueText =
+    /(?:截止日期|到期日期|结束日期)\s*[:：]?\s*([\s\S]{0,160})/i.exec(pageText)?.[1] ??
+    /(?:Due Date|Due)\s*[:：]?\s*([A-Z][a-z]{2}\s+\d{1,2},?\s+\d{4}[\s\S]{0,40})/i.exec(
+      pageText,
+    )?.[1] ??
+    ''
+  const due = parseDue(dueText, options.zone, options.utcOffsetMinutes)
+  const instructions =
+    /<li[^>]*id=["']instructions["'][^>]*>([\s\S]*?)<\/li>/i.exec(html)?.[1] ??
+    /<div[^>]*class=["'][^"']*vtbegenerated[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(
+      html,
+    )?.[1] ??
+    ''
+  const description = stripHtml(instructions).slice(0, 4000)
+  const kind = /考试|exam/i.test(`${title} ${fallbackKind}`)
+    ? 'exam'
+    : 'quiz'
+  const contentHash = createHash('sha256')
+    .update(JSON.stringify({ title, description, due, courseExternalId, kind }))
+    .digest('hex')
+  return {
+    externalItemId: `bb:${courseExternalId}:assessment:${contentId}`,
     courseExternalId,
     kind,
     title,

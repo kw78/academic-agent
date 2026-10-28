@@ -3,9 +3,12 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   findAssignmentsAreaUrl,
+  findContentAreaUrls,
   isLoginPage,
+  parseAssessmentDetail,
   parseAssignmentDetail,
   parseAssignmentLinks,
+  parseContentPage,
   parseCourseLinks,
   parseDue,
 } from '../src/parse.js'
@@ -57,6 +60,79 @@ describe('Blackboard HTML parsing', () => {
     expect(assignments).toHaveLength(2)
     expect(assignments.map((entry) => entry.title)).toEqual(['HW1', 'HW2'])
     expect(assignments[0]?.externalItemId).toBe('bb:_1001_1:_7001_1')
+  })
+
+  it('discovers content areas, folders and assessments', () => {
+    const areas = findContentAreaUrls(fixture('course-1001.html'), BASE)
+    expect(areas).toHaveLength(2)
+    expect(areas.join(' ')).toContain('_5001_1')
+    expect(areas.join(' ')).toContain('_5002_1')
+
+    const tests = parseContentPage(fixture('tests-1001.html'), BASE, '_1001_1')
+    expect(tests.items).toEqual([
+      {
+        kind: 'quiz',
+        externalItemId: 'bb:_1001_1:assessment:_8001_1',
+        courseExternalId: '_1001_1',
+        title: 'Quiz 1',
+        url: 'https://bb.example.edu/webapps/assessment/do/content/assessment?action=MODIFY&course_id=_1001_1&content_id=_8001_1&assessment_id=_9001_1',
+      },
+    ])
+    expect(tests.folders).toHaveLength(1)
+    expect(tests.folders[0]).toContain('_5102_1')
+    expect(tests.nextPage).toContain('startIndex=2')
+
+    const folder = parseContentPage(
+      fixture('test-folder-1001.html'),
+      BASE,
+      '_1001_1',
+    )
+    expect(folder.items[0]).toMatchObject({
+      kind: 'exam',
+      externalItemId: 'bb:_1001_1:assessment:_8002_1',
+      title: 'Final Exam',
+    })
+
+    const quiz = parseAssessmentDetail(
+      fixture('test-8001.html'),
+      'https://bb.example.edu/webapps/assessment/do/content/assessment?content_id=_8001_1&course_id=_1001_1',
+      '_1001_1',
+      'Quiz 1',
+      'quiz',
+      { zone: 'Asia/Shanghai', utcOffsetMinutes: 480 },
+    )
+    expect(quiz).toMatchObject({ kind: 'quiz', title: 'Quiz 1' })
+    expect(quiz.due).toEqual({
+      kind: 'instant',
+      utc: '2026-11-05T06:00:00.000Z',
+      zone: 'Asia/Shanghai',
+    })
+    expect(quiz.externalItemId).toBe('bb:_1001_1:assessment:_8001_1')
+
+    const exam = parseAssessmentDetail(
+      fixture('test-8002.html'),
+      'https://bb.example.edu/webapps/assessment/do/content/assessment?content_id=_8002_1&course_id=_1001_1',
+      '_1001_1',
+      'Final Exam',
+      'exam',
+      { zone: 'Asia/Shanghai', utcOffsetMinutes: 480 },
+    )
+    expect(exam.kind).toBe('exam')
+    expect(exam.due).toEqual({
+      kind: 'instant',
+      utc: '2026-12-18T01:00:00.000Z',
+      zone: 'Asia/Shanghai',
+    })
+
+    const unknown = parseAssessmentDetail(
+      '<html><head><title>Quiz: No due</title></head><body></body></html>',
+      'https://bb.example.edu/webapps/assessment/do/content/assessment?content_id=_8009_1&course_id=_1001_1',
+      '_1001_1',
+      'Quiz: No due',
+      'quiz',
+      { zone: 'Asia/Shanghai', utcOffsetMinutes: 480 },
+    )
+    expect(unknown.due).toEqual({ kind: 'unknown' })
   })
 
   it('parses assignment detail, due dates and stable hashes', () => {

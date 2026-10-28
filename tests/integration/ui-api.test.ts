@@ -460,6 +460,7 @@ describe('generic DB-backed source login', () => {
       update: 0,
       unchanged: 0,
       skip: 0,
+      missing: 0,
     })
     expect((await app.store.queries.listAcademicItems()).items).toHaveLength(0)
 
