@@ -59,7 +59,8 @@ ACADEMIC_DB=.data/academic.db npm run demo -- adapter list
 - 探测限速：每个来源最多 3 次/分钟，按 20 秒间隔执行，不做连续突发；过早请求会立即返回“约 N 秒后再试”，不会把工具调用阻塞到 30 秒超时。429/403/登录页/验证码立即停止，不自动重试；相同 URL 的捕获样本在 TTL 内复用，避免重复抓取。测试环境可通过 `probeMinIntervalMs: 0` 关闭间隔。
 - 新建数据库的内置同步任务默认 60 分钟；已有数据库保持原周期，需在设置页调整。提醒扫描仍是本地确定性操作，不访问外部站点。
 - 候选不会自动进入同步；只有显式启用的 validated 版本会被 `engine=declarative` 使用。UI 或 CLI 启用后会创建/更新 `adapter-<adapterId>` 数据源；若已有同站点浏览器会话，Host 在内部复制会话到新连接，成功响应不包含秘密。启用不需要重启 Host：候选表里的 Manifest 会在激活时重新注册。
-- Agent 的 `academic_validate_adapter_candidate`、`academic_probe_source` 只读；`academic_register_adapter_candidate` 只暂存候选，不需要写权限，但不会激活或建源；`academic_activate_adapter_candidate` 仍是受控写入，需要可信宿主逐次授权。CLI 操作用户或 UI 点击即授权者。
+- Agent 的 `academic_validate_adapter_candidate`、`academic_probe_source` 只读；`academic_register_adapter_candidate` 只暂存候选，不需要写权限，但不会激活或建源；`academic_activate_adapter_candidate` 默认仍需可信宿主逐次授权。CLI 操作用户或 UI 点击即授权者。
+- **Agent 自动接入**：设置页可开启默认关闭的 `agent_adapter_automation`。开启后 `academic_activate_adapter_candidate` 不再逐次弹窗，并可用 `academic_preview_source_sync`、`academic_sync_source` 预览/同步 **declarative** 源；同步经 Connector → Kernel，模型不接触会话秘密。关闭后恢复逐次审核。该开关不允许未验证候选、非 declarative 源、任务修改或学校平台操作。
 - 同步路径白名单来自 Manifest 的 `allowedPathPrefixes`，不是数据源配置；`probePathPrefixes` 只限制探测。不要把“扩大来源路径”误当成启用候选的前提。
 - `assignments.scope=source` 表示作业/考试列表只请求一次，按行内 `courseExternalId` 归属课程；默认 `course` 仍然按课程逐个请求。静态 URL 的平台应使用 `source`，避免按课程重复抓取。
 - 记录：候选报告与状态持久化，激活时间在 `adapter_active.activated_at`；旧 validated 版本可回滚。
@@ -108,7 +109,7 @@ find .data -maxdepth 2 -type f \( -name '*.html' -o -name '*.log' -o -name '*.tx
 2. 固定/核对 DSH 版本（当前验证 `0.2.1-rc.3`）。
 3. `npm install` → `npm run typecheck` → `npm test`。
 4. `npm run build:dsh`、`npm run build:ui`；确认 `migrations/` 已复制到插件产物。
-5. 用独立测试数据库运行 `ACADEMIC_AGENT_SELFTEST=1 dsh academic --json "hello"`，确认 17 个工具、只读查询与写入拒绝。
+5. 用独立测试数据库运行 `ACADEMIC_AGENT_SELFTEST=1 dsh academic --json "hello"`，确认 19 个工具、只读查询与写入拒绝。
 6. 桌面端重启后检查“学业”入口、Host 状态、后台作业与最近同步。
 
 ## 11. 已知限制

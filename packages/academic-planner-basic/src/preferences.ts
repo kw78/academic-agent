@@ -12,6 +12,8 @@ export const userPreferencesSchema = z.object({
       z.number().int().min(0).max(3),
     )
     .default({}),
+  /** Trusted, persistent opt-in for agent-driven adapter onboarding. */
+  agentAdapterAutomation: z.boolean().default(false),
 })
 
 export type UserPreferences = z.infer<typeof userPreferencesSchema> & {
@@ -20,10 +22,15 @@ export type UserPreferences = z.infer<typeof userPreferencesSchema> & {
 
 export interface PreferencesUpdate {
   coursePriorities?: Record<string, number>
+  agentAdapterAutomation?: boolean
 }
 
 function defaults(clock: Clock): UserPreferences {
-  return { coursePriorities: {}, updatedAt: clock.now() }
+  return {
+    coursePriorities: {},
+    agentAdapterAutomation: false,
+    updatedAt: clock.now(),
+  }
 }
 
 export class PreferenceStore {
@@ -44,6 +51,10 @@ export class PreferenceStore {
         coursePriorities: JSON.parse(
           String(row.course_priorities_json),
         ) as Record<string, number>,
+        agentAdapterAutomation:
+          row.agent_adapter_automation === undefined
+            ? false
+            : Number(row.agent_adapter_automation) === 1,
         updatedAt: String(row.updated_at),
       }
     }
@@ -57,6 +68,8 @@ export class PreferenceStore {
     const next = userPreferencesSchema.parse({
       coursePriorities:
         update.coursePriorities ?? current.coursePriorities,
+      agentAdapterAutomation:
+        update.agentAdapterAutomation ?? current.agentAdapterAutomation,
     })
     const settings: UserPreferences = {
       ...next,
@@ -71,15 +84,18 @@ export class PreferenceStore {
       this.#db
         .prepare(
           `INSERT INTO user_preferences (
-             preference_id, course_priorities_json, updated_at
-           ) VALUES (?, ?, ?)
+             preference_id, course_priorities_json,
+             agent_adapter_automation, updated_at
+           ) VALUES (?, ?, ?, ?)
            ON CONFLICT(preference_id) DO UPDATE SET
              course_priorities_json = excluded.course_priorities_json,
+             agent_adapter_automation = excluded.agent_adapter_automation,
              updated_at = excluded.updated_at`,
         )
         .run(
           PREFERENCES_ID,
           JSON.stringify(settings.coursePriorities),
+          settings.agentAdapterAutomation ? 1 : 0,
           settings.updatedAt,
         )
     })

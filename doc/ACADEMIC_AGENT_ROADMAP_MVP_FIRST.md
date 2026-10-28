@@ -82,7 +82,7 @@ Agent。
 
   Scheduler、Planner、任务、提醒           已实现并有 UI                                   重点验收真实使用和生命周期
 
-  DSH Host / Planner / Tools               已接入，文档记录 17 个工具注册                  保持可信授权与默认只读
+  DSH Host / Planner / Tools               已接入，当前 19 个工具（含自动接入）              保持可信授权与默认只读
 
   DSH Web UI                               总览、任务、计划、连接、自动化、设置已实现      有真实数据展示记录
 
@@ -943,7 +943,8 @@ SaaS、分布式微服务、插件市场，以及没有数据依据的学习能�
 - **统一激活**：激活 + 建 declarative 源 + 同站点会话复制下沉到应用服务，UI/CLI/提供回调的 Agent 工具共用；激活时从候选表注册 Manifest，不需要重启。
 - **source 级作业请求**：Manifest 支持 `assignments.scope=source`，静态列表只请求一次并按行内 `courseExternalId` 归属；`scope` 只能用于 assignments，source 级 URL 不允许 `{{course.*}}`。
 - **导入与证据**：UI 候选导入支持选择 JSON 文件；验证结果标注“样本回放通过，未做真实同步”。
-- **验证**：`npm run typecheck`、`npm test`（35 文件/180 项）、`npm run build:dsh`、`npm run build:ui` 通过。真实同步验收仍需用户在启用后执行预览/同步/重复 no-op。
+- **Agent 自动接入**：设置页提供默认关闭的偏好；开启后 Agent 可启用 validated 候选，并预览/同步 declarative 源，不再逐次审核；仍未开放未验证候选、凭据读取、任务修改与学校平台操作。
+- **验证**：`npm run typecheck`、`npm test`（35 文件/182 项）、`npm run build:dsh`、`npm run build:ui` 通过。真实同步验收仍需用户在启用后执行预览/同步/重复 no-op。
 
 ## 18.3 个人数据可编辑与恢复（2026-10-28）
 
@@ -952,7 +953,7 @@ SaaS、分布式微服务、插件市场，以及没有数据依据的学习能�
 - **学习任务**：可编辑标题、本地截止、优先级、预计时长；可删除/恢复；Planner 与默认查询排除归档任务。
 - **数据源**：可编辑非敏感配置；归档后可恢复；彻底删除会清理 source、连接元数据与凭据，但保留学业事件。
 - **UI**：连接页、课程列表、任务页补齐编辑/删除/恢复入口，并提供“显示已归档/已删除”开关。
-- **验证**：`npm run typecheck`、`npm test`（35 文件/180 项）、`npm run build:dsh`、`npm run build:ui` 通过。新入口尚未做真实浏览器/Desktop 点验。
+- **验证**：`npm run typecheck`、`npm test`（35 文件/182 项）、`npm run build:dsh`、`npm run build:ui` 通过。新入口尚未做真实浏览器/Desktop 点验。
 
 ## 19. 当前唯一正确的推进策略
 

@@ -129,7 +129,7 @@ docs/adr/                      # 架构决策记录
 - DSH 绑定继续按 M0 验证：`inject`、Service 注册/撤销、Tool 注册/撤销、HMR/重启语义、依赖组件卸载时资源释放。目前已完成加载、工具注册、ToolRegistry 执行、DeepSeek 模型自然语言调用，以及 Web 客户端 UI 的加载/卸载/重载；文件级 HMR 与真实 Session 生命周期待补。
 - Agent 工具通过 `ctx.tools.register(defineTool(...))` 暴露；工具只调用领域服务，不拼 SQL、不直接追加事件。
 - 普通 Host 插件可访问宿主进程；Cordis disposer 不是安全沙箱。未审查代码不得以可信 Host 插件身份安装。
-- 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 拆成 `host` / `planner` / `tools` 三个 Cordis fiber；host 提供 `academicApp` 服务，planner 与 tools 独立注入，17 个工具经真实 `ctx.tools` 注册。
+- 本机已验证 DSH `0.2.1-rc.3` 的 bundle 挂载：`@academic/dsh-plugin` 拆成 `host` / `planner` / `tools` 三个 Cordis fiber；host 提供 `academicApp` 服务，planner 与 tools 独立注入，19 个工具经真实 `ctx.tools` 注册。
 - 真实 Cordis 生命周期测试已验证：卸载 tools 后 host/scheduler/store 继续运行；卸载 planner 后旧计划仍可读、能力消失；重载二者恢复；host 卸载关闭 app。
 - DSH Web profile 已实测通过 Plugins 页面禁用/启用 `@academic/dsh-ui`：入口消失后后台同步/重算继续，重新启用后入口恢复且没有重复 Host、作业或课程。文件级 HMR 尚未验证。
 - DSH 运行时提供 `@deepseek-ai/cordis` / `@deepseek-ai/dsh-tools`；插件保持二者 external，不另造 Harness。普通 `--patch` 直接加载工作区文件无法解析这些 peer，必须安装到 profile（或从 DSH 源码 checkout 运行）。
@@ -154,7 +154,7 @@ docs/adr/                      # 架构决策记录
 
 | Gate | 内容 | 状态 |
 |---|---|---|
-| Gate 0 | 真实基线 | 已完成：typecheck、180 项测试/35 文件、两个构建、DSH selftest；桌面干净启动待复核 |
+| Gate 0 | 真实基线 | 已完成：typecheck、182 项测试/35 文件、两个构建、DSH selftest；桌面干净启动待复核 |
 | Gate 1 | 桌面端可启动、可操作 | 用户已手工检查当前 Desktop 基本流程，无阻塞；链接配置已置顶；文件级 HMR/完整生命周期专项仍未验证 |
 | Gate 2 | 真实平台登录与会话 | 已完成：BB 与 USTC 教务真实登录/验证；正式同步新增“连接必须已验证”闸门；删除凭据不删学业数据 |
 | Gate 3 | 一个平台的数据同步闭环 | 已完成：BB 真实课程/作业/文件夹；考试/测验 fixture 验证并标注；JW 考试真实同步 |
@@ -166,7 +166,7 @@ docs/adr/                      # 架构决策记录
 
 首个真实平台只读 Adapter 已落地在 `adapters/ustc-blackboard`：读取课程、作业、考试与测验，支持文件夹/下一页遍历，不提交作业、不读取附件与成绩；`engine=blackboard` 复用通用浏览器登录/会话。真实会话已验证 13 门 `2026FA` 课程中的 5 门内容区、9 个含文件夹作业与截止时间；当前账号没有暴露测试项，考试/测验仍以脱敏 fixture 验证，不得声称测试模块已完整真实验收。
 
-声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、常量/模板、类型转换/默认值/必需字段诊断、`next`/页码/offset 分页、字段映射、允许主机与路径、总请求/行/字节/时长上限、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选流水线已实现：Agent 可调用只读 `academic_probe_source` 获取带 SHA-256 摘要的脱敏证据，生成 Manifest 并用显式样本离线回放；验证按 schema、字段契约、访问范围、样本回放分阶段报告，候选摘要包含允许主机/路径/数据类型/字段；候选保存与启用分开：Agent 可暂存候选（不需要写权限，不激活、不建源），只有 validated 版本可启用，启用仍需可信宿主逐次授权。激活语义统一在应用服务中实现：UI、CLI 与提供回调的 Agent 工具都会创建/更新可同步的 declarative 数据源并复制同站点会话，不返回秘密；激活时从候选表重新注册 Manifest，不需要重启 Host。`assignments.scope=source` 让静态作业/考试列表只请求一次并按行内课程 ID 归属，避免按课程重复抓取。UI“连接”页提供快速添加、探测、候选列表、文件导入、验证报告、启用/回滚；样本回放明确标注“未做真实同步”。CLI `adapter validate/register/activate/rollback` 同样可用。尚未实现 Host 直接调用模型生成、多页自动采样、任意 JavaScript 生成与沙箱执行。
+声明式 Adapter Runtime 已落地在 `packages/academic-adapter-runtime`：版本化 Manifest 支持 HTML/CSS 与 JSON path 提取、常量/模板、类型转换/默认值/必需字段诊断、`next`/页码/offset 分页、字段映射、允许主机与路径、总请求/行/字节/时长上限、输出校验和版本激活/回滚；`engine=declarative` 复用浏览器登录/会话。新网站优先写 Manifest；只有 Manifest 无法表达时才新增 adapter 代码。AI 候选流水线已实现：Agent 可调用只读 `academic_probe_source` 获取带 SHA-256 摘要的脱敏证据，生成 Manifest 并用显式样本离线回放；验证按 schema、字段契约、访问范围、样本回放分阶段报告，候选摘要包含允许主机/路径/数据类型/字段；候选保存与启用分开：Agent 可暂存候选（不需要写权限，不激活、不建源），只有 validated 版本可启用，启用仍需可信宿主逐次授权。激活语义统一在应用服务中实现：UI、CLI 与提供回调的 Agent 工具都会创建/更新可同步的 declarative 数据源并复制同站点会话，不返回秘密；激活时从候选表重新注册 Manifest，不需要重启 Host。`assignments.scope=source` 让静态作业/考试列表只请求一次并按行内课程 ID 归属，避免按课程重复抓取。UI“连接”页提供快速添加、探测、候选列表、文件导入、验证报告、启用/回滚；样本回放明确标注“未做真实同步”。CLI `adapter validate/register/activate/rollback` 同样可用。设置页提供默认关闭的“Agent 自动接入”偏好：开启后 Agent 可启用 validated 候选，并用 `academic_preview_source_sync` / `academic_sync_source` 预览、同步 declarative 源，不需要逐次审核；仍不能启用未验证候选、操作非 declarative 源、读取凭据、修改任务或提交作业。尚未实现 Host 直接调用模型生成、多页自动采样、任意 JavaScript 生成与沙箱执行。
 
 MVP 后能力（2026-10-28）：Host 统一返回数据源阶段与唯一下一步，同步失败分类为认证/网络/权限/结构/质量并给出建议；课程优先级保存于 `user_preferences` 并作为任务优先级之后的计划排序依据；任务页提供按课程的复习清单与带上下文 Agent 提示；`skills/academic-tutor` 提供稳定教学契约与可扩展的 explain/hint/check/review 模式（不新增工具或代码，安装到 DSH 属于工作区外操作）；`academic_probe_source` 支持同一主机内的额外 URL、同站脚本与候选接口线索、表格表头/class 与容器 class，`capture=true` 时原始响应只进入 Host 内存样本存储（60 分钟 TTL、按 URL 复用）并返回 `sampleId`，验证可直接使用 `sampleIds`，不把原始 body 交给模型；探测按来源限速（每个来源最多 3 次/分钟，按 20 秒间隔执行，过早请求返回“约 N 秒后再试”，不长时间占用工具调用），429/403/登录页停止；CLI 支持带完整性/投影校验的独立目录恢复；`npm run benchmark` 记录 1k/10k 事项基线。仍未验证：Desktop 文件级 HMR/真实 Session、真实 BB 考试样本、JW 会话过期后的重新登录、新 UI 面板的真实浏览器点验。自动多页发现仍未实现。
 
@@ -195,9 +195,9 @@ MVP 后能力（2026-10-28）：Host 统一返回数据源阶段与唯一下一�
 | T19 Upcaster 兼容 | 已覆盖 | `tests/replay/upcaster.test.ts` |
 | T20 Session 结束不影响状态 | 已覆盖（应用重启） | `tests/e2e/app.test.ts`；DSH Session 待 M0 |
 
-当前验证命令：`npm run typecheck`、`npm test`（180 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
+当前验证命令：`npm run typecheck`、`npm test`（182 项）、`ACADEMIC_DB=.data/academic.db npm run demo`、`npm run build:dsh`、`npm run build:ui`。
 
-用户控制已验证：课程添加/编辑/归档/删除/恢复、来源事项归档/恢复、任务创建/编辑/完成/重开/删除/恢复/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
+用户控制已验证：课程添加/编辑/归档/删除/恢复、来源事项归档/恢复、任务创建/编辑/完成/重开/删除/恢复/改预计时长、计划锁定/解锁/归档、可用时间设置、提醒开关/阈值、Agent 自动接入开关、自动化状态、提醒已读；锁定变更会使重叠的旧重规划建议失效并按新锁重算。
 
 个人数据编辑策略：课程、来源事项、学习任务通过领域事件软删除/恢复，投影重建可还原；课程删除会先经各自命令归档其来源事项与关联任务。数据源/连接属于运营配置，归档可恢复，彻底删除会清理 source、连接元数据与凭据，但保留已同步学业事件。
 
@@ -220,7 +220,7 @@ dsh plugin --profile academic add D:/project/classhelper/packages/academic-dsh-p
 ACADEMIC_AGENT_SELFTEST=1 ACADEMIC_AGENT_DB=D:/project/classhelper/.data/dsh-academic.db dsh academic --json "hello"
 ```
 
-已观测：host/planner/tools 三个 fiber 加载，`tools=17 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`；退出时 planner capability 释放。另外使用 DSH 凭证中的 DeepSeek key 跑通真实自然语言调用：模型调用 `academic_list_courses`，返回真实 SQLite 课程并正确回答。密钥只在进程环境中注入，未写入代码或日志。
+已观测（当时 17 个工具；当前代码 19 个，需重跑 DSH 自测确认）：host/planner/tools 三个 fiber 加载，`tools=17 registered=true`，只读工具成功返回 `courses=1`，写入返回 `FORBIDDEN`；退出时 planner capability 释放。另外使用 DSH 凭证中的 DeepSeek key 跑通真实自然语言调用：模型调用 `academic_list_courses`，返回真实 SQLite 课程并正确回答。密钥只在进程环境中注入，未写入代码或日志。
 
 ## 10. 待确认的环境参数（不阻塞实现）
 

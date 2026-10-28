@@ -40275,6 +40275,8 @@ var ACADEMIC_TOOL_NAMES = {
   ListAdapterCandidates: "academic_list_adapter_candidates",
   RegisterAdapterCandidate: "academic_register_adapter_candidate",
   ActivateAdapterCandidate: "academic_activate_adapter_candidate",
+  PreviewSourceSync: "academic_preview_source_sync",
+  SyncSource: "academic_sync_source",
   UpdateSource: "academic_update_source",
   UpdateTask: "academic_update_task",
   RequestReplan: "academic_request_replan"
@@ -40374,6 +40376,9 @@ var adapterCandidateListSchema = external_exports.object({
 var adapterActivateSchema = external_exports.object({
   adapterId: external_exports.string().min(1),
   version: external_exports.string().min(1)
+});
+var adapterSourceSchema = external_exports.object({
+  sourceId: external_exports.string().min(1).max(200)
 });
 var createSourceSchema = external_exports.object({
   sourceId: external_exports.string().min(1).max(200).optional(),
@@ -40697,14 +40702,17 @@ function createAcademicTools(dependencies) {
       ),
       defineTool(
         ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate,
-        "Activate a validated declarative adapter version and create/update its sync source. Write; requires trusted host approval. Only validated versions can be activated; previous versions remain available for rollback.",
+        "Activate a validated declarative adapter version and create/update its sync source. Requires either the user-enabled adapter automation preference or trusted per-call approval. Only validated versions can be activated; previous versions remain available for rollback.",
         adapterActivateSchema,
         async (input2) => {
-          const rejection = await requireWriteApproval(
-            ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate,
-            { ...input2 }
-          );
-          if (rejection) return rejection;
+          const automation = dependencies.adapterAutomation?.() ?? false;
+          if (!automation) {
+            const rejection = await requireWriteApproval(
+              ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate,
+              { ...input2 }
+            );
+            if (rejection) return rejection;
+          }
           try {
             if (dependencies.activateAdapterCandidate) {
               return success2(
@@ -40723,6 +40731,62 @@ function createAcademicTools(dependencies) {
           } catch (error62) {
             return failure2(
               "CONFLICT",
+              error62 instanceof Error ? error62.message : String(error62)
+            );
+          }
+        }
+      ),
+      defineTool(
+        ACADEMIC_TOOL_NAMES.PreviewSourceSync,
+        "Preview a declarative source sync using the host-held session. Read-only; requires the user-enabled adapter automation preference.",
+        adapterSourceSchema,
+        async (input2) => {
+          if (!(dependencies.adapterAutomation?.() ?? false)) {
+            return failure2(
+              "FORBIDDEN",
+              "Adapter automation is not enabled"
+            );
+          }
+          if (!dependencies.previewAdapterSource) {
+            return failure2(
+              "CAPABILITY_UNAVAILABLE",
+              "Source preview is not available in this host"
+            );
+          }
+          try {
+            return success2(
+              await dependencies.previewAdapterSource(input2.sourceId)
+            );
+          } catch (error62) {
+            return failure2(
+              "UNAVAILABLE",
+              error62 instanceof Error ? error62.message : String(error62)
+            );
+          }
+        }
+      ),
+      defineTool(
+        ACADEMIC_TOOL_NAMES.SyncSource,
+        "Sync one declarative source through Connector and Kernel. Deterministic write; requires the user-enabled adapter automation preference and never returns credentials.",
+        adapterSourceSchema,
+        async (input2) => {
+          if (!(dependencies.adapterAutomation?.() ?? false)) {
+            return failure2(
+              "FORBIDDEN",
+              "Adapter automation is not enabled"
+            );
+          }
+          if (!dependencies.syncAdapterSource) {
+            return failure2(
+              "CAPABILITY_UNAVAILABLE",
+              "Source sync is not available in this host"
+            );
+          }
+          try {
+            return success2(await dependencies.syncAdapterSource(input2.sourceId));
+          } catch (error62) {
+            return failure2(
+              "UNAVAILABLE",
               error62 instanceof Error ? error62.message : String(error62)
             );
           }
@@ -42118,10 +42182,16 @@ var userPreferencesSchema = external_exports.object({
   coursePriorities: external_exports.record(
     external_exports.string().min(1).max(200),
     external_exports.number().int().min(0).max(3)
-  ).default({})
+  ).default({}),
+  /** Trusted, persistent opt-in for agent-driven adapter onboarding. */
+  agentAdapterAutomation: external_exports.boolean().default(false)
 });
 function defaults(clock) {
-  return { coursePriorities: {}, updatedAt: clock.now() };
+  return {
+    coursePriorities: {},
+    agentAdapterAutomation: false,
+    updatedAt: clock.now()
+  };
 }
 var PreferenceStore = class {
   #db;
@@ -42137,6 +42207,7 @@ var PreferenceStore = class {
         coursePriorities: JSON.parse(
           String(row.course_priorities_json)
         ),
+        agentAdapterAutomation: row.agent_adapter_automation === void 0 ? false : Number(row.agent_adapter_automation) === 1,
         updatedAt: String(row.updated_at)
       };
     }
@@ -42147,7 +42218,8 @@ var PreferenceStore = class {
   update(update2) {
     const current = this.get();
     const next = userPreferencesSchema.parse({
-      coursePriorities: update2.coursePriorities ?? current.coursePriorities
+      coursePriorities: update2.coursePriorities ?? current.coursePriorities,
+      agentAdapterAutomation: update2.agentAdapterAutomation ?? current.agentAdapterAutomation
     });
     const settings = {
       ...next,
@@ -42160,14 +42232,17 @@ var PreferenceStore = class {
     inTransaction2(this.#db, () => {
       this.#db.prepare(
         `INSERT INTO user_preferences (
-             preference_id, course_priorities_json, updated_at
-           ) VALUES (?, ?, ?)
+             preference_id, course_priorities_json,
+             agent_adapter_automation, updated_at
+           ) VALUES (?, ?, ?, ?)
            ON CONFLICT(preference_id) DO UPDATE SET
              course_priorities_json = excluded.course_priorities_json,
+             agent_adapter_automation = excluded.agent_adapter_automation,
              updated_at = excluded.updated_at`
       ).run(
         PREFERENCES_ID,
         JSON.stringify(settings.coursePriorities),
+        settings.agentAdapterAutomation ? 1 : 0,
         settings.updatedAt
       );
     });
@@ -45027,6 +45102,31 @@ async function createAcademicApp(options) {
     const activation = await ensureCandidateSource(candidate);
     return { candidate, ...activation };
   };
+  let appRef;
+  const requireApp = () => {
+    if (!appRef) throw new Error("Academic app is not ready");
+    return appRef;
+  };
+  const requireDeclarativeSource = (sourceId) => {
+    const source = sources.get(sourceId);
+    if (!source || source.archived) throw new Error(`Source not found: ${sourceId}`);
+    if (source.engine !== "declarative") {
+      throw new Error("Adapter automation only applies to declarative sources");
+    }
+  };
+  const connectedSessionFor = (sourceId) => connections.list().find(
+    (connection) => connection.sourceId === sourceId && connection.hasCredential && connection.status === "connected"
+  );
+  const previewAdapterSource = async (sourceId) => {
+    requireDeclarativeSource(sourceId);
+    const connection = connectedSessionFor(sourceId);
+    return requireApp().previewSourceSync(sourceId, connection?.connectionId);
+  };
+  const syncAdapterSource = async (sourceId) => {
+    requireDeclarativeSource(sourceId);
+    const connection = connectedSessionFor(sourceId);
+    return requireApp().syncSource(sourceId, connection?.connectionId);
+  };
   const host = new InMemoryToolHost();
   const agentRegistration = registerAcademicTools(host, {
     queries: store.queries,
@@ -45039,6 +45139,9 @@ async function createAcademicApp(options) {
     webSessions,
     adapterCandidates,
     activateAdapterCandidate: (request) => activateCandidate(request.adapterId, request.version),
+    adapterAutomation: () => preferences.get().agentAdapterAutomation,
+    previewAdapterSource,
+    syncAdapterSource,
     probeSource: probeSourceById,
     getProbeSample: (sampleId) => probeSamples.get(sampleId),
     allowWrites: options.agentWrites ?? false,
@@ -45686,6 +45789,7 @@ async function createAcademicApp(options) {
       store.close();
     }
   };
+  appRef = app;
   return app;
 }
 

@@ -70,6 +70,7 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
   const [coursePriorities, setCoursePriorities] = useState<
     Record<string, number>
   >({})
+  const [agentAdapterAutomation, setAgentAdapterAutomation] = useState(false)
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
@@ -81,6 +82,7 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
     setBlocks(data.availability.temporaryBlocks.map((block) => ({ ...block })))
     setIntervalMinutes(String(data.sync.intervalMinutes))
     setCoursePriorities({ ...data.preferences.coursePriorities })
+    setAgentAdapterAutomation(data.preferences.agentAdapterAutomation)
   }, [data])
 
   const saveAvailability = async (): Promise<UiResult<AvailabilityView>> => {
@@ -114,6 +116,7 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
   const savePreferences = async (): Promise<UiResult<PreferencesView>> =>
     callApi<PreferencesView>(ctx, 'updatePreferences', {
       coursePriorities,
+      agentAdapterAutomation,
     })
 
   const addTemporary = () => {
@@ -426,6 +429,51 @@ export function SettingsPage({ ctx, active, onNavigate }: PageProps) {
                 </div>
               </form>
             )}
+          </Section>
+
+          <Section
+            title="Agent 自动接入"
+            subtitle="一次性开启；不需要逐个候选点击审核"
+          >
+            <form
+              className="ac-form-card"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void action.run(
+                  'preferences',
+                  savePreferences,
+                  'Agent 自动接入设置已保存',
+                )
+              }}
+            >
+              <label className="ac-inline-bar">
+                <input
+                  type="checkbox"
+                  checked={agentAdapterAutomation}
+                  onChange={(event) =>
+                    setAgentAdapterAutomation(event.target.checked)
+                  }
+                />
+                <div>
+                  <strong>
+                    允许 Agent 自动启用已验证 Adapter 并同步其声明式数据源
+                  </strong>
+                  <span className="ac-muted">
+                    仍不能启用未验证候选、读取凭据、提交作业或修改学校平台；
+                    关闭后恢复逐次审核。
+                  </span>
+                </div>
+              </label>
+              <div className="ac-form-actions">
+                <button
+                  type="submit"
+                  className="ac-button"
+                  disabled={action.pending !== undefined}
+                >
+                  {action.pending === 'preferences' ? '保存中…' : '保存自动接入设置'}
+                </button>
+              </div>
+            </form>
           </Section>
 
           <Section title="提醒" subtitle="阈值与未读提醒在自动化页管理">

@@ -4691,6 +4691,7 @@ function SettingsPage({ ctx, active, onNavigate }) {
   const [blockTitle, setBlockTitle] = (0, import_react8.useState)("");
   const [interval, setIntervalMinutes] = (0, import_react8.useState)("60");
   const [coursePriorities, setCoursePriorities] = (0, import_react8.useState)({});
+  const [agentAdapterAutomation, setAgentAdapterAutomation] = (0, import_react8.useState)(false);
   const [dirty, setDirty] = (0, import_react8.useState)(false);
   (0, import_react8.useEffect)(() => {
     if (!data || initialized.current) return;
@@ -4701,6 +4702,7 @@ function SettingsPage({ ctx, active, onNavigate }) {
     setBlocks(data.availability.temporaryBlocks.map((block) => ({ ...block })));
     setIntervalMinutes(String(data.sync.intervalMinutes));
     setCoursePriorities({ ...data.preferences.coursePriorities });
+    setAgentAdapterAutomation(data.preferences.agentAdapterAutomation);
   }, [data]);
   const saveAvailability = async () => {
     const minutes = Number(granularity);
@@ -4729,7 +4731,8 @@ function SettingsPage({ ctx, active, onNavigate }) {
     });
   };
   const savePreferences = async () => callApi(ctx, "updatePreferences", {
-    coursePriorities
+    coursePriorities,
+    agentAdapterAutomation
   });
   const addTemporary = () => {
     const start = fromLocalInputValue(blockStart);
@@ -5032,6 +5035,52 @@ function SettingsPage({ ctx, active, onNavigate }) {
                     formatDateTimeOrDash(data.preferences.updatedAt, data.availability.timeZone)
                   ] })
                 ] })
+              ]
+            }
+          )
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+        Section,
+        {
+          title: "Agent \u81EA\u52A8\u63A5\u5165",
+          subtitle: "\u4E00\u6B21\u6027\u5F00\u542F\uFF1B\u4E0D\u9700\u8981\u9010\u4E2A\u5019\u9009\u70B9\u51FB\u5BA1\u6838",
+          children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+            "form",
+            {
+              className: "ac-form-card",
+              onSubmit: (event) => {
+                event.preventDefault();
+                void action.run(
+                  "preferences",
+                  savePreferences,
+                  "Agent \u81EA\u52A8\u63A5\u5165\u8BBE\u7F6E\u5DF2\u4FDD\u5B58"
+                );
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("label", { className: "ac-inline-bar", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                    "input",
+                    {
+                      type: "checkbox",
+                      checked: agentAdapterAutomation,
+                      onChange: (event) => setAgentAdapterAutomation(event.target.checked)
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("strong", { children: "\u5141\u8BB8 Agent \u81EA\u52A8\u542F\u7528\u5DF2\u9A8C\u8BC1 Adapter \u5E76\u540C\u6B65\u5176\u58F0\u660E\u5F0F\u6570\u636E\u6E90" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "ac-muted", children: "\u4ECD\u4E0D\u80FD\u542F\u7528\u672A\u9A8C\u8BC1\u5019\u9009\u3001\u8BFB\u53D6\u51ED\u636E\u3001\u63D0\u4EA4\u4F5C\u4E1A\u6216\u4FEE\u6539\u5B66\u6821\u5E73\u53F0\uFF1B \u5173\u95ED\u540E\u6062\u590D\u9010\u6B21\u5BA1\u6838\u3002" })
+                  ] })
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "ac-form-actions", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+                  "button",
+                  {
+                    type: "submit",
+                    className: "ac-button",
+                    disabled: action.pending !== void 0,
+                    children: action.pending === "preferences" ? "\u4FDD\u5B58\u4E2D\u2026" : "\u4FDD\u5B58\u81EA\u52A8\u63A5\u5165\u8BBE\u7F6E"
+                  }
+                ) })
               ]
             }
           )

@@ -16,16 +16,20 @@ describe('user preferences', () => {
     const preferences = new PreferenceStore(store.database, clock)
 
     expect(preferences.get().coursePriorities).toEqual({})
+    expect(preferences.get().agentAdapterAutomation).toBe(false)
     const updated = preferences.update({
       coursePriorities: { 'course-1': 3, 'course-2': 1 },
+      agentAdapterAutomation: true,
     })
     expect(updated.coursePriorities).toEqual({ 'course-1': 3, 'course-2': 1 })
+    expect(updated.agentAdapterAutomation).toBe(true)
 
     const reopened = new PreferenceStore(store.database, clock)
     expect(reopened.get().coursePriorities).toEqual({
       'course-1': 3,
       'course-2': 1,
     })
+    expect(reopened.get().agentAdapterAutomation).toBe(true)
   })
 
   it('explains overloaded plans with available time', () => {

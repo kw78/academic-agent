@@ -9,7 +9,7 @@ npm test -- tests/integration/connectors.test.ts   # 单文件
 ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 ```
 
-当前基线：**180 项测试通过**（35 个测试文件）。
+当前基线：**182 项测试通过**（35 个测试文件）。
 
 ## 分层
 
@@ -84,7 +84,7 @@ ACADEMIC_DB=.data/academic.db npm run demo         # 端到端演示
 
 - host 创建 Academic App 并提供 `academicApp` 服务；
 - planner fiber 注册/卸载 Planner 能力；卸载后已有计划仍可查询；
-- tools fiber 注册 17 个工具；卸载后工具清零，host/store/planner 保持；
+- tools fiber 注册 19 个工具；卸载后工具清零，host/store/planner 保持；
 - 重新加载 tools/planner 后能力恢复；
 - host 卸载关闭 app。
 
@@ -166,7 +166,8 @@ DSH `0.2.1-rc.3` 中已确认 host/planner/tools 三行加载并输出对应日�
 ## AI 候选 Adapter
 
 - `packages/academic-adapter-runtime/test/candidate.test.ts`：离线样本回放、无效样本失败、候选持久化、validated 才能启用、版本回滚、失败候选保持 inactive；不安全正则与 HTTP Manifest 在回放前拒绝。
-- `tests/integration/adapter-candidate-tools.test.ts`：Agent 校验只读；无写权限可暂存候选但启用仍被拒；可信授权后启用；提供宿主激活回调时走统一路径；网页提示注入不能授予权限。
+- `tests/integration/adapter-candidate-tools.test.ts`：Agent 校验只读；无写权限可暂存候选但启用仍被拒；可信授权后启用；提供宿主激活回调时走统一路径；自动接入开启时可无逐次审批启用/预览/同步，关闭时拒绝；网页提示注入不能授予权限。
+- `tests/integration/preferences.test.ts`、`ui-api.test.ts`：自动接入偏好默认关闭、可持久化并在设置页读写。
 - `tests/integration/declarative.test.ts`：候选注册 → 启用 → declarative source 同步 3 条事项；`assignments.scope=source` 只请求一次并保留行内课程归属；`scope` 用于 courses/detail 或 source 级 URL 引用 `{{course.*}}` 会被拒绝。
 - 证据分层：样本回放只证明给定样本可提取；真实预览、真实同步、重复 no-op 需要单独执行，不能互相替代。UI 的验证结果明确标注“未做真实同步”。
 - `tests/integration/ui-api.test.ts`：UI API 注册/验证候选并启用，自动创建 `adapter-<id>` declarative 数据源；同站点浏览器会话在 Host 内复制到新连接，响应不含会话秘密。

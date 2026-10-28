@@ -20282,7 +20282,9 @@ var userPreferencesSchema = external_exports.object({
   coursePriorities: external_exports.record(
     external_exports.string().min(1).max(200),
     external_exports.number().int().min(0).max(3)
-  ).default({})
+  ).default({}),
+  /** Trusted, persistent opt-in for agent-driven adapter onboarding. */
+  agentAdapterAutomation: external_exports.boolean().default(false)
 });
 
 // packages/academic-dsh-ui/src/api.ts
@@ -20340,7 +20342,8 @@ var updatePreferencesSchema = external_exports.object({
   coursePriorities: external_exports.record(
     external_exports.string().min(1).max(200),
     external_exports.number().int().min(0).max(3)
-  )
+  ),
+  agentAdapterAutomation: external_exports.boolean().optional()
 });
 var createTaskSchema = external_exports.object({
   title: external_exports.string().min(1).max(500),
@@ -20622,6 +20625,7 @@ async function buildPreferencesView(app) {
   const page = await app.store.queries.listCourses();
   return {
     coursePriorities: preferences.coursePriorities,
+    agentAdapterAutomation: preferences.agentAdapterAutomation,
     courses: page.items.filter((course) => !course.archived && !course.deleted).map((course) => ({
       courseId: course.courseId,
       code: course.code,

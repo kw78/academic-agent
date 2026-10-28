@@ -1206,6 +1206,7 @@ describe('generic DB-backed source login', () => {
     expect(before.ok).toBe(true)
     if (!before.ok) return
     expect(before.value.preferences.courses).toHaveLength(1)
+    expect(before.value.preferences.agentAdapterAutomation).toBe(false)
     expect(
       before.value.capabilities.some(
         (entry) => entry.id === 'academic.planner.basic',
@@ -1217,15 +1218,18 @@ describe('generic DB-backed source login', () => {
 
     const updated = await api.updatePreferences({
       coursePriorities: { [courseId]: 3 },
+      agentAdapterAutomation: true,
     })
     expect(updated.ok).toBe(true)
     if (!updated.ok) return
     expect(updated.value.coursePriorities[courseId]).toBe(3)
+    expect(updated.value.agentAdapterAutomation).toBe(true)
 
     const reloaded = await api.settings({})
     expect(reloaded.ok).toBe(true)
     if (!reloaded.ok) return
     expect(reloaded.value.preferences.coursePriorities[courseId]).toBe(3)
+    expect(reloaded.value.preferences.agentAdapterAutomation).toBe(true)
 
     const unknown = await api.updatePreferences({
       coursePriorities: { 'missing-course': 1 },

@@ -661,6 +661,38 @@ export async function createAcademicApp(
     return { candidate, ...activation }
   }
 
+  let appRef: AcademicApp | undefined
+  const requireApp = (): AcademicApp => {
+    if (!appRef) throw new Error('Academic app is not ready')
+    return appRef
+  }
+  const requireDeclarativeSource = (sourceId: string): void => {
+    const source = sources.get(sourceId)
+    if (!source || source.archived) throw new Error(`Source not found: ${sourceId}`)
+    if (source.engine !== 'declarative') {
+      throw new Error('Adapter automation only applies to declarative sources')
+    }
+  }
+  const connectedSessionFor = (sourceId: string) =>
+    connections
+      .list()
+      .find(
+        (connection) =>
+          connection.sourceId === sourceId &&
+          connection.hasCredential &&
+          connection.status === 'connected',
+      )
+  const previewAdapterSource = async (sourceId: string): Promise<unknown> => {
+    requireDeclarativeSource(sourceId)
+    const connection = connectedSessionFor(sourceId)
+    return requireApp().previewSourceSync(sourceId, connection?.connectionId)
+  }
+  const syncAdapterSource = async (sourceId: string): Promise<unknown> => {
+    requireDeclarativeSource(sourceId)
+    const connection = connectedSessionFor(sourceId)
+    return requireApp().syncSource(sourceId, connection?.connectionId)
+  }
+
   const host = new InMemoryToolHost()
   const agentRegistration = registerAcademicTools(host, {
     queries: store.queries,
@@ -674,6 +706,9 @@ export async function createAcademicApp(
     adapterCandidates,
     activateAdapterCandidate: (request) =>
       activateCandidate(request.adapterId, request.version),
+    adapterAutomation: () => preferences.get().agentAdapterAutomation,
+    previewAdapterSource,
+    syncAdapterSource,
     probeSource: probeSourceById,
     getProbeSample: (sampleId: string) => probeSamples.get(sampleId),
     allowWrites: options.agentWrites ?? false,
@@ -1400,6 +1435,7 @@ export async function createAcademicApp(
       store.close()
     },
   }
+  appRef = app
 
   return app
 }

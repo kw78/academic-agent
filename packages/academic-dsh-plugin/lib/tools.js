@@ -20048,6 +20048,8 @@ var ACADEMIC_TOOL_NAMES = {
   ListAdapterCandidates: "academic_list_adapter_candidates",
   RegisterAdapterCandidate: "academic_register_adapter_candidate",
   ActivateAdapterCandidate: "academic_activate_adapter_candidate",
+  PreviewSourceSync: "academic_preview_source_sync",
+  SyncSource: "academic_sync_source",
   UpdateSource: "academic_update_source",
   UpdateTask: "academic_update_task",
   RequestReplan: "academic_request_replan"
@@ -20109,6 +20111,9 @@ var adapterCandidateListSchema = external_exports.object({
 var adapterActivateSchema = external_exports.object({
   adapterId: external_exports.string().min(1),
   version: external_exports.string().min(1)
+});
+var adapterSourceSchema = external_exports.object({
+  sourceId: external_exports.string().min(1).max(200)
 });
 var createSourceSchema = external_exports.object({
   sourceId: external_exports.string().min(1).max(200).optional(),
@@ -20369,10 +20374,26 @@ var TOOL_SPECS = [
   },
   {
     name: ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate,
-    description: "Activate a validated declarative adapter version and create/update its sync source. Write; requires trusted host approval; previous versions remain for rollback.",
+    description: "Activate a validated declarative adapter version and create/update its sync source. Requires the user-enabled adapter automation preference or trusted host approval; previous versions remain for rollback.",
     parameters: {
       adapterId: { type: "string", required: true, description: "Adapter id" },
       version: { type: "string", required: true, description: "Validated version" }
+    },
+    write: true
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.PreviewSourceSync,
+    description: "Preview a declarative source sync with the host-held session. Read-only; requires the user-enabled adapter automation preference.",
+    parameters: {
+      sourceId: { type: "string", required: true, description: "Declarative source id" }
+    },
+    write: false
+  },
+  {
+    name: ACADEMIC_TOOL_NAMES.SyncSource,
+    description: "Sync one declarative source through Connector and Kernel. Deterministic write; requires the user-enabled adapter automation preference.",
+    parameters: {
+      sourceId: { type: "string", required: true, description: "Declarative source id" }
     },
     write: true
   }

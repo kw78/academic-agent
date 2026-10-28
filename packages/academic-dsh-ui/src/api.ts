@@ -143,6 +143,7 @@ const updatePreferencesSchema = z.object({
     z.string().min(1).max(200),
     z.number().int().min(0).max(3),
   ),
+  agentAdapterAutomation: z.boolean().optional(),
 })
 const createTaskSchema = z.object({
   title: z.string().min(1).max(500),
@@ -476,6 +477,7 @@ async function buildPreferencesView(app: AcademicApp): Promise<PreferencesView> 
   const page = await app.store.queries.listCourses()
   return {
     coursePriorities: preferences.coursePriorities,
+    agentAdapterAutomation: preferences.agentAdapterAutomation,
     courses: page.items
       .filter((course) => !course.archived && !course.deleted)
       .map((course) => ({

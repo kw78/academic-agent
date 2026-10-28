@@ -332,12 +332,14 @@ export interface CoursePriorityView {
 
 export interface PreferencesView {
   coursePriorities: Record<string, number>
+  agentAdapterAutomation: boolean
   courses: CoursePriorityView[]
   updatedAt: string
 }
 
 export interface UpdatePreferencesRequest {
   coursePriorities: Record<string, number>
+  agentAdapterAutomation?: boolean
 }
 
 export interface CapabilityView {

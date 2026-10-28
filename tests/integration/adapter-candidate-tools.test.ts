@@ -71,6 +71,9 @@ function setup(options: {
     adapterId: string
     version: string
   }) => Promise<unknown>
+  adapterAutomation?: () => boolean
+  previewAdapterSource?: (sourceId: string) => Promise<unknown>
+  syncAdapterSource?: (sourceId: string) => Promise<unknown>
 }) {
   const clock = fixedClock()
   const store = createTestStore({ clock })
@@ -91,6 +94,15 @@ function setup(options: {
     adapterCandidates: candidates,
     ...(options.activateAdapterCandidate
       ? { activateAdapterCandidate: options.activateAdapterCandidate }
+      : {}),
+    ...(options.adapterAutomation
+      ? { adapterAutomation: options.adapterAutomation }
+      : {}),
+    ...(options.previewAdapterSource
+      ? { previewAdapterSource: options.previewAdapterSource }
+      : {}),
+    ...(options.syncAdapterSource
+      ? { syncAdapterSource: options.syncAdapterSource }
       : {}),
     allowWrites: options.allowWrites,
     ...(options.authorizeWrite
@@ -187,6 +199,68 @@ describe('adapter candidate agent tools', () => {
       data: { sourceId: 'adapter-tool-demo' },
     })
     expect(calls).toEqual([{ adapterId: 'tool-demo', version: '1.0.0' }])
+  })
+
+  it('lets auto mode activate, preview and sync without a per-call prompt', async () => {
+    const calls: string[] = []
+    const { host } = setup({
+      allowWrites: false,
+      adapterAutomation: () => true,
+      activateAdapterCandidate: async (request) => {
+        calls.push(`activate:${request.adapterId}@${request.version}`)
+        return {
+          candidate: { adapterId: request.adapterId, version: request.version },
+          sourceId: 'adapter-tool-demo',
+        }
+      },
+      previewAdapterSource: async (sourceId) => {
+        calls.push(`preview:${sourceId}`)
+        return { counts: { create: 1, update: 0, unchanged: 0, skip: 0 } }
+      },
+      syncAdapterSource: async (sourceId) => {
+        calls.push(`sync:${sourceId}`)
+        return { status: 'success' }
+      },
+    })
+    await host.call(ACADEMIC_TOOL_NAMES.RegisterAdapterCandidate, {
+      manifest,
+      samples,
+    })
+    expect(
+      await host.call(ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate, {
+        adapterId: 'tool-demo',
+        version: '1.0.0',
+      }),
+    ).toMatchObject({ ok: true, data: { sourceId: 'adapter-tool-demo' } })
+    expect(
+      await host.call(ACADEMIC_TOOL_NAMES.PreviewSourceSync, {
+        sourceId: 'adapter-tool-demo',
+      }),
+    ).toMatchObject({ ok: true })
+    expect(
+      await host.call(ACADEMIC_TOOL_NAMES.SyncSource, {
+        sourceId: 'adapter-tool-demo',
+      }),
+    ).toMatchObject({ ok: true })
+    expect(calls).toEqual([
+      'activate:tool-demo@1.0.0',
+      'preview:adapter-tool-demo',
+      'sync:adapter-tool-demo',
+    ])
+  })
+
+  it('blocks preview and sync while adapter automation is off', async () => {
+    const { host } = setup({ allowWrites: false })
+    expect(
+      await host.call(ACADEMIC_TOOL_NAMES.PreviewSourceSync, {
+        sourceId: 'adapter-tool-demo',
+      }),
+    ).toMatchObject({ ok: false, code: 'FORBIDDEN' })
+    expect(
+      await host.call(ACADEMIC_TOOL_NAMES.SyncSource, {
+        sourceId: 'adapter-tool-demo',
+      }),
+    ).toMatchObject({ ok: false, code: 'FORBIDDEN' })
   })
 
   it('does not let untrusted page text grant agent permissions', async () => {

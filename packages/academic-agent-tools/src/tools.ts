@@ -75,6 +75,14 @@ export interface AcademicToolDependencies {
     adapterId: string
     version: string
   }) => Promise<unknown>
+  /**
+   * User opt-in that lets the agent finish adapter onboarding without a
+   * per-call prompt. It never bypasses validation or credential isolation.
+   */
+  adapterAutomation?: () => boolean
+  /** Preview/sync a declarative source with the host-held session. */
+  previewAdapterSource?: (sourceId: string) => Promise<unknown>
+  syncAdapterSource?: (sourceId: string) => Promise<unknown>
   probeSource?: (
     sourceId: string,
     url?: string,
@@ -98,6 +106,8 @@ export const ACADEMIC_TOOL_NAMES = {
   ListAdapterCandidates: 'academic_list_adapter_candidates',
   RegisterAdapterCandidate: 'academic_register_adapter_candidate',
   ActivateAdapterCandidate: 'academic_activate_adapter_candidate',
+  PreviewSourceSync: 'academic_preview_source_sync',
+  SyncSource: 'academic_sync_source',
   UpdateSource: 'academic_update_source',
   UpdateTask: 'academic_update_task',
   RequestReplan: 'academic_request_replan',
@@ -226,6 +236,9 @@ const adapterCandidateListSchema = z.object({
 const adapterActivateSchema = z.object({
   adapterId: z.string().min(1),
   version: z.string().min(1),
+})
+const adapterSourceSchema = z.object({
+  sourceId: z.string().min(1).max(200),
 })
 
 const createSourceSchema = z.object({
@@ -602,14 +615,17 @@ export function createAcademicTools(
 
           defineTool(
             ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate,
-            'Activate a validated declarative adapter version and create/update its sync source. Write; requires trusted host approval. Only validated versions can be activated; previous versions remain available for rollback.',
+            'Activate a validated declarative adapter version and create/update its sync source. Requires either the user-enabled adapter automation preference or trusted per-call approval. Only validated versions can be activated; previous versions remain available for rollback.',
             adapterActivateSchema,
             async (input) => {
-              const rejection = await requireWriteApproval(
-                ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate,
-                { ...input },
-              )
-              if (rejection) return rejection
+              const automation = dependencies.adapterAutomation?.() ?? false
+              if (!automation) {
+                const rejection = await requireWriteApproval(
+                  ACADEMIC_TOOL_NAMES.ActivateAdapterCandidate,
+                  { ...input },
+                )
+                if (rejection) return rejection
+              }
               try {
                 if (dependencies.activateAdapterCandidate) {
                   return success(
@@ -628,6 +644,64 @@ export function createAcademicTools(
               } catch (error) {
                 return failure(
                   'CONFLICT',
+                  error instanceof Error ? error.message : String(error),
+                )
+              }
+            },
+          ),
+
+          defineTool(
+            ACADEMIC_TOOL_NAMES.PreviewSourceSync,
+            'Preview a declarative source sync using the host-held session. Read-only; requires the user-enabled adapter automation preference.',
+            adapterSourceSchema,
+            async (input) => {
+              if (!(dependencies.adapterAutomation?.() ?? false)) {
+                return failure(
+                  'FORBIDDEN',
+                  'Adapter automation is not enabled',
+                )
+              }
+              if (!dependencies.previewAdapterSource) {
+                return failure(
+                  'CAPABILITY_UNAVAILABLE',
+                  'Source preview is not available in this host',
+                )
+              }
+              try {
+                return success(
+                  await dependencies.previewAdapterSource(input.sourceId),
+                )
+              } catch (error) {
+                return failure(
+                  'UNAVAILABLE',
+                  error instanceof Error ? error.message : String(error),
+                )
+              }
+            },
+          ),
+
+          defineTool(
+            ACADEMIC_TOOL_NAMES.SyncSource,
+            'Sync one declarative source through Connector and Kernel. Deterministic write; requires the user-enabled adapter automation preference and never returns credentials.',
+            adapterSourceSchema,
+            async (input) => {
+              if (!(dependencies.adapterAutomation?.() ?? false)) {
+                return failure(
+                  'FORBIDDEN',
+                  'Adapter automation is not enabled',
+                )
+              }
+              if (!dependencies.syncAdapterSource) {
+                return failure(
+                  'CAPABILITY_UNAVAILABLE',
+                  'Source sync is not available in this host',
+                )
+              }
+              try {
+                return success(await dependencies.syncAdapterSource(input.sourceId))
+              } catch (error) {
+                return failure(
+                  'UNAVAILABLE',
                   error instanceof Error ? error.message : String(error),
                 )
               }
