@@ -20,8 +20,11 @@ concurrency:
 jobs:
   release:
     name: Package, publish and index
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
     env:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       GH_TOKEN: ${{ github.token }}
