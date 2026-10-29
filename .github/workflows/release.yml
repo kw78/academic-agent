@@ -8,6 +8,10 @@ on:
       tag:
         description: Existing tag to release (for example v0.2.0)
         required: true
+      stage:
+        description: Stage the npm versions instead of publishing directly
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -105,10 +109,19 @@ jobs:
         if: env.NPM_TOKEN != ''
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        env:
+          STAGE_ONLY: ${{ inputs.stage }}
         run: |
           VERSION="${{ steps.release.outputs.version }}"
-          npm publish "dist/release/academic-dsh-plugin-${VERSION}.tgz" --access public --provenance
-          npm publish "dist/release/academic-dsh-ui-${VERSION}.tgz" --access public --provenance
+          PLUGIN="dist/release/academic-dsh-plugin-${VERSION}.tgz"
+          UI="dist/release/academic-dsh-ui-${VERSION}.tgz"
+          if [ "${STAGE_ONLY}" = "true" ]; then
+            npm stage publish "$PLUGIN" --access public
+            npm stage publish "$UI" --access public
+          else
+            npm publish "$PLUGIN" --access public --provenance
+            npm publish "$UI" --access public --provenance
+          fi
 
       - name: npm token missing
         if: env.NPM_TOKEN == ''
