@@ -103,11 +103,11 @@
         },
         {
           "version": "0.2.0",
-          "publishTimestamp": 1793203481,
+          "publishTimestamp": 1793238561,
           "source": {
             "type": "git",
             "url": "https://github.com/kw78/academic-agent",
-            "commit": "e734cf4",
+            "commit": "e734cf4163362e76211ed810763e0b643fdde8ae",
             "path": "packages/academic-dsh-plugin"
           },
           "engines": {
@@ -177,11 +177,11 @@
         },
         {
           "version": "0.2.0",
-          "publishTimestamp": 1793203481,
+          "publishTimestamp": 1793238561,
           "source": {
             "type": "git",
             "url": "https://github.com/kw78/academic-agent",
-            "commit": "e734cf4",
+            "commit": "e734cf4163362e76211ed810763e0b643fdde8ae",
             "path": "packages/academic-dsh-ui"
           },
           "engines": {
